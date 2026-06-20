@@ -28,6 +28,7 @@
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
   @media (prefers-reduced-motion:reduce){.wordmark .dot{animation:none}}
   .wordmark h1{font-family:var(--display);font-weight:700;font-size:17px;letter-spacing:.16em;margin:0;color:var(--muted)}
+  .wordmark .ver{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--muted-2);letter-spacing:.04em;align-self:center}
   .topmeta{display:flex;justify-content:space-between;align-items:center;margin-top:11px;gap:12px}
   .topleft{display:flex;align-items:center;gap:12px;min-width:0}
   .band{font-family:var(--heb);font-weight:700;font-size:22px;line-height:1.1}
@@ -206,6 +207,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef} = React;
+const VERSION='0.100';
 
 /* ============================================================
    ▼▼▼  PASTE YOUR FIREBASE CONFIG HERE  ▼▼▼
@@ -420,7 +422,7 @@ function validEmail(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((e||'').trim())
 /* ============================== AUTH SHELL & SCREENS ============================== */
 function AuthShell({children}){
   return <div className="authwrap">
-    <div className="topbar"><div className="wordmark"><span className="dot"></span><h1>SOUNDCHECK</h1></div></div>
+    <div className="topbar"><div className="wordmark"><span className="dot"></span><h1>SOUNDCHECK</h1><span className="ver">v{VERSION}</span></div></div>
     <div className="authmid"><div>{children}</div></div>
   </div>;
 }
@@ -563,7 +565,7 @@ function Header({state,update}){
   const sub = [state.concert.name, state.concert.venue, state.concert.date?fmtDate(state.concert.date):null].filter(Boolean).join(' · ') || 'Set up your show in Setup';
   return (
     <div className="topbar">
-      <div className="wordmark"><span className="dot"></span><h1>SOUNDCHECK</h1></div>
+      <div className="wordmark"><span className="dot"></span><h1>SOUNDCHECK</h1><span className="ver">v{VERSION}</span></div>
       <div className="topmeta">
         <div className="topleft">
           <BandArt src={state.bandArt} update={update}/>
