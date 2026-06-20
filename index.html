@@ -9,7 +9,7 @@
   :root{
     --bg:#15141B; --surface:#1F1D29; --surface-2:#282633; --surface-3:#322F40;
     --line:rgba(255,255,255,.09); --line-2:rgba(255,255,255,.14);
-    --text:#ECEAF2; --muted:#948FA6; --muted-2:#6E697E;
+    --text:#ECEAF2; --muted:#C2BDD2; --muted-2:#9892AC;
     --keys:#8B7CF6; --drums:#F2545B; --guitar:#F4A93C; --bass:#2DD4BF; --vocals:#EC6FA9;
     --guest:#C9A6FF; --ok:#3DD68C; --warn:#E8A33D; --learn:#5B9DF9;
     --display:'Space Grotesk',system-ui,sans-serif; --mono:'Space Mono',ui-monospace,monospace;
@@ -207,7 +207,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef} = React;
-const VERSION='0.100';
+const VERSION='0.101';
 
 /* ============================================================
    ▼▼▼  PASTE YOUR FIREBASE CONFIG HERE  ▼▼▼
@@ -243,17 +243,18 @@ const uid = () => Math.random().toString(36).slice(2,9);
 const ICON = {
   keys:(<g><rect x="2.5" y="7" width="19" height="10" rx="1.4"/><path d="M6.5 7v5 M10 7v5 M14 7v5 M17.5 7v5"/></g>),
   drums:(<g><path d="M4.5 2.5 L11 6 M19.5 2.5 L13 6"/><ellipse cx="12" cy="9" rx="6.5" ry="2.2"/><path d="M5.5 9v4.6c0 1.2 2.9 2.2 6.5 2.2s6.5-1 6.5-2.2V9"/></g>),
-  guitar:(<g><path d="M12 21 V11.5"/><rect x="9.6" y="3.6" width="4.8" height="8" rx="2"/><path d="M9.6 5.3 H7.7 M9.6 7.6 H7.7 M9.6 9.9 H7.7 M14.4 5.3 H16.3 M14.4 7.6 H16.3 M14.4 9.9 H16.3"/><g fill="currentColor" stroke="none"><circle cx="7" cy="5.3" r="1"/><circle cx="7" cy="7.6" r="1"/><circle cx="7" cy="9.9" r="1"/><circle cx="17" cy="5.3" r="1"/><circle cx="17" cy="7.6" r="1"/><circle cx="17" cy="9.9" r="1"/></g></g>),
-  bass:(<g><path d="M12 21 V11.5"/><rect x="9.6" y="4.2" width="4.8" height="7.3" rx="2"/><path d="M9.6 6.2 H7.5 M9.6 9.2 H7.5 M14.4 6.2 H16.5 M14.4 9.2 H16.5"/><g fill="currentColor" stroke="none"><circle cx="6.8" cy="6.2" r="1.15"/><circle cx="6.8" cy="9.2" r="1.15"/><circle cx="17.2" cy="6.2" r="1.15"/><circle cx="17.2" cy="9.2" r="1.15"/></g></g>),
+  guitar:(<g><rect x="9.25" y="4" width="5.5" height="16" rx="2.6"/><path d="M9.25 7.5 H6 M9.25 12 H6 M9.25 16.5 H6 M14.75 7.5 H18 M14.75 12 H18 M14.75 16.5 H18"/><g fill="currentColor" stroke="none"><circle cx="4.9" cy="7.5" r="1.15"/><circle cx="4.9" cy="12" r="1.15"/><circle cx="4.9" cy="16.5" r="1.15"/><circle cx="19.1" cy="7.5" r="1.15"/><circle cx="19.1" cy="12" r="1.15"/><circle cx="19.1" cy="16.5" r="1.15"/></g></g>),
+  bass:(<g><rect x="9.25" y="4" width="5.5" height="16" rx="2.6"/><path d="M9.25 9 H5.8 M9.25 15 H5.8 M14.75 9 H18.2 M14.75 15 H18.2"/><g fill="currentColor" stroke="none"><circle cx="4.6" cy="9" r="1.35"/><circle cx="4.6" cy="15" r="1.35"/><circle cx="19.4" cy="9" r="1.35"/><circle cx="19.4" cy="15" r="1.35"/></g></g>),
   vocals:(<g><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.8 11 A6.2 6.2 0 0 0 18.2 11"/><path d="M12 17.2 V21 M8.5 21 H15.5"/></g>),
 };
 function InstrIcon({id,size=15}){
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{ICON[id]}</svg>;
+  const S=Math.round(size*1.3);
+  return <svg width={S} height={S} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{ICON[id]}</svg>;
 }
 function InstrBadge({id,size=28}){
-  const it=INSTR.find(x=>x.id===id); const c=it?it.color:'#948FA6';
+  const it=INSTR.find(x=>x.id===id); const c=it?it.color:'#948FA6'; const S=Math.round(size*1.3);
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" style={{flexShrink:0,display:'block'}}>
+    <svg width={S} height={S} viewBox="0 0 24 24" style={{flexShrink:0,display:'block'}}>
       <circle cx="12" cy="12" r="11.3" fill={c}/>
       <circle cx="12" cy="12" r="9.4" fill="none" stroke="#fff" strokeWidth="0.8" opacity="0.85"/>
       <g transform="translate(3.6 3.6) scale(0.70)" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{color:'#fff'}}>{ICON[id]}</g>
@@ -616,7 +617,7 @@ function Stage({state,go}){
   const readyCount = songs.filter(s=>songReadiness(s)===1).length;
   const perMember = INSTR.map(i=>({...i, pct: songs.length? songs.reduce((a,s)=>a+score(s.parts[i.id]),0)/songs.length : 0 }));
   const next = [...state.rehearsals].filter(r=>!r.done && r.date).sort((a,b)=>new Date(a.date)-new Date(b.date))[0];
-  const attention = [...songs].filter(s=>songReadiness(s)<1).sort((a,b)=>songReadiness(a)-songReadiness(b)).slice(0,3);
+  const plannedCount = next ? ((next.focusPractice||[]).length + (next.focusLearn||[]).length) : 0;
   if(songs.length===0){
     return <div className="page">
       <div className="empty"><div className="big">Nothing on the board yet</div>
@@ -638,24 +639,14 @@ function Stage({state,go}){
         <div className="stat"><div className="v">{readyCount}</div><div className="k">fully ready</div></div>
         <div className="stat"><div className="v">{totalMin?totalMin+'m':'—'}</div><div className="k">set length</div></div>
       </div>
-      {attention.length>0 && <React.Fragment>
-        <div className="section-h">Needs work</div>
-        {attention.map(s=>{ const r=songReadiness(s);
-          return <div className="card" key={s.id} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 14px'}}>
-            <CoverThumb src={s.cover} size={40} radius={9}/>
-            <div style={{minWidth:0,flex:1}}>
-              <div style={{fontFamily:'var(--display)',fontWeight:600,fontSize:14}} dir="auto">{s.title}</div>
-              <div style={{fontSize:11.5,color:'var(--muted)'}}>{Math.round(r*100)}% ready</div>
-            </div>
-            <Cells song={s}/>
-          </div>; })}
-      </React.Fragment>}
       <div className="section-h">Next rehearsal</div>
       {next ?
         <div className="card">
           <div className="reh-date">{fmtDate(next.date)}</div>
           <div className="reh-time">{fmtTime(next.date)}{next.location?' · '+next.location:''}</div>
-          <FocusTags songs={songs} learn={next.focusLearn} practice={next.focusPractice}/>
+          {plannedCount>0
+            ? <FocusTags songs={state.songs} learn={next.focusLearn} practice={next.focusPractice}/>
+            : <div style={{color:'var(--muted)',fontSize:12.5,marginTop:10}}>No songs planned yet — set the focus in Rehearsals.</div>}
         </div>
         : <div className="card"><div style={{color:'var(--muted)',fontSize:13}}>None booked. Add one in Rehearsals.</div></div>}
       <div className="section-h">Player readiness</div>
