@@ -231,7 +231,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef} = React;
-const VERSION='0.103';
+const VERSION='0.104';
 
 /* ============================================================
    ▼▼▼  PASTE YOUR FIREBASE CONFIG HERE  ▼▼▼
@@ -545,6 +545,7 @@ function BandPicker({bands,onPick,user,onSignOut}){
         <button key={b.id} className="btn ghost" style={{marginTop:8,justifyContent:'flex-start',gap:12}} onClick={()=>onPick(b.id)}>
           {b.bandArt?<img src={b.bandArt} alt="" style={{width:32,height:32,borderRadius:8,objectFit:'cover'}}/>:null}
           <span dir="auto">{b.band||b.id}</span>
+          <span style={{fontSize:10,color:'var(--muted-2)',fontFamily:'var(--mono)'}}>{b.id}</span>
         </button>
       ))}
       {admin&&!creating&&<button className="btn" style={{marginTop:14}} onClick={()=>setCreating(true)}>+ Create new band</button>}
