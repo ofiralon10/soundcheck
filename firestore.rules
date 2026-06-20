@@ -19,7 +19,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // >>> SET THIS to the app admin's email (must match ADMIN_EMAIL in the app) <<<
-    function adminEmail() { return 'you@example.com'; }
+    function adminEmail() { return 'ofiralon10@gmail.com'; }
 
     function email()    { return request.auth.token.email; }
     function signedIn() { return request.auth != null && email() != null; }
