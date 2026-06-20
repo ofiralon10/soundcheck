@@ -1,0 +1,25 @@
+rules_version = '2';
+
+// ============================================================
+// Soundcheck — Storage rules
+//
+// Asset paths are namespaced per band:
+//   covers/{bandId}/{songId}.jpg
+//   bandart/{bandId}.jpg
+//   files/{bandId}/...
+//
+// LIMITATION: Storage rules cannot read Firestore, so they can't check
+// per-band membership. This gates on authentication only — any signed-in
+// user could read/write any band's assets if they knew the path.
+// For a small, trusted set of bands this is usually acceptable. True
+// per-band isolation would require Cloud Functions or signed URLs.
+// ============================================================
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if request.auth != null
+                         && request.auth.token.email != null;
+    }
+  }
+}

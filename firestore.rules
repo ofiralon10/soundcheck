@@ -1,0 +1,54 @@
+rules_version = '2';
+
+// ============================================================
+// Soundcheck — multi-band access control
+//
+// Model: each band is one document at boards/{bandId} containing:
+//   memberEmails: ["a@x.com", ...]            (array, for querying)
+//   access:       { "a@x.com": "owner"|"editor"|"viewer", ... }
+//
+// Roles:
+//   owner  - edit everything + manage members + delete the band
+//   editor - edit content, but NOT membership
+//   viewer - read only
+//
+// The app admin (you) is the ONLY account that can create new bands.
+// ============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // >>> SET THIS to the app admin's email (must match ADMIN_EMAIL in the app) <<<
+    function adminEmail() { return 'you@example.com'; }
+
+    function email()    { return request.auth.token.email; }
+    function signedIn() { return request.auth != null && email() != null; }
+    function isAdmin()  { return signedIn() && email() == adminEmail(); }
+
+    match /boards/{bandId} {
+      function isMember() { return signedIn() && (email() in resource.data.memberEmails); }
+      function role()     { return resource.data.access[email()]; }
+      function membershipUnchanged() {
+        return request.resource.data.memberEmails == resource.data.memberEmails
+            && request.resource.data.access == resource.data.access;
+      }
+
+      // READ: any member of this band. Admin can read all bands (for support).
+      allow read: if isAdmin() || isMember();
+
+      // CREATE: app admin only. New doc must carry the access fields.
+      allow create: if isAdmin()
+                    && request.resource.data.memberEmails is list
+                    && request.resource.data.access is map;
+
+      // UPDATE: admin or owner can change anything (incl. membership);
+      //         editor can change content but NOT the member list.
+      allow update: if isAdmin()
+                    || (isMember() && role() == 'owner')
+                    || (isMember() && role() == 'editor' && membershipUnchanged());
+
+      // DELETE: admin or an owner.
+      allow delete: if isAdmin() || (isMember() && role() == 'owner');
+    }
+  }
+}
