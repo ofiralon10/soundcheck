@@ -231,7 +231,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef} = React;
-const VERSION='0.109';
+const VERSION='0.110';
 
 /* ============================================================
    ▼▼▼  PASTE YOUR FIREBASE CONFIG HERE  ▼▼▼
@@ -1103,8 +1103,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore}){
   const removeFile=(f)=>{ if(f.kind==='upload'&&f.path) deleteStoragePath(f.path); update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files=so.files.filter(x=>x.id!==f.id);return st;}); };
   const startRec=async()=>{ setFileMsg('');
     try{
-      const stream=await navigator.mediaDevices.getUserMedia({audio:true});
-      const mr=new MediaRecorder(stream);
+      const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,sampleRate:48000}});
+      const mr=new MediaRecorder(stream,{audioBitsPerSecond:256000});
       chunksRef.current=[];
       mr.ondataavailable=(e)=>{ if(e.data.size>0) chunksRef.current.push(e.data); };
       mr.onstop=async()=>{

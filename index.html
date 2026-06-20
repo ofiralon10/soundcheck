@@ -231,7 +231,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef} = React;
-const VERSION='0.107';
+const VERSION='0.110';
 
 /* ============================================================
    ▼▼▼  PASTE YOUR FIREBASE CONFIG HERE  ▼▼▼
@@ -476,6 +476,7 @@ function fileKind(name){
 }
 function badgeText(f){ const parts=(f.name||'').split('.'); const ext=parts.length>1?parts.pop().toUpperCase():''; if(ext && ext.length<=4) return ext; return f.kind==='link'?'LINK':'FILE'; }
 function fmtSize(b){ if(!b) return ''; if(b<1024) return b+' B'; if(b<1048576) return Math.round(b/1024)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
+function fmtSecs(s){ return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
 function validEmail(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((e||'').trim()); }
 
 /* ============================== AUTH SHELL & SCREENS ============================== */
@@ -1059,6 +1060,19 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore}){
   const [fileMsg,setFileMsg]=useState('');
   const [cropSrc,setCropSrc]=useState(null);
   const [busy,setBusy]=useState('');
+  const [confirmDel,setConfirmDel]=useState(null);
+  const [recState,setRecState]=useState(null);
+  const [recTime,setRecTime]=useState(0);
+  const [playingFile,setPlayingFile]=useState(null);
+  const recorderRef=useRef(null);
+  const chunksRef=useRef([]);
+  const timerRef=useRef(null);
+  const audioRef=useRef(null);
+  useEffect(()=>()=>{
+    if(recorderRef.current&&recorderRef.current.state!=='inactive') try{recorderRef.current.stream.getTracks().forEach(t=>t.stop());}catch(_){}
+    clearInterval(timerRef.current);
+    if(audioRef.current) audioRef.current.pause();
+  },[]);
   const setField=(k,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);so[k]=v;return st;});
   const setRole=(iid,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);so.parts[iid]=v;return st;});
   const addGuest=()=>update(st=>{const so=st.songs.find(x=>x.id===s.id);if(so.guests.length<MAX_GUESTS)so.guests.push({id:uid(),name:'',status:'todo'});return st;});
@@ -1087,6 +1101,51 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore}){
   };
   const openFile=(f)=>{ if(f.url) window.open(f.url,'_blank','noopener'); };
   const removeFile=(f)=>{ if(f.kind==='upload'&&f.path) deleteStoragePath(f.path); update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files=so.files.filter(x=>x.id!==f.id);return st;}); };
+  const startRec=async()=>{ setFileMsg('');
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,sampleRate:48000}});
+      const mr=new MediaRecorder(stream,{audioBitsPerSecond:256000});
+      chunksRef.current=[];
+      mr.ondataavailable=(e)=>{ if(e.data.size>0) chunksRef.current.push(e.data); };
+      mr.onstop=async()=>{
+        stream.getTracks().forEach(t=>t.stop());
+        clearInterval(timerRef.current);
+        const blob=new Blob(chunksRef.current,{type:mr.mimeType||'audio/webm'});
+        if(blob.size<100){ setRecState(null); setRecTime(0); return; }
+        setBusy('rec');
+        const fid=uid();
+        const ext=(mr.mimeType||'').includes('mp4')?'m4a':(mr.mimeType||'').includes('ogg')?'ogg':'webm';
+        const now=new Date();
+        const name='Recording '+now.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+now.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})+'.'+ext;
+        try{
+          const path='files/'+BOARD+'/'+fid+'-recording.'+ext;
+          const sRef=storage.ref().child(path);
+          await sRef.put(blob,{contentType:mr.mimeType||'audio/webm'});
+          const url=await sRef.getDownloadURL();
+          update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id:fid,name,kind:'upload',url,path,size:blob.size,type:'audio'});return st;});
+        }catch(err){ setFileMsg('Recording upload failed — '+prettyErr(err)); }
+        setBusy(''); setRecState(null); setRecTime(0);
+      };
+      mr.start(1000);
+      recorderRef.current=mr;
+      setRecState('recording');
+      setRecTime(0);
+      timerRef.current=setInterval(()=>setRecTime(t=>t+1),1000);
+    }catch(e){ setFileMsg('Microphone not available — check browser permissions.'); }
+  };
+  const pauseRec=()=>{ if(recorderRef.current&&recorderRef.current.state==='recording'){ recorderRef.current.pause(); clearInterval(timerRef.current); setRecState('paused'); } };
+  const resumeRec=()=>{ if(recorderRef.current&&recorderRef.current.state==='paused'){ recorderRef.current.resume(); timerRef.current=setInterval(()=>setRecTime(t=>t+1),1000); setRecState('recording'); } };
+  const stopRec=()=>{ if(recorderRef.current&&recorderRef.current.state!=='inactive') recorderRef.current.stop(); };
+  const playFile=(f)=>{
+    if(audioRef.current){ audioRef.current.pause(); audioRef.current=null; }
+    if(playingFile===f.id){ setPlayingFile(null); return; }
+    const a=new Audio(f.url);
+    a.onended=()=>setPlayingFile(null);
+    a.onerror=()=>{ setPlayingFile(null); setFileMsg('Could not play this file.'); };
+    a.play().catch(()=>setFileMsg('Playback failed.'));
+    audioRef.current=a;
+    setPlayingFile(f.id);
+  };
 
   const fileCount=s.files?s.files.length:0;
   const meta=[s.artist, s.songKey&&('Key '+s.songKey), s.tempo&&(s.tempo+' bpm'), s.duration&&(s.duration+'m'), fileCount&&(fileCount+(fileCount>1?' files':' file'))].filter(Boolean);
@@ -1120,11 +1179,31 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore}){
             <div className="fileitem" key={f.id}>
               <span className="ftype" style={{background:KIND_COLOR[f.type]||'var(--muted)'}}>{badgeText(f)}</span>
               <div className="fname" dir="auto">{f.name}{f.size?<span className="fsize"> · {fmtSize(f.size)}</span>:null}</div>
-              <button className="fbtn" onClick={()=>openFile(f)}>Open</button>
-              <button className="xmini" onClick={()=>removeFile(f)} aria-label="Remove file">×</button>
+              {f.type==='audio'
+                ? <button className="fbtn" style={playingFile===f.id?{color:'var(--drums)'}:null} onClick={()=>playFile(f)}>{playingFile===f.id?'Stop':'Play'}</button>
+                : <button className="fbtn" onClick={()=>openFile(f)}>Open</button>}
+              {confirmDel===f.id
+                ? <React.Fragment>
+                    <button className="fbtn" style={{color:'var(--drums)'}} onClick={()=>{removeFile(f);setConfirmDel(null);}}>Delete</button>
+                    <button className="fbtn" onClick={()=>setConfirmDel(null)}>Cancel</button>
+                  </React.Fragment>
+                : <button className="xmini" onClick={()=>setConfirmDel(f.id)} aria-label="Remove file">×</button>}
             </div>
           ))}
-          {(s.files||[]).length===0 && <div className="fileempty">No files yet — add a chart, slides, or a reference track.</div>}
+          {(s.files||[]).length===0 && !recState && <div className="fileempty">No files yet — add a chart, slides, or a reference track.</div>}
+          {recState && <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 0',borderTop:'1px solid var(--line)'}}>
+            <span style={{color:'var(--drums)',fontSize:13,fontFamily:'var(--mono)',fontWeight:700,display:'flex',alignItems:'center',gap:6}}>
+              <span style={{width:10,height:10,borderRadius:'50%',background:'var(--drums)',animation:recState==='recording'?'pulse 1.2s ease-in-out infinite':'none'}}></span>
+              {recState==='recording'?'Rec':'Paused'} {fmtSecs(recTime)}
+            </span>
+            <div style={{marginLeft:'auto',display:'flex',gap:8}}>
+              {recState==='recording'
+                ? <button className="fbtn" onClick={pauseRec}>Pause</button>
+                : <button className="fbtn" onClick={resumeRec}>Resume</button>}
+              <button className="fbtn" style={{color:'var(--drums)'}} onClick={stopRec}>Stop & Save</button>
+            </div>
+          </div>}
+          {busy==='rec' && <div style={{fontSize:12,color:'var(--muted)',padding:'8px 0'}}>Saving recording…</div>}
           {linkMode
             ? <div className="linkadd">
                 <input className="inp" value={linkUrl} onChange={e=>setLinkUrl(e.target.value)} placeholder="Paste a share link (https://…)" autoFocus/>
@@ -1137,6 +1216,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore}){
             : <div className="filebtns">
                 <label className="addfile" style={{opacity:busy==='file'?0.5:1}}><input type="file" hidden disabled={busy==='file'} onChange={onUpload}/>{busy==='file'?'Uploading…':'Upload file'}</label>
                 <button className="addfile" onClick={()=>setLinkMode(true)}>Add link</button>
+                {!recState && <button className="addfile" style={{color:'var(--drums)',borderColor:'rgba(242,84,91,.4)'}} onClick={startRec}>● Record</button>}
               </div>}
           {fileMsg && <div className="filemsg">{fileMsg}</div>}
           {INSTR.map(i=>(
