@@ -28,12 +28,16 @@
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
   @media (prefers-reduced-motion:reduce){.wordmark .dot{animation:none}}
   .wordmark h1{font-family:var(--display);font-weight:700;font-size:17px;letter-spacing:.16em;margin:0;color:var(--muted)}
-  .topmeta{display:flex;justify-content:space-between;align-items:flex-end;margin-top:11px;gap:12px}
+  .wordmark .ver{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--muted-2);letter-spacing:.04em;align-self:center}
+  .topmeta{display:flex;justify-content:space-between;align-items:center;margin-top:11px;gap:12px}
+  .topleft{display:flex;align-items:center;gap:12px;min-width:0}
   .band{font-family:var(--heb);font-weight:700;font-size:22px;line-height:1.1}
   .concert-sub{font-size:12px;color:var(--muted);margin-top:3px}
   .countchip{font-family:var(--mono);text-align:right;flex-shrink:0}
   .countchip .num{font-size:22px;font-weight:700;line-height:1}
   .countchip .lbl{font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-top:3px}
+  .bandart{cursor:pointer;position:relative;flex-shrink:0;line-height:0}
+  .bandart .edithint{position:absolute;right:-3px;bottom:-3px;width:18px;height:18px;border-radius:50%;background:var(--keys);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;border:2px solid var(--bg)}
   .page{padding:6px 18px 110px;animation:fade .25s ease}
   @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
   .section-h{font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted-2);margin:22px 2px 10px;display:flex;align-items:center;gap:8px}
@@ -66,12 +70,36 @@
   .cell svg{display:block}
   .song-prog{height:3px;background:var(--surface-3)}
   .song-prog .pf{height:100%;transition:width .5s}
+  .songnum{font-family:var(--mono);font-size:12.5px;font-weight:700;color:var(--muted);min-width:22px;text-align:center;flex-shrink:0;font-variant-numeric:tabular-nums}
+  .songnum.enc{color:var(--guitar)}
+  .enc-pill{display:inline-flex;align-items:center;font-family:var(--mono);font-size:8.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--guitar);border:1px solid rgba(244,169,60,.5);border-radius:5px;padding:2px 5px;flex-shrink:0}
+  .setlist-tools{display:flex;align-items:center;gap:9px;margin:2px 0;flex-wrap:wrap}
+  .reorder-btn{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--surface-2);border:1px solid var(--line-2);border-radius:8px;padding:8px 12px;display:inline-flex;align-items:center;gap:6px}
+  .reorder-btn.on{color:#15141B;background:var(--text);border-color:transparent;font-weight:700}
+  .ro-hint{font-size:11.5px;color:var(--muted);line-height:1.4}
+  .ro-row{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin-bottom:8px}
+  .ro-num{font-family:var(--mono);font-size:12.5px;font-weight:700;color:var(--muted);min-width:20px;text-align:center;font-variant-numeric:tabular-nums;flex-shrink:0}
+  .ro-num.enc{color:var(--guitar)}
+  .ro-title{flex:1;min-width:0;font-family:var(--display);font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ro-btn{width:34px;height:34px;border-radius:8px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);font-size:15px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .ro-btn:disabled{opacity:.28}
+  .ro-btn.enc{color:var(--muted-2)}
+  .ro-btn.enc.on{color:var(--guitar);border-color:rgba(244,169,60,.55)}
+  .ro-btn.excl{color:var(--muted)}
+  .excl-h{font-family:var(--mono);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted-2);margin:26px 2px 11px;display:flex;align-items:center;gap:8px}
+  .excl-h::after{content:"";flex:1;height:1px;background:var(--line)}
+  .excl-row{display:flex;align-items:center;gap:11px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px 12px;margin-bottom:8px}
+  .excl-row .cover-thumb{opacity:.6}
+  .ex-title{flex:1;min-width:0;font-family:var(--display);font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+  .incl-btn{font-family:var(--mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--ok);background:rgba(61,214,140,.08);border:1px solid rgba(61,214,140,.4);border-radius:8px;padding:8px 13px;flex-shrink:0}
+  .songact{display:flex;gap:9px;margin-top:14px}
+  .songact .btn{flex:1}
   .cover-thumb{object-fit:cover;border:1px solid var(--line);flex-shrink:0;background:var(--surface-3)}
   .cover-thumb.ph{display:flex;align-items:center;justify-content:center;color:var(--muted-2)}
   .cover-edit{display:flex;gap:13px;align-items:center;padding:2px 0 14px;border-bottom:1px solid var(--line);margin-bottom:4px}
   .cover-btns{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
   .cover-btns .btn{width:auto}
-  .cropwrap{position:fixed;inset:0;z-index:60;background:rgba(10,9,14,.8);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px;animation:fade .2s ease}
+  .cropwrap,.modalwrap{position:fixed;inset:0;z-index:60;background:rgba(10,9,14,.8);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:24px;animation:fade .2s ease}
   .cropcard{background:var(--surface);border:1px solid var(--line-2);border-radius:18px;padding:18px;width:100%;max-width:340px}
   .croptitle{font-family:var(--display);font-weight:600;font-size:15px;text-align:center;margin-bottom:14px}
   .cropview{position:relative;margin:0 auto;overflow:hidden;border-radius:12px;background:#000;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
@@ -81,6 +109,12 @@
   .cropzoom{width:100%;margin:16px 0 4px;accent-color:var(--keys)}
   .crophint{font-size:11.5px;color:var(--muted);text-align:center;margin-bottom:4px}
   .btn:disabled{opacity:.45;cursor:default}
+  .modalcard{background:var(--surface);border:1px solid var(--line-2);border-radius:18px;padding:16px;width:100%;max-width:360px;max-height:80vh;display:flex;flex-direction:column}
+  .modaltitle{font-family:var(--display);font-weight:600;font-size:15px;margin-bottom:8px}
+  .checklist{overflow-y:auto;flex:1;margin:0 -4px}
+  .checkrow{display:flex;align-items:center;gap:11px;padding:11px 4px;border-top:1px solid var(--line);font-size:14px;cursor:pointer}
+  .checkrow:first-child{border-top:none}
+  .checkrow input{width:20px;height:20px;accent-color:var(--keys);flex-shrink:0}
   .song-body{padding:8px 14px 16px;border-top:1px solid var(--line)}
   .editrow{display:flex;flex-direction:column;gap:8px;padding:11px 0}
   .editrow+.editrow{border-top:1px solid var(--line)}
@@ -155,6 +189,7 @@
   .authwrap{min-height:100vh;display:flex;flex-direction:column}
   .authmid{flex:1;display:flex;align-items:center;justify-content:center;padding:6px 18px 40px}
   .authmid>div{width:100%;max-width:380px}
+  .stagingbar{margin:0 18px 4px;font-size:12px;background:rgba(232,163,61,.14);border:1px solid rgba(232,163,61,.5);color:#F0C57A;border-radius:11px;padding:9px 13px;line-height:1.4;text-align:center;font-family:var(--mono);letter-spacing:.04em}
 </style>
 </head>
 <body>
@@ -172,10 +207,10 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef} = React;
+const VERSION='0.100';
 
 /* ============================================================
    ▼▼▼  PASTE YOUR FIREBASE CONFIG HERE  ▼▼▼
-   (Firebase console → Project settings → Your apps → Web app)
    ============================================================ */
 const firebaseConfig = {
   apiKey: "AIzaSyBzC67RTBTHDhUEn0Vxe1FWFrFBwq5UK2Q",
@@ -208,8 +243,8 @@ const uid = () => Math.random().toString(36).slice(2,9);
 const ICON = {
   keys:(<g><rect x="2.5" y="7" width="19" height="10" rx="1.4"/><path d="M6.5 7v5 M10 7v5 M14 7v5 M17.5 7v5"/></g>),
   drums:(<g><path d="M4.5 2.5 L11 6 M19.5 2.5 L13 6"/><ellipse cx="12" cy="9" rx="6.5" ry="2.2"/><path d="M5.5 9v4.6c0 1.2 2.9 2.2 6.5 2.2s6.5-1 6.5-2.2V9"/></g>),
-  guitar:(<g><path d="M12 21 V12.4"/><path d="M9.4 12.4 C7.7 11.9 7.1 9.7 7.9 7.6 C8.8 5.2 11 3.9 13.6 4.1 C16.1 4.3 17.2 6 16.7 8.1 C16.2 10.4 14.9 12 12.8 12.4 Z"/><g fill="currentColor" stroke="none"><circle cx="7.7" cy="6.7" r=".8"/><circle cx="7.2" cy="8.7" r=".8"/><circle cx="7.5" cy="10.5" r=".8"/><circle cx="14.7" cy="5.5" r=".8"/><circle cx="15.7" cy="7.3" r=".8"/><circle cx="15.6" cy="9.3" r=".8"/></g></g>),
-  bass:(<g><path d="M12 21 V12.4"/><path d="M9.4 12.4 C7.7 11.9 7.1 9.7 7.9 7.6 C8.8 5.2 11 3.9 13.6 4.1 C16.1 4.3 17.2 6 16.7 8.1 C16.2 10.4 14.9 12 12.8 12.4 Z"/><g fill="currentColor" stroke="none"><circle cx="7.5" cy="7.1" r="1"/><circle cx="7.2" cy="9.7" r="1"/><circle cx="15.1" cy="6.1" r="1"/><circle cx="15.5" cy="8.7" r="1"/></g></g>),
+  guitar:(<g><path d="M12 21 V11.5"/><rect x="9.6" y="3.6" width="4.8" height="8" rx="2"/><path d="M9.6 5.3 H7.7 M9.6 7.6 H7.7 M9.6 9.9 H7.7 M14.4 5.3 H16.3 M14.4 7.6 H16.3 M14.4 9.9 H16.3"/><g fill="currentColor" stroke="none"><circle cx="7" cy="5.3" r="1"/><circle cx="7" cy="7.6" r="1"/><circle cx="7" cy="9.9" r="1"/><circle cx="17" cy="5.3" r="1"/><circle cx="17" cy="7.6" r="1"/><circle cx="17" cy="9.9" r="1"/></g></g>),
+  bass:(<g><path d="M12 21 V11.5"/><rect x="9.6" y="4.2" width="4.8" height="7.3" rx="2"/><path d="M9.6 6.2 H7.5 M9.6 9.2 H7.5 M14.4 6.2 H16.5 M14.4 9.2 H16.5"/><g fill="currentColor" stroke="none"><circle cx="6.8" cy="6.2" r="1.15"/><circle cx="6.8" cy="9.2" r="1.15"/><circle cx="17.2" cy="6.2" r="1.15"/><circle cx="17.2" cy="9.2" r="1.15"/></g></g>),
   vocals:(<g><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.8 11 A6.2 6.2 0 0 0 18.2 11"/><path d="M12 17.2 V21 M8.5 21 H15.5"/></g>),
 };
 function InstrIcon({id,size=15}){
@@ -235,31 +270,47 @@ function CoverThumb({src,size=46,radius=10}){
 
 /* ---------- Firebase layer ---------- */
 function configReady(){ return firebaseConfig.apiKey && firebaseConfig.apiKey.indexOf('PASTE')!==0; }
+function boardId(){
+  try{
+    const p=new URLSearchParams(location.search);
+    let b=p.get('board');
+    if(!b && /staging/i.test(location.pathname)) b='staging';
+    b=(b||'main').replace(/[^a-zA-Z0-9_-]/g,'');
+    return b||'main';
+  }catch(_){ return 'main'; }
+}
+let BOARD='main';
 let auth=null, db=null, storage=null, boardRef=null, fbOk=false;
 function initFirebase(){
   if(fbOk) return true;
   try{
     firebase.initializeApp(firebaseConfig);
     auth=firebase.auth(); db=firebase.firestore(); storage=firebase.storage();
-    boardRef=db.collection('boards').doc('main');
+    BOARD=boardId();
+    boardRef=db.collection('boards').doc(BOARD);
     fbOk=true;
   }catch(e){ fbOk=false; }
   return fbOk;
+}
+function isStaging(){ return BOARD!=='main'; }
+async function cloneLiveToStaging(){
+  const snap=await db.collection('boards').doc('main').get();
+  const data=snap.exists?snap.data():defaultState();
+  data._updatedAt=new Date().toISOString();
+  await db.collection('boards').doc('staging').set(JSON.parse(JSON.stringify(data)));
 }
 function actionSettings(){ return { url: location.href.split('#')[0].split('?')[0], handleCodeInApp:true }; }
 function sendLink(email){
   return auth.sendSignInLinkToEmail(email, actionSettings()).then(()=>{ try{ localStorage.setItem('sc_email', email); }catch(_){} });
 }
 async function completeLinkIfPresent(){
-  try{
-    if(!auth.isSignInWithEmailLink(location.href)) return;
-    let email=null; try{ email=localStorage.getItem('sc_email'); }catch(_){}
-    if(!email) email=window.prompt('Confirm your email to finish signing in');
-    if(!email) return;
-    await auth.signInWithEmailLink(email, location.href);
-    try{ localStorage.removeItem('sc_email'); }catch(_){}
-    history.replaceState(null,'',location.pathname);
-  }catch(e){ /* surfaced by caller via state if needed */ throw e; }
+  if(!auth.isSignInWithEmailLink(location.href)) return;
+  let email=null; try{ email=localStorage.getItem('sc_email'); }catch(_){}
+  if(!email) email=window.prompt('Confirm your email to finish signing in');
+  if(!email) return;
+  await auth.signInWithEmailLink(email, location.href);
+  try{ localStorage.removeItem('sc_email'); }catch(_){}
+  history.replaceState(null,'',location.pathname);
 }
 let latestStamp=null, saveT=null, pendingDoc=null;
 function saveState(s){
@@ -269,18 +320,22 @@ function saveState(s){
 }
 function subscribeBoard(onData, onDenied){
   return boardRef.onSnapshot((snap)=>{
-    if(snap.metadata.hasPendingWrites) return;     // ignore our own optimistic writes
+    if(snap.metadata.hasPendingWrites) return;
     onData(snap.exists ? snap.data() : null);
-  }, (err)=>{ if(err && (err.code==='permission-denied'||err.code==='unauthenticated')) onDenied(err); else onDenied(err); });
+  }, (err)=>{ onDenied(err); });
 }
-async function uploadCover(songId, dataUrl){
+function coverPath(songId){ return 'covers/'+BOARD+'/'+songId+'.jpg'; }
+function bandArtPath(){ return 'bandart/'+BOARD+'.jpg'; }
+async function uploadImage(path, dataUrl){
   const blob = await (await fetch(dataUrl)).blob();
-  const ref = storage.ref().child('covers/'+songId+'.jpg');
+  const ref = storage.ref().child(path);
   await ref.put(blob, {contentType:'image/jpeg'});
   return await ref.getDownloadURL();
 }
+const uploadCover = (songId,dataUrl)=> uploadImage(coverPath(songId), dataUrl);
+const uploadBandArt = (dataUrl)=> uploadImage(bandArtPath(), dataUrl);
 async function uploadFileToStorage(id, file){
-  const path = 'files/'+id+'-'+file.name.replace(/[^\w.\-]+/g,'_');
+  const path = 'files/'+BOARD+'/'+id+'-'+file.name.replace(/[^\w.\-]+/g,'_');
   const ref = storage.ref().child(path);
   await ref.put(file);
   const url = await ref.getDownloadURL();
@@ -291,13 +346,14 @@ function deleteStoragePath(path){ try{ if(storage && path) storage.ref().child(p
 /* ---------- state helpers ---------- */
 function defaultState(){
   const members={}; INSTR.forEach(i=>members[i.id]={name:i.label});
-  return {band:'', concert:{name:'',date:'',venue:''}, members, songs:[], rehearsals:[], _rev:0, _updatedAt:null};
+  return {band:'', bandArt:'', concert:{name:'',date:'',venue:''}, members, songs:[], rehearsals:[], _rev:0, _updatedAt:null};
 }
 function freshParts(){ const p={}; INSTR.forEach(i=>p[i.id]='todo'); return p; }
 function deriveFromStatus(st){ return st==='ready'?'ready' : (st==='practicing')?'practicing' : (st==='rehearsing'||st==='learning')?'learning' : 'todo'; }
 function migrate(s){
   if(typeof s._rev!=='number') s._rev=0;
   if(s.band===undefined) s.band='';
+  if(s.bandArt===undefined) s.bandArt='';
   if(!s.concert) s.concert={name:'',date:'',venue:''};
   if(!s.members){ s.members={}; INSTR.forEach(i=>s.members[i.id]={name:i.label}); }
   if(!Array.isArray(s.songs)) s.songs=[];
@@ -309,7 +365,11 @@ function migrate(s){
     if(!Array.isArray(song.guests)) song.guests=[];
     song.guests = song.guests.slice(0,MAX_GUESTS).map(g=>({ id:g.id||uid(), name:g.name||'', status:VALID(g.status)?g.status:'todo' }));
     if(!Array.isArray(song.files)) song.files=[];
+    if(typeof song.excluded!=='boolean') song.excluded=false;
+    if(typeof song.encore!=='boolean') song.encore=false;
+    if(song.excluded) song.encore=false;
   });
+  { const act=s.songs.filter(x=>!x.excluded), exc=s.songs.filter(x=>x.excluded); s.songs=[...act,...exc]; }
   if(!Array.isArray(s.rehearsals)) s.rehearsals=[];
   s.rehearsals.forEach(r=>{
     if(!Array.isArray(r.focusLearn)) r.focusLearn=[];
@@ -325,6 +385,10 @@ function toggleFocus(learn,practice,group,id){
   if(group==='practice' && !inP) P=[...P,id];
   return {learn:L,practice:P};
 }
+function isOther(x){ return String(x).indexOf('other:')===0; }
+function getOther(arr){ const e=(arr||[]).find(isOther); return e? e.slice(6):''; }
+function setOtherInArr(arr,text){ const cleaned=(arr||[]).filter(x=>!isOther(x)); return text? [...cleaned,'other:'+text] : cleaned; }
+function focusName(id,songs){ if(isOther(id)) return id.slice(6)||'Other'; const s=songs.find(y=>y.id===id); return s?s.title:null; }
 function fmtDate(iso){ if(!iso) return ''; const d=new Date(iso); return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}); }
 function fmtTime(iso){ if(!iso) return ''; const d=new Date(iso); return d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); }
 function daysUntil(iso){ if(!iso) return null; const ms=new Date(iso).setHours(23,59,59)-Date.now(); return Math.ceil(ms/86400000); }
@@ -358,7 +422,7 @@ function validEmail(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((e||'').trim())
 /* ============================== AUTH SHELL & SCREENS ============================== */
 function AuthShell({children}){
   return <div className="authwrap">
-    <div className="topbar"><div className="wordmark"><span className="dot"></span><h1>SOUNDCHECK</h1></div></div>
+    <div className="topbar"><div className="wordmark"><span className="dot"></span><h1>SOUNDCHECK</h1><span className="ver">v{VERSION}</span></div></div>
     <div className="authmid"><div>{children}</div></div>
   </div>;
 }
@@ -396,7 +460,7 @@ function ConfigScreen(){
   return (
     <div className="card">
       <div style={{fontFamily:'var(--display)',fontWeight:600,fontSize:18,marginBottom:6}}>Almost ready</div>
-      <div style={{fontSize:13,color:'var(--muted)',lineHeight:1.55}}>This app needs your Firebase keys. Open the HTML file, paste your <b style={{color:'var(--text)'}}>firebaseConfig</b> into the marked block near the top, then re-upload it to your host. After that, this screen becomes the band sign-in.</div>
+      <div style={{fontSize:13,color:'var(--muted)',lineHeight:1.55}}>This app needs your Firebase keys. Open the HTML file, paste your <b style={{color:'var(--text)'}}>firebaseConfig</b> into the marked block near the top, then re-upload it to your host.</div>
     </div>
   );
 }
@@ -404,7 +468,7 @@ function Loading({label}){ return <div className="card" style={{textAlign:'cente
 
 /* ============================== MAIN APP ============================== */
 function App(){
-  const [phase,setPhase]=useState('loading');   // loading | config | signin | sent | denied | ready
+  const [phase,setPhase]=useState('loading');
   const [user,setUser]=useState(null);
   const [state,setState]=useState(null);
   const [tab,setTab]=useState('stage');
@@ -457,7 +521,8 @@ function App(){
 
   return (
     <React.Fragment>
-      <Header state={state} />
+      <Header state={state} update={update} />
+      {isStaging() && <div className="stagingbar">STAGING COPY · changes here don’t touch the live board</div>}
       {tab==='stage'    && <Stage state={state} go={setTab} />}
       {tab==='setlist'  && <Setlist state={state} update={update} />}
       {tab==='rehearse' && <Rehearsals state={state} update={update} />}
@@ -475,16 +540,39 @@ function prettyErr(e){
   return e.message || 'Something went wrong. Try again.';
 }
 
-function Header({state}){
+function BandArt({src,update}){
+  const fileRef=useRef(null);
+  const [cropSrc,setCropSrc]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const onPick=(e)=>{ const file=e.target.files&&e.target.files[0]; e.target.value=''; if(!file) return; const rd=new FileReader(); rd.onload=()=>setCropSrc(rd.result); rd.readAsDataURL(file); };
+  const onDone=async(data)=>{ setCropSrc(null); if(!data) return; setBusy(true); try{ const url=await uploadBandArt(data); update(s=>{s.bandArt=url;return s;}); }catch(e){} setBusy(false); };
+  return (
+    <React.Fragment>
+      <div className="bandart" onClick={()=>fileRef.current&&fileRef.current.click()} title="Tap to set or change band artwork">
+        <input ref={fileRef} type="file" accept="image/*" hidden onChange={onPick}/>
+        <CoverThumb src={src} size={52} radius={13}/>
+        {busy
+          ? <div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,.5)',borderRadius:13,fontSize:10,color:'#fff'}}>…</div>
+          : <div className="edithint">✎</div>}
+      </div>
+      {cropSrc && <CropModal src={cropSrc} onCancel={()=>setCropSrc(null)} onDone={onDone}/>}
+    </React.Fragment>
+  );
+}
+
+function Header({state,update}){
   const d = daysUntil(state.concert.date);
   const sub = [state.concert.name, state.concert.venue, state.concert.date?fmtDate(state.concert.date):null].filter(Boolean).join(' · ') || 'Set up your show in Setup';
   return (
     <div className="topbar">
-      <div className="wordmark"><span className="dot"></span><h1>SOUNDCHECK</h1></div>
+      <div className="wordmark"><span className="dot"></span><h1>SOUNDCHECK</h1><span className="ver">v{VERSION}</span></div>
       <div className="topmeta">
-        <div>
-          <div className="band" dir="auto">{state.band || 'Your band'}</div>
-          <div className="concert-sub">{sub}</div>
+        <div className="topleft">
+          <BandArt src={state.bandArt} update={update}/>
+          <div style={{minWidth:0}}>
+            <div className="band" dir="auto">{state.band || 'Your band'}</div>
+            <div className="concert-sub">{sub}</div>
+          </div>
         </div>
         {d!==null &&
           <div className="countchip">
@@ -522,7 +610,7 @@ function StatusPills({value,color,onPick}){
 }
 
 function Stage({state,go}){
-  const songs=state.songs;
+  const songs=state.songs.filter(x=>!x.excluded);
   const overall = songs.length? songs.reduce((a,s)=>a+songReadiness(s),0)/songs.length : 0;
   const totalMin = songs.reduce((a,s)=>a+(Number(s.duration)||0),0);
   const readyCount = songs.filter(s=>songReadiness(s)===1).length;
@@ -588,15 +676,54 @@ function Setlist({state,update}){
   const [open,setOpen]=useState(null);
   const [adding,setAdding]=useState(false);
   const [roleFilter,setRoleFilter]=useState(null);
+  const [reorder,setReorder]=useState(false);
   const songs=state.songs;
-  const addSong = (data)=>{ update(s=>{ s.songs.push({id:uid(),parts:freshParts(),guests:[],files:[],cover:'',notes:'',...data}); return s;}); setAdding(false); };
-  const shown = roleFilter ? songs.filter(s=>s.parts[roleFilter]!=='ready') : songs;
+  const active=songs.filter(x=>!x.excluded);
+  const excluded=songs.filter(x=>x.excluded);
+  const numberOf={}; active.forEach((s,i)=>{ numberOf[s.id]=i+1; });
+
+  const addSong=(data)=>{ update(s=>{
+    const song={id:uid(),parts:freshParts(),guests:[],files:[],cover:'',notes:'',excluded:false,encore:false,...data};
+    const act=s.songs.filter(x=>!x.excluded), exc=s.songs.filter(x=>x.excluded);
+    s.songs=[...act,song,...exc]; return s; }); setAdding(false); };
+
+  const moveActive=(id,dir)=>update(s=>{
+    const act=s.songs.filter(x=>!x.excluded), exc=s.songs.filter(x=>x.excluded);
+    const i=act.findIndex(x=>x.id===id), j=i+dir;
+    if(i<0||j<0||j>=act.length) return s;
+    const t=act[i]; act[i]=act[j]; act[j]=t;
+    s.songs=[...act,...exc]; return s; });
+
+  const excludeSong=(id)=>update(s=>{
+    const so=s.songs.find(x=>x.id===id); if(so){ so.excluded=true; so.encore=false; }
+    const act=s.songs.filter(x=>!x.excluded), exc=s.songs.filter(x=>x.excluded);
+    s.songs=[...act,...exc]; return s; });
+
+  const includeSong=(id)=>update(s=>{
+    const so=s.songs.find(x=>x.id===id); if(!so) return s; so.excluded=false;
+    const others=s.songs.filter(x=>x.id!==id);
+    const act=others.filter(x=>!x.excluded), exc=others.filter(x=>x.excluded);
+    s.songs=[...act,so,...exc]; return s; });
+
+  const toggleEncore=(id)=>update(s=>{ const so=s.songs.find(x=>x.id===id); if(so&&!so.excluded) so.encore=!so.encore; return s; });
+
+  const shown = roleFilter ? active.filter(s=>s.parts[roleFilter]!=='ready') : active;
   const roleLabel = roleFilter ? state.members[roleFilter].name : null;
+
   return (
     <div className="page">
-      <div className="section-h">Setlist · {songs.length}</div>
+      <div className="section-h">Setlist · {active.length}{excluded.length?(' · '+excluded.length+' out'):''}</div>
       {adding && <SongForm onSave={addSong} onCancel={()=>setAdding(false)}/>}
-      {songs.length>0 &&
+
+      {active.length>1 && !adding &&
+        <div className="setlist-tools">
+          <button className={'reorder-btn'+(reorder?' on':'')} onClick={()=>{ setReorder(v=>!v); setRoleFilter(null); setOpen(null); }}>
+            {reorder?'✓ Done':'⇅ Reorder'}
+          </button>
+          {reorder && <span className="ro-hint">↑ ↓ set play order · ★ marks an encore · ⊘ moves a song out</span>}
+        </div>}
+
+      {!reorder && active.length>0 &&
         <div className="filterbar">
           <button className={'chip'+(roleFilter===null?' on':'')} onClick={()=>setRoleFilter(null)}>All songs</button>
           {INSTR.map(i=>(
@@ -605,16 +732,44 @@ function Setlist({state,update}){
               onClick={()=>setRoleFilter(i.id)}><InstrBadge id={i.id} size={26}/></button>
           ))}
         </div>}
-      {roleFilter && <div className="filterhint">Songs where {roleLabel} still needs work · {shown.length}</div>}
-      {songs.length===0 && !adding &&
+      {!reorder && roleFilter && <div className="filterhint">Songs where {roleLabel} still needs work · {shown.length}</div>}
+
+      {active.length===0 && excluded.length===0 && !adding &&
         <div className="empty"><div className="big">No songs yet</div><div className="sm">Add the first track you're working up for the show.</div></div>}
-      {songs.length>0 && roleFilter && shown.length===0 &&
+      {active.length>0 && roleFilter && shown.length===0 &&
         <div className="empty"><div className="big">{roleLabel} is all set</div><div className="sm">Every song on the list is marked ready for this part.</div></div>}
-      {shown.map(s=>(
-        <SongRow key={s.id} s={s} members={state.members} open={open===s.id} toggle={()=>setOpen(open===s.id?null:s.id)} update={update}/>
-      ))}
-      {!adding && <div className="add-bar"><button className="btn ghost" onClick={()=>{setAdding(true);window.scrollTo({top:0,behavior:'smooth'});}}>+ Add song</button></div>}
-      {songs.length>0 &&
+
+      {reorder
+        ? active.map(s=>(
+            <div className="ro-row" key={s.id}>
+              <span className={'ro-num'+(s.encore?' enc':'')}>{numberOf[s.id]}</span>
+              <span className="ro-title" dir="auto">{s.title}</span>
+              <button className={'ro-btn enc'+(s.encore?' on':'')} onClick={()=>toggleEncore(s.id)} aria-label="Toggle encore">★</button>
+              <button className="ro-btn excl" onClick={()=>excludeSong(s.id)} aria-label="Exclude from set">⊘</button>
+              <button className="ro-btn" disabled={numberOf[s.id]===1} onClick={()=>moveActive(s.id,-1)} aria-label="Move up">↑</button>
+              <button className="ro-btn" disabled={numberOf[s.id]===active.length} onClick={()=>moveActive(s.id,1)} aria-label="Move down">↓</button>
+            </div>
+          ))
+        : shown.map(s=>(
+            <SongRow key={s.id} s={s} num={numberOf[s.id]} members={state.members}
+              open={open===s.id} toggle={()=>setOpen(open===s.id?null:s.id)} update={update}
+              onExclude={()=>excludeSong(s.id)} onToggleEncore={()=>toggleEncore(s.id)}/>
+          ))}
+
+      {!reorder && excluded.length>0 &&
+        <React.Fragment>
+          <div className="excl-h">Excluded · {excluded.length}</div>
+          {excluded.map(s=>(
+            <div className="excl-row" key={s.id}>
+              <CoverThumb src={s.cover} size={38} radius={9}/>
+              <span className="ex-title" dir="auto">{s.title}</span>
+              <button className="incl-btn" onClick={()=>includeSong(s.id)}>＋ Include</button>
+            </div>
+          ))}
+        </React.Fragment>}
+
+      {!reorder && !adding && <div className="add-bar"><button className="btn ghost" onClick={()=>{setAdding(true);window.scrollTo({top:0,behavior:'smooth'});}}>+ Add song</button></div>}
+      {active.length>0 && !reorder &&
         <div className="legend">
           <span><i className="lg" style={{borderColor:'var(--line-2)'}}></i>to do</span>
           <span><i className="lg" style={{borderColor:'var(--keys)'}}></i>learning</span>
@@ -625,32 +780,31 @@ function Setlist({state,update}){
   );
 }
 
-function SongRow({s,members,open,toggle,update}){
+function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore}){
   const r=songReadiness(s);
   const [linkMode,setLinkMode]=useState(false);
   const [linkUrl,setLinkUrl]=useState('');
   const [linkName,setLinkName]=useState('');
   const [fileMsg,setFileMsg]=useState('');
   const [cropSrc,setCropSrc]=useState(null);
-  const [busy,setBusy]=useState('');   // 'cover' | 'file' | ''
+  const [busy,setBusy]=useState('');
   const setField=(k,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);so[k]=v;return st;});
   const setRole=(iid,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);so.parts[iid]=v;return st;});
   const addGuest=()=>update(st=>{const so=st.songs.find(x=>x.id===s.id);if(so.guests.length<MAX_GUESTS)so.guests.push({id:uid(),name:'',status:'todo'});return st;});
   const setGuestName=(gid,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);const g=so.guests.find(x=>x.id===gid);if(g)g.name=v;return st;});
   const setGuestStatus=(gid,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);const g=so.guests.find(x=>x.id===gid);if(g)g.status=v;return st;});
   const delGuest=(gid)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);so.guests=so.guests.filter(x=>x.id!==gid);return st;});
-  const del=()=>{ deleteStoragePath('covers/'+s.id+'.jpg'); (s.files||[]).forEach(f=>{ if(f.kind==='upload'&&f.path) deleteStoragePath(f.path); }); update(st=>{st.songs=st.songs.filter(x=>x.id!==s.id);return st;}); };
+  const del=()=>{ deleteStoragePath(coverPath(s.id)); (s.files||[]).forEach(f=>{ if(f.kind==='upload'&&f.path) deleteStoragePath(f.path); }); update(st=>{st.songs=st.songs.filter(x=>x.id!==s.id);return st;}); };
 
   const onCoverPick=(e)=>{ setFileMsg(''); const file=e.target.files&&e.target.files[0]; e.target.value=''; if(!file) return;
     const rd=new FileReader(); rd.onload=()=>setCropSrc(rd.result); rd.onerror=()=>setFileMsg('Couldn’t read that image.'); rd.readAsDataURL(file); };
   const onCropDone=async(data)=>{ setCropSrc(null); if(!data){ setFileMsg('Couldn’t process that image.'); return; }
     setBusy('cover'); try{ const url=await uploadCover(s.id,data); setField('cover',url); }catch(err){ setFileMsg('Cover upload failed — '+prettyErr(err)); } setBusy(''); };
-  const clearCover=()=>{ deleteStoragePath('covers/'+s.id+'.jpg'); setField('cover',''); };
+  const clearCover=()=>{ deleteStoragePath(coverPath(s.id)); setField('cover',''); };
 
   const onUpload=(e)=>{ setFileMsg(''); const file=e.target.files&&e.target.files[0]; e.target.value=''; if(!file) return;
     if(file.size>FILE_CAP){ setFileMsg('That file is over 25 MB — add it as a link instead.'); return; }
-    setBusy('file');
-    const id=uid();
+    setBusy('file'); const id=uid();
     uploadFileToStorage(id,file).then(({url,path})=>{
       update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id,name:file.name,kind:'upload',url,path,size:file.size,type:fileKind(file.name)});return st;});
     }).catch(err=>setFileMsg('Upload failed — '+prettyErr(err))).finally(()=>setBusy(''));
@@ -669,9 +823,13 @@ function SongRow({s,members,open,toggle,update}){
   return (
     <div className="song">
       <button className="song-head" onClick={toggle}>
+        {num!=null && <span className={'songnum'+(s.encore?' enc':'')}>{num}</span>}
         <CoverThumb src={s.cover} size={46} radius={10}/>
         <div style={{minWidth:0,flex:1}}>
-          <div className="song-title" dir="auto">{s.title}</div>
+          <div style={{display:'flex',alignItems:'center',gap:7,minWidth:0}}>
+            <span className="song-title" dir="auto" style={{minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.title}</span>
+            {s.encore && <span className="enc-pill">★ Enc</span>}
+          </div>
           <div className="song-meta" dir="auto">{meta.join(' · ')||'—'}</div>
         </div>
         <Cells song={s}/>
@@ -727,9 +885,18 @@ function SongRow({s,members,open,toggle,update}){
                 <button className="addfile" onClick={()=>setLinkMode(true)}>Add link</button>
               </div>}
           {fileMsg && <div className="filemsg">{fileMsg}</div>}
-          <div className="fieldgrid">
+          <label className="fl" style={{marginTop:16}}>Details</label>
+          <div className="fieldgrid" style={{marginTop:0}}>
+            <div className="full"><label className="fl">Artist</label><input className="inp" dir="auto" value={s.artist||''} onChange={e=>setField('artist',e.target.value)} placeholder="Original artist"/></div>
+            <div><label className="fl">Key</label><input className="inp" value={s.songKey||''} onChange={e=>setField('songKey',e.target.value)} placeholder="Am"/></div>
+            <div><label className="fl">Tempo</label><input className="inp" inputMode="numeric" value={s.tempo||''} onChange={e=>setField('tempo',e.target.value)} placeholder="bpm"/></div>
+            <div className="full"><label className="fl">Length (min)</label><input className="inp" inputMode="numeric" value={s.duration||''} onChange={e=>setField('duration',e.target.value)} placeholder="4"/></div>
             <div className="full"><label className="fl">Notes / arrangement</label>
               <textarea className="inp" dir="auto" value={s.notes||''} onChange={e=>setField('notes',e.target.value)} placeholder="Intro repeats x2, key change before last chorus, who solos…"/></div>
+          </div>
+          <div className="songact">
+            <button className="btn ghost" onClick={onToggleEncore} style={s.encore?{color:'var(--guitar)',borderColor:'rgba(244,169,60,.5)'}:null}>{s.encore?'★ Encore on':'Mark as encore'}</button>
+            <button className="btn ghost" onClick={onExclude}>Exclude from set</button>
           </div>
           <div className="btnrow"><button className="btn danger" onClick={del}>Remove song</button></div>
         </div>}
@@ -752,7 +919,7 @@ function SongForm({onSave,onCancel}){
         <div><label className="fl">Tempo</label><input className="inp" inputMode="numeric" value={f.tempo} onChange={e=>set('tempo',e.target.value)} placeholder="bpm"/></div>
         <div className="full"><label className="fl">Length (min)</label><input className="inp" inputMode="numeric" value={f.duration} onChange={e=>set('duration',e.target.value)} placeholder="4"/></div>
       </div>
-      <div className="banner" style={{marginTop:12}}>Add the album cover after creating the song — tap it open and use “Add cover art”.</div>
+      <div className="banner" style={{marginTop:12}}>You can edit any of these later, and add the album cover, by tapping the song open. </div>
       <div className="btnrow">
         <button className="btn ghost" onClick={onCancel}>Cancel</button>
         <button className="btn" onClick={()=> f.title.trim() && onSave({...f,title:f.title.trim()})}>Add to setlist</button>
@@ -765,26 +932,62 @@ function FocusTags({songs,learn,practice}){
   const row=(ids,color,label)=> ids && ids.length? (
     <div className="focus-tags" style={{marginTop:8}}>
       <span className="ftag" style={{borderColor:color,color,background:'transparent'}}>{label}</span>
-      {ids.map(id=>{const s=songs.find(x=>x.id===id);return s?<span className="ftag" key={id} dir="auto">{s.title}</span>:null;})}
+      {ids.map(id=>{ const n=focusName(id,songs); return n?<span className="ftag" key={id} dir="auto">{n}</span>:null;})}
     </div>
   ):null;
   if((!learn||!learn.length) && (!practice||!practice.length)) return null;
   return <React.Fragment>{row(practice,'var(--warn)','Practice')}{row(learn,'var(--learn)','Learn')}</React.Fragment>;
 }
-function FocusPicker({songs,learn,practice,onToggle}){
-  if(!songs.length) return <div style={{fontSize:12,color:'var(--muted)',marginTop:6}}>Add songs first to pick focus tracks.</div>;
+function focusSummary(arr,songs){
+  const a=arr||[]; if(!a.length) return 'Choose songs…';
+  const names=a.map(x=>focusName(x,songs)).filter(Boolean);
+  return names.length<=2 ? names.join(', ') : (names.length+' selected');
+}
+function FocusModal({group,songs,selected,onToggleSong,onSetOther,onClose}){
+  const [other,setOther]=useState(getOther(selected));
+  const [otherOn,setOtherOn]=useState(!!getOther(selected));
+  const isOn=(id)=> (selected||[]).includes(id);
+  const done=()=>{ onSetOther(otherOn? other.trim():''); onClose(); };
+  return (
+    <div className="modalwrap" onClick={done}>
+      <div className="modalcard" onClick={e=>e.stopPropagation()}>
+        <div className="modaltitle">{group==='practice'?'Practice — polish & run':'Learn — new songs'}</div>
+        <div className="checklist">
+          {songs.map(s=>(
+            <label className="checkrow" key={s.id}>
+              <input type="checkbox" checked={isOn(s.id)} onChange={()=>onToggleSong(s.id)}/>
+              <span dir="auto">{s.title}</span>
+            </label>
+          ))}
+          {songs.length===0 && <div style={{fontSize:12.5,color:'var(--muted-2)',padding:'10px 4px'}}>No songs in the setlist yet.</div>}
+          <label className="checkrow">
+            <input type="checkbox" checked={otherOn} onChange={()=>setOtherOn(v=>!v)}/>
+            <span>Other</span>
+          </label>
+          {otherOn && <input className="inp" dir="auto" style={{marginTop:8}} value={other} onChange={e=>setOther(e.target.value)} placeholder="e.g. encore, new intro, warm-up…" autoFocus/>}
+        </div>
+        <div className="btnrow"><button className="btn" onClick={done}>Done</button></div>
+      </div>
+    </div>
+  );
+}
+function FocusPicker({songs,learn,practice,onToggle,onSetOther}){
+  const [modal,setModal]=useState(null);
   return (
     <React.Fragment>
       <label className="fl" style={{marginTop:14}}>Practice — polish & run</label>
-      <div className="chip-pick">
-        {songs.map(s=>{const on=practice.includes(s.id);
-          return <button key={s.id} className={'chip'+(on?' on':'')} style={on?{background:'var(--warn)',borderColor:'var(--warn)',color:'#15141B'}:{}} onClick={()=>onToggle('practice',s.id)} dir="auto">{s.title}</button>;})}
-      </div>
+      <button className="btn ghost sm" style={{width:'100%',justifyContent:'space-between'}} onClick={()=>setModal('practice')}>
+        <span dir="auto" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{focusSummary(practice,songs)}</span><span style={{color:'var(--muted)'}}>＋</span>
+      </button>
       <label className="fl" style={{marginTop:14}}>Learn — new songs to work up</label>
-      <div className="chip-pick">
-        {songs.map(s=>{const on=learn.includes(s.id);
-          return <button key={s.id} className={'chip'+(on?' on':'')} style={on?{background:'var(--learn)',borderColor:'var(--learn)',color:'#fff'}:{}} onClick={()=>onToggle('learn',s.id)} dir="auto">{s.title}</button>;})}
-      </div>
+      <button className="btn ghost sm" style={{width:'100%',justifyContent:'space-between'}} onClick={()=>setModal('learn')}>
+        <span dir="auto" style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{focusSummary(learn,songs)}</span><span style={{color:'var(--muted)'}}>＋</span>
+      </button>
+      {modal && <FocusModal group={modal} songs={songs}
+        selected={modal==='practice'?practice:learn}
+        onToggleSong={(id)=>onToggle(modal,id)}
+        onSetOther={(t)=>onSetOther(modal,t)}
+        onClose={()=>setModal(null)}/>}
     </React.Fragment>
   );
 }
@@ -816,6 +1019,8 @@ function RehCard({r,state,patch,del}){
   const songs=state.songs;
   const guestList=allGuests(songs);
   const [editFocus,setEditFocus]=useState(false);
+  const onToggle=(group,id)=>patch(r.id,x=>{ const res=toggleFocus(x.focusLearn||[],x.focusPractice||[],group,id); x.focusLearn=res.learn; x.focusPractice=res.practice; });
+  const onSetOther=(group,text)=>patch(r.id,x=>{ const key=group==='practice'?'focusPractice':'focusLearn'; x[key]=setOtherInArr(x[key]||[],text); });
   return (
     <div className={'reh'+(r.done?' done':'')}>
       <div className="reh-top">
@@ -830,8 +1035,7 @@ function RehCard({r,state,patch,del}){
       {!editFocus
         ? <button className="btn sm ghost" style={{marginTop:11}} onClick={()=>setEditFocus(true)}>{(r.focusLearn&&r.focusLearn.length)||(r.focusPractice&&r.focusPractice.length)?'Edit focus songs':'+ Set focus songs'}</button>
         : <div style={{marginTop:4}}>
-            <FocusPicker songs={songs} learn={r.focusLearn||[]} practice={r.focusPractice||[]}
-              onToggle={(group,id)=>patch(r.id,x=>{ const res=toggleFocus(x.focusLearn||[],x.focusPractice||[],group,id); x.focusLearn=res.learn; x.focusPractice=res.practice; })}/>
+            <FocusPicker songs={songs} learn={r.focusLearn||[]} practice={r.focusPractice||[]} onToggle={onToggle} onSetOther={onSetOther}/>
             <div className="btnrow"><button className="btn sm" onClick={()=>setEditFocus(false)}>Done</button></div>
           </div>}
       <div className="att">
@@ -851,6 +1055,7 @@ function RehForm({songs,members,onSave,onCancel}){
   const guestList=allGuests(songs);
   const [f,setF]=useState({date:'',location:'',notes:'',learn:[],practice:[],repeat:'none',occurrences:4,attendance:Object.fromEntries(INSTR.map(i=>[i.id,true]))});
   const onToggleFocus=(group,id)=>setF(p=>{const res=toggleFocus(p.learn,p.practice,group,id);return {...p,learn:res.learn,practice:res.practice};});
+  const onSetOther=(group,text)=>setF(p=>({...p,[group]:setOtherInArr(p[group],text)}));
   const toggleAtt=id=>setF(p=>({...p,attendance:{...p.attendance,[id]:!p.attendance[id]}}));
   const occ=Math.max(2,Math.min(12,+f.occurrences||2));
   const buildDates=()=>{ if(!f.date) return ['']; if(f.repeat==='none') return [f.date]; const step=f.repeat==='biweekly'?14:7; const out=[]; for(let k=0;k<occ;k++) out.push(addDaysLocal(f.date,step*k)); return out; };
@@ -877,7 +1082,7 @@ function RehForm({songs,members,onSave,onCancel}){
         </div>}
       {f.repeat!=='none' && !f.date && <div className="filterhint">Pick a date & time above to schedule the series.</div>}
       {multi && <div className="filterhint">Creates {dates.length} rehearsals · {fmtDate(dates[0])} → {fmtDate(dates[dates.length-1])}</div>}
-      <FocusPicker songs={songs} learn={f.learn} practice={f.practice} onToggle={onToggleFocus}/>
+      <FocusPicker songs={songs} learn={f.learn} practice={f.practice} onToggle={onToggleFocus} onSetOther={onSetOther}/>
       <label className="fl" style={{marginTop:14}}>Who's coming</label>
       <div className="chip-pick">
         {INSTR.map(i=><button key={i.id} className={'chip'+(f.attendance[i.id]?' on':'')} style={f.attendance[i.id]?{background:i.color,borderColor:i.color,display:'inline-flex',alignItems:'center',gap:6}:{display:'inline-flex',alignItems:'center',gap:6}} onClick={()=>toggleAtt(i.id)}><InstrIcon id={i.id} size={14}/>{members[i.id].name}</button>)}
@@ -895,24 +1100,39 @@ function RehForm({songs,members,onSave,onCancel}){
 
 function Setup({state,update,user,onSignOut}){
   const c=state.concert;
+  const [cloneMsg,setCloneMsg]=useState('');
   const setC=(k,v)=>update(s=>{s.concert[k]=v;return s;});
   const setBand=(v)=>update(s=>{s.band=v;return s;});
   const setMember=(id,v)=>update(s=>{s.members[id].name=v;return s;});
   const reset=()=>{ if(confirm('Clear all songs, rehearsals and concert details for the whole band?')) update(()=>defaultState()); };
+  const doClone=async()=>{ if(!confirm('Copy the current LIVE board into the staging copy? This overwrites any previous staging data.')) return; setCloneMsg('Copying…'); try{ await cloneLiveToStaging(); setCloneMsg('Done — open the app with ?board=staging to test.'); }catch(e){ setCloneMsg('Failed — '+prettyErr(e)); } };
   return (
     <div className="page">
       <div className="section-h">Account</div>
       <div className="card">
-        <div className="savepill" style={{marginBottom:10}}><i style={{background:'var(--ok)'}}></i>Live · synced for the whole band</div>
+        <div className="savepill" style={{marginBottom:10}}><i style={{background: isStaging()?'var(--warn)':'var(--ok)'}}></i>{isStaging()?'Staging copy · isolated from live':'Live · synced for the whole band'}</div>
         <div style={{fontSize:13,color:'var(--text)'}} dir="auto">{user?user.email:''}</div>
         {state._updatedAt && <div style={{fontSize:12,color:'var(--muted)',marginTop:4}}>Last change {timeAgo(state._updatedAt)}</div>}
         <div className="btnrow"><button className="btn ghost" onClick={onSignOut}>Sign out</button></div>
+      </div>
+
+      <div className="section-h">Testing & staging</div>
+      <div className="card">
+        <div style={{fontSize:12.5,color:'var(--muted)',lineHeight:1.55}}>You're on the <b style={{color: isStaging()?'var(--warn)':'var(--ok)'}}>{isStaging()?'staging':'live'}</b> board. Add <b style={{color:'var(--text)'}}>?board=staging</b> to the app URL to open a separate testing copy that can't affect the live board or its files.</div>
+        {!isStaging() &&
+          <React.Fragment>
+            <div style={{fontSize:12.5,color:'var(--muted)',lineHeight:1.5,marginTop:10}}>Tap below to copy this live board into staging so you can try a new version against real data.</div>
+            <div className="btnrow"><button className="btn ghost" onClick={doClone}>Copy live board → staging</button></div>
+          </React.Fragment>}
+        {isStaging() && <div style={{fontSize:12.5,color:'#F0C57A',lineHeight:1.5,marginTop:10}}>This is the throwaway copy. When a new version looks good here, publish its code to the main URL — the live board's data stays untouched.</div>}
+        {cloneMsg && <div style={{fontSize:12,color: cloneMsg.indexOf('Failed')===0?'var(--drums)':'var(--ok)',marginTop:9}}>{cloneMsg}</div>}
       </div>
 
       <div className="section-h">Band</div>
       <div className="card">
         <label className="fl">Band name</label>
         <input className="inp" dir="auto" value={state.band} onChange={e=>setBand(e.target.value)} placeholder="Your band"/>
+        <div className="banner" style={{marginTop:12}}>Set the band artwork by tapping the square next to the band name at the top of the app.</div>
       </div>
 
       <div className="section-h">The show</div>
@@ -938,7 +1158,7 @@ function Setup({state,update,user,onSignOut}){
 
       <div className="section-h">Members & access</div>
       <div className="card">
-        <div style={{fontSize:12.5,color:'var(--muted)',lineHeight:1.55}}>Only approved email addresses can open this board. To add or remove a bandmate, edit the email allowlist in your <b style={{color:'var(--text)'}}>Firestore</b> and <b style={{color:'var(--text)'}}>Storage</b> security rules in the Firebase console — no need to touch the app file.</div>
+        <div style={{fontSize:12.5,color:'var(--muted)',lineHeight:1.55}}>Only approved email addresses can open this board. To add or remove a bandmate, edit the email allowlist in your <b style={{color:'var(--text)'}}>Firestore</b> and <b style={{color:'var(--text)'}}>Storage</b> security rules in the Firebase console.</div>
       </div>
 
       <div className="add-bar"><button className="btn danger" onClick={reset}>Reset everything</button></div>
@@ -969,7 +1189,7 @@ function CropModal({src,onCancel,onDone}){
   return (
     <div className="cropwrap" onPointerUp={up}>
       <div className="cropcard">
-        <div className="croptitle">Position the cover</div>
+        <div className="croptitle">Position the image</div>
         <div className="cropview" style={{width:V,height:V}} onPointerDown={down} onPointerMove={moveH} onPointerUp={up}>
           <img src={src} draggable="false" style={{position:'absolute',left:off.x,top:off.y,width:dispW,height:dispH}}/>
           <div className="cropframe"></div>
@@ -978,7 +1198,7 @@ function CropModal({src,onCancel,onDone}){
         <div className="crophint">Drag to reposition · slide to zoom</div>
         <div className="btnrow">
           <button className="btn ghost" onClick={onCancel}>Cancel</button>
-          <button className="btn" onClick={done} disabled={!nat}>Use cover</button>
+          <button className="btn" onClick={done} disabled={!nat}>Use image</button>
         </div>
       </div>
     </div>
