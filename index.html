@@ -231,7 +231,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef} = React;
-const VERSION='0.104';
+const VERSION='0.105';
 
 /* ============================================================
    ▼▼▼  PASTE YOUR FIREBASE CONFIG HERE  ▼▼▼
@@ -386,6 +386,7 @@ async function uploadFileToStorage(id, file){
   return {url, path};
 }
 function deleteStoragePath(path){ try{ if(storage && path) storage.ref().child(path).delete().catch(()=>{}); }catch(_){} }
+async function deleteBandDoc(){ if(boardRef) await boardRef.delete(); }
 
 /* ---------- state helpers ---------- */
 function defaultState(){
@@ -692,7 +693,7 @@ function App(){
       {tab==='stage'    && <Stage state={state} go={setTab} update={update} />}
       {tab==='setlist'  && <Setlist state={state} update={update} />}
       {tab==='rehearse' && <Rehearsals state={state} update={update} />}
-      {tab==='setup'    && <Setup state={state} update={update} user={user} onSignOut={signOut} />}
+      {tab==='setup'    && <Setup state={state} update={update} user={user} onSignOut={signOut} onSwitch={switchBoard} />}
       <TabBar tab={tab} setTab={setTab} />
     </React.Fragment>
   );
@@ -1370,11 +1371,16 @@ function RehForm({songs,members,onSave,onCancel}){
   );
 }
 
-function Setup({state,update,user,onSignOut}){
+function Setup({state,update,user,onSignOut,onSwitch}){
   const c=state.concert;
   const [cloneMsg,setCloneMsg]=useState('');
   const [myNameLocal,setMyNameLocal]=useState(MY_NAME);
   const saveName=(v)=>{ setMyNameLocal(v); setMyName(v); };
+  const myEmail=user?user.email:'';
+  const admin=myEmail===ADMIN_EMAIL;
+  const myRole=(state.access||{})[myEmail];
+  const canDelete=admin||myRole==='owner';
+  const delBand=async()=>{ if(!confirm('Delete this entire band and all its data? This cannot be undone.')) return; try{ await deleteBandDoc(); if(onSwitch) onSwitch(); }catch(e){ alert('Failed: '+prettyErr(e)); } };
   const setC=(k,v)=>update(s=>{s.concert[k]=v;return s;});
   const setBand=(v)=>update(s=>{s.band=v;return s;});
   const setMember=(id,v)=>update(s=>{s.members[id].name=v;return s;});
@@ -1436,6 +1442,7 @@ function Setup({state,update,user,onSignOut}){
       <MembersSetup state={state} update={update} user={user}/>
 
       <div className="add-bar"><button className="btn danger" onClick={reset}>Reset everything</button></div>
+      {canDelete && BOARD!=='main' && <div className="add-bar"><button className="btn danger" onClick={delBand}>Delete this band</button></div>}
     </div>
   );
 }
