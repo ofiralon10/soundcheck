@@ -231,7 +231,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef} = React;
-const VERSION='0.108';
+const VERSION='0.109';
 
 /* ============================================================
    ▼▼▼  PASTE YOUR FIREBASE CONFIG HERE  ▼▼▼
@@ -1060,6 +1060,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore}){
   const [fileMsg,setFileMsg]=useState('');
   const [cropSrc,setCropSrc]=useState(null);
   const [busy,setBusy]=useState('');
+  const [confirmDel,setConfirmDel]=useState(null);
   const [recState,setRecState]=useState(null);
   const [recTime,setRecTime]=useState(0);
   const [playingFile,setPlayingFile]=useState(null);
@@ -1181,7 +1182,12 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore}){
               {f.type==='audio'
                 ? <button className="fbtn" style={playingFile===f.id?{color:'var(--drums)'}:null} onClick={()=>playFile(f)}>{playingFile===f.id?'Stop':'Play'}</button>
                 : <button className="fbtn" onClick={()=>openFile(f)}>Open</button>}
-              <button className="xmini" onClick={()=>removeFile(f)} aria-label="Remove file">×</button>
+              {confirmDel===f.id
+                ? <React.Fragment>
+                    <button className="fbtn" style={{color:'var(--drums)'}} onClick={()=>{removeFile(f);setConfirmDel(null);}}>Delete</button>
+                    <button className="fbtn" onClick={()=>setConfirmDel(null)}>Cancel</button>
+                  </React.Fragment>
+                : <button className="xmini" onClick={()=>setConfirmDel(f.id)} aria-label="Remove file">×</button>}
             </div>
           ))}
           {(s.files||[]).length===0 && !recState && <div className="fileempty">No files yet — add a chart, slides, or a reference track.</div>}
