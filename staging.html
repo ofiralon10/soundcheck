@@ -231,7 +231,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef} = React;
-const VERSION='0.106';
+const VERSION='0.107';
 
 /* ============================================================
    ▼▼▼  PASTE YOUR FIREBASE CONFIG HERE  ▼▼▼
@@ -1115,24 +1115,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore}){
               {s.cover && busy!=='cover' && <button className="btn danger sm" onClick={clearCover}>Remove cover</button>}
             </div>
           </div>
-          {INSTR.map(i=>(
-            <div className="editrow" key={i.id}>
-              <InstrBadge id={i.id} size={26}/>
-              <StatusPills value={s.parts[i.id]} color={i.color} onPick={v=>setRole(i.id,v)}/>
-            </div>
-          ))}
-          <label className="fl" style={{marginTop:15}}>Guests ({s.guests.length}/{MAX_GUESTS})</label>
-          {s.guests.map(g=>(
-            <div className="guest-edit" key={g.id}>
-              <div className="guest-top">
-                <input className="inp" dir="auto" value={g.name} onChange={e=>setGuestName(g.id,e.target.value)} placeholder="Sax — Yossi"/>
-                <button className="xbtn" onClick={()=>delGuest(g.id)} aria-label="Remove guest">×</button>
-              </div>
-              <StatusPills value={g.status} color={GUEST_COLOR} onPick={v=>setGuestStatus(g.id,v)}/>
-            </div>
-          ))}
-          {s.guests.length<MAX_GUESTS && <button className="addguest" onClick={addGuest}>+ Add guest player</button>}
-          <label className="fl" style={{marginTop:16}}>Files</label>
+          <label className="fl" style={{marginTop:4}}>Files</label>
           {(s.files||[]).map(f=>(
             <div className="fileitem" key={f.id}>
               <span className="ftype" style={{background:KIND_COLOR[f.type]||'var(--muted)'}}>{badgeText(f)}</span>
@@ -1156,6 +1139,23 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore}){
                 <button className="addfile" onClick={()=>setLinkMode(true)}>Add link</button>
               </div>}
           {fileMsg && <div className="filemsg">{fileMsg}</div>}
+          {INSTR.map(i=>(
+            <div className="editrow" key={i.id}>
+              <InstrBadge id={i.id} size={26}/>
+              <StatusPills value={s.parts[i.id]} color={i.color} onPick={v=>setRole(i.id,v)}/>
+            </div>
+          ))}
+          <label className="fl" style={{marginTop:15}}>Guests ({s.guests.length}/{MAX_GUESTS})</label>
+          {s.guests.map(g=>(
+            <div className="guest-edit" key={g.id}>
+              <div className="guest-top">
+                <input className="inp" dir="auto" value={g.name} onChange={e=>setGuestName(g.id,e.target.value)} placeholder="Sax — Yossi"/>
+                <button className="xbtn" onClick={()=>delGuest(g.id)} aria-label="Remove guest">×</button>
+              </div>
+              <StatusPills value={g.status} color={GUEST_COLOR} onPick={v=>setGuestStatus(g.id,v)}/>
+            </div>
+          ))}
+          {s.guests.length<MAX_GUESTS && <button className="addguest" onClick={addGuest}>+ Add guest player</button>}
           <label className="fl" style={{marginTop:16}}>Details</label>
           <div className="fieldgrid" style={{marginTop:0}}>
             <div className="full"><label className="fl">Artist</label><input className="inp" dir="auto" value={s.artist||''} onChange={e=>setField('artist',e.target.value)} placeholder="Original artist"/></div>
@@ -1379,11 +1379,13 @@ function Setup({state,update,user,onSignOut,onSwitch}){
   const admin=myEmail===ADMIN_EMAIL;
   const myRole=(state.access||{})[myEmail];
   const canDelete=admin||myRole==='owner';
-  const delBand=async()=>{ if(!confirm('Delete this entire band and all its data? This cannot be undone.')) return; try{ await deleteBandDoc(); if(onSwitch) onSwitch(); }catch(e){ alert('Failed: '+prettyErr(e)); } };
+  const [confirmReset,setConfirmReset]=useState(false);
+  const [confirmDelete,setConfirmDelete]=useState(false);
+  const delBand=async()=>{ try{ await deleteBandDoc(); if(onSwitch) onSwitch(); }catch(e){ alert('Failed: '+prettyErr(e)); setConfirmDelete(false); } };
   const setC=(k,v)=>update(s=>{s.concert[k]=v;return s;});
   const setBand=(v)=>update(s=>{s.band=v;return s;});
   const setMember=(id,v)=>update(s=>{s.members[id].name=v;return s;});
-  const reset=()=>{ if(confirm('Clear all songs, rehearsals and concert details for the whole band?')) update(()=>defaultState()); };
+  const reset=()=>{ update(()=>defaultState()); setConfirmReset(false); };
   const doClone=async()=>{ if(!confirm('Copy the current LIVE board into the staging copy? This overwrites any previous staging data.')) return; setCloneMsg('Copying…'); try{ await cloneLiveToStaging(); setCloneMsg('Done — open the app with ?board=staging to test.'); }catch(e){ setCloneMsg('Failed — '+prettyErr(e)); } };
   return (
     <div className="page">
@@ -1440,8 +1442,22 @@ function Setup({state,update,user,onSignOut,onSwitch}){
       <div className="section-h">Members & access</div>
       <MembersSetup state={state} update={update} user={user}/>
 
-      <div className="add-bar"><button className="btn danger" onClick={reset}>Reset everything</button></div>
-      {canDelete && BOARD!=='main' && <div className="add-bar"><button className="btn danger" onClick={delBand}>Delete this band</button></div>}
+      <div className="add-bar">
+        {!confirmReset
+          ? <button className="btn danger" onClick={()=>setConfirmReset(true)}>Reset everything</button>
+          : <div className="card" style={{borderColor:'rgba(242,84,91,.5)'}}>
+              <div style={{fontSize:13,color:'var(--muted)',lineHeight:1.5,marginBottom:10}}>Clear all songs, rehearsals and concert details for the whole band?</div>
+              <div className="btnrow"><button className="btn ghost" onClick={()=>setConfirmReset(false)}>Cancel</button><button className="btn danger" onClick={reset}>Yes, reset</button></div>
+            </div>}
+      </div>
+      {canDelete && BOARD!=='main' && <div className="add-bar">
+        {!confirmDelete
+          ? <button className="btn danger" onClick={()=>setConfirmDelete(true)}>Delete this band</button>
+          : <div className="card" style={{borderColor:'rgba(242,84,91,.5)'}}>
+              <div style={{fontSize:13,color:'var(--muted)',lineHeight:1.5,marginBottom:10}}>Delete this entire band and all its data? This cannot be undone.</div>
+              <div className="btnrow"><button className="btn ghost" onClick={()=>setConfirmDelete(false)}>Cancel</button><button className="btn danger" onClick={delBand}>Yes, delete</button></div>
+            </div>}
+      </div>}
     </div>
   );
 }
