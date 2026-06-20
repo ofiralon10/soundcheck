@@ -9,7 +9,7 @@
   :root{
     --bg:#15141B; --surface:#1F1D29; --surface-2:#282633; --surface-3:#322F40;
     --line:rgba(255,255,255,.09); --line-2:rgba(255,255,255,.14);
-    --text:#ECEAF2; --muted:#948FA6; --muted-2:#6E697E;
+    --text:#ECEAF2; --muted:#C2BDD2; --muted-2:#9892AC;
     --keys:#8B7CF6; --drums:#F2545B; --guitar:#F4A93C; --bass:#2DD4BF; --vocals:#EC6FA9;
     --guest:#C9A6FF; --ok:#3DD68C; --warn:#E8A33D; --learn:#5B9DF9;
     --display:'Space Grotesk',system-ui,sans-serif; --mono:'Space Mono',ui-monospace,monospace;
@@ -29,6 +29,30 @@
   @media (prefers-reduced-motion:reduce){.wordmark .dot{animation:none}}
   .wordmark h1{font-family:var(--display);font-weight:700;font-size:17px;letter-spacing:.16em;margin:0;color:var(--muted)}
   .wordmark .ver{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--muted-2);letter-spacing:.04em;align-self:center}
+  .topline{display:flex;align-items:center;justify-content:space-between;gap:10px}
+  .bell{position:relative;width:38px;height:38px;border-radius:10px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--muted);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .bell-dot{position:absolute;top:7px;right:8px;width:8px;height:8px;border-radius:50%;background:var(--drums);border:2px solid var(--surface-2)}
+  .modalwrap{position:fixed;inset:0;background:rgba(8,7,12,.66);display:flex;align-items:flex-end;justify-content:center;z-index:50;padding:0}
+  .modalcard{background:var(--surface);border:1px solid var(--line-2);border-radius:18px 18px 0 0;width:100%;max-width:560px;max-height:82vh;overflow:auto;padding:20px 18px calc(20px + env(safe-area-inset-bottom))}
+  .modaltitle{font-family:var(--display);font-weight:700;font-size:16px;letter-spacing:.02em;margin-bottom:14px}
+  .actrow{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:baseline;padding:10px 2px;border-bottom:1px solid var(--line)}
+  .actrow:last-child{border-bottom:none}
+  .actwho{font-family:var(--display);font-weight:700;font-size:13px;color:var(--text);white-space:nowrap}
+  .acttext{font-size:13px;color:var(--muted);min-width:0;line-height:1.35}
+  .actwhen{font-family:var(--mono);font-size:10px;color:var(--muted-2);white-space:nowrap}
+  .prop{margin-top:13px;border-top:1px solid var(--line);padding-top:13px}
+  .prop-h{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--warn);margin-bottom:7px}
+  .prop-new{font-family:var(--display);font-weight:700;font-size:14.5px;color:var(--text)}
+  .prop-by{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .prop-votes{display:flex;align-items:center;gap:9px;margin-top:11px;flex-wrap:wrap}
+  .vbtn{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:12px;font-weight:700;border-radius:9px;padding:8px 12px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--muted)}
+  .vbtn.up.on{color:var(--ok);border-color:rgba(61,214,140,.5);background:rgba(61,214,140,.08)}
+  .vbtn.down.on{color:var(--drums);border-color:rgba(242,84,91,.5);background:rgba(242,84,91,.08)}
+  .prop-act{display:flex;gap:8px;margin-top:11px}
+  .prop-act .btn{flex:1;padding:9px 12px;font-size:13px}
+  .propform{margin-top:11px;display:flex;flex-direction:column;gap:9px}
+  .propform .row2{display:flex;gap:9px}
+  .propform .row2 .inp{flex:1}
   .topmeta{display:flex;justify-content:space-between;align-items:center;margin-top:11px;gap:12px}
   .topleft{display:flex;align-items:center;gap:12px;min-width:0}
   .band{font-family:var(--heb);font-weight:700;font-size:22px;line-height:1.1}
@@ -207,7 +231,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef} = React;
-const VERSION='0.100';
+const VERSION='0.102';
 
 /* ============================================================
    ▼▼▼  PASTE YOUR FIREBASE CONFIG HERE  ▼▼▼
@@ -243,17 +267,18 @@ const uid = () => Math.random().toString(36).slice(2,9);
 const ICON = {
   keys:(<g><rect x="2.5" y="7" width="19" height="10" rx="1.4"/><path d="M6.5 7v5 M10 7v5 M14 7v5 M17.5 7v5"/></g>),
   drums:(<g><path d="M4.5 2.5 L11 6 M19.5 2.5 L13 6"/><ellipse cx="12" cy="9" rx="6.5" ry="2.2"/><path d="M5.5 9v4.6c0 1.2 2.9 2.2 6.5 2.2s6.5-1 6.5-2.2V9"/></g>),
-  guitar:(<g><path d="M12 21 V11.5"/><rect x="9.6" y="3.6" width="4.8" height="8" rx="2"/><path d="M9.6 5.3 H7.7 M9.6 7.6 H7.7 M9.6 9.9 H7.7 M14.4 5.3 H16.3 M14.4 7.6 H16.3 M14.4 9.9 H16.3"/><g fill="currentColor" stroke="none"><circle cx="7" cy="5.3" r="1"/><circle cx="7" cy="7.6" r="1"/><circle cx="7" cy="9.9" r="1"/><circle cx="17" cy="5.3" r="1"/><circle cx="17" cy="7.6" r="1"/><circle cx="17" cy="9.9" r="1"/></g></g>),
-  bass:(<g><path d="M12 21 V11.5"/><rect x="9.6" y="4.2" width="4.8" height="7.3" rx="2"/><path d="M9.6 6.2 H7.5 M9.6 9.2 H7.5 M14.4 6.2 H16.5 M14.4 9.2 H16.5"/><g fill="currentColor" stroke="none"><circle cx="6.8" cy="6.2" r="1.15"/><circle cx="6.8" cy="9.2" r="1.15"/><circle cx="17.2" cy="6.2" r="1.15"/><circle cx="17.2" cy="9.2" r="1.15"/></g></g>),
+  guitar:(<g><rect x="9.25" y="4" width="5.5" height="16" rx="2.6"/><path d="M9.25 7.5 H6 M9.25 12 H6 M9.25 16.5 H6 M14.75 7.5 H18 M14.75 12 H18 M14.75 16.5 H18"/><g fill="currentColor" stroke="none"><circle cx="4.9" cy="7.5" r="1.15"/><circle cx="4.9" cy="12" r="1.15"/><circle cx="4.9" cy="16.5" r="1.15"/><circle cx="19.1" cy="7.5" r="1.15"/><circle cx="19.1" cy="12" r="1.15"/><circle cx="19.1" cy="16.5" r="1.15"/></g></g>),
+  bass:(<g><rect x="9.25" y="4" width="5.5" height="16" rx="2.6"/><path d="M9.25 9 H5.8 M9.25 15 H5.8 M14.75 9 H18.2 M14.75 15 H18.2"/><g fill="currentColor" stroke="none"><circle cx="4.6" cy="9" r="1.35"/><circle cx="4.6" cy="15" r="1.35"/><circle cx="19.4" cy="9" r="1.35"/><circle cx="19.4" cy="15" r="1.35"/></g></g>),
   vocals:(<g><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.8 11 A6.2 6.2 0 0 0 18.2 11"/><path d="M12 17.2 V21 M8.5 21 H15.5"/></g>),
 };
 function InstrIcon({id,size=15}){
-  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{ICON[id]}</svg>;
+  const S=Math.round(size*1.3);
+  return <svg width={S} height={S} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{ICON[id]}</svg>;
 }
 function InstrBadge({id,size=28}){
-  const it=INSTR.find(x=>x.id===id); const c=it?it.color:'#948FA6';
+  const it=INSTR.find(x=>x.id===id); const c=it?it.color:'#948FA6'; const S=Math.round(size*1.3);
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" style={{flexShrink:0,display:'block'}}>
+    <svg width={S} height={S} viewBox="0 0 24 24" style={{flexShrink:0,display:'block'}}>
       <circle cx="12" cy="12" r="11.3" fill={c}/>
       <circle cx="12" cy="12" r="9.4" fill="none" stroke="#fff" strokeWidth="0.8" opacity="0.85"/>
       <g transform="translate(3.6 3.6) scale(0.70)" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" style={{color:'#fff'}}>{ICON[id]}</g>
@@ -346,7 +371,7 @@ function deleteStoragePath(path){ try{ if(storage && path) storage.ref().child(p
 /* ---------- state helpers ---------- */
 function defaultState(){
   const members={}; INSTR.forEach(i=>members[i.id]={name:i.label});
-  return {band:'', bandArt:'', concert:{name:'',date:'',venue:''}, members, songs:[], rehearsals:[], _rev:0, _updatedAt:null};
+  return {band:'', bandArt:'', concert:{name:'',date:'',venue:''}, members, songs:[], rehearsals:[], activity:[], _rev:0, _updatedAt:null};
 }
 function freshParts(){ const p={}; INSTR.forEach(i=>p[i.id]='todo'); return p; }
 function deriveFromStatus(st){ return st==='ready'?'ready' : (st==='practicing')?'practicing' : (st==='rehearsing'||st==='learning')?'learning' : 'todo'; }
@@ -375,7 +400,11 @@ function migrate(s){
     if(!Array.isArray(r.focusLearn)) r.focusLearn=[];
     if(!Array.isArray(r.focusPractice)) r.focusPractice = Array.isArray(r.focus)? r.focus.slice() : [];
     delete r.focus;
+    if(r.proposal!==undefined && r.proposal!==null && typeof r.proposal==='object'){
+      if(!r.proposal.votes || typeof r.proposal.votes!=='object') r.proposal.votes={};
+    } else { r.proposal=null; }
   });
+  if(!Array.isArray(s.activity)) s.activity=[];
   return s;
 }
 function toggleFocus(learn,practice,group,id){
@@ -396,6 +425,14 @@ function meterColor(p){ return p>=0.8?'var(--ok)' : p>=0.45?'var(--warn)' : p>0?
 function timeAgo(iso){ if(!iso) return ''; const s=Math.floor((Date.now()-new Date(iso))/1000);
   if(s<10) return 'just now'; if(s<60) return s+'s ago'; const m=Math.floor(s/60);
   if(m<60) return m+'m ago'; const h=Math.floor(m/60); if(h<24) return h+'h ago'; return Math.floor(h/24)+'d ago'; }
+let MY_NAME=''; try{ MY_NAME=localStorage.getItem('sc_name')||''; }catch(_){}
+function setMyName(n){ MY_NAME=(n||'').trim(); try{ localStorage.setItem('sc_name',MY_NAME); }catch(_){} }
+function actorName(){ return MY_NAME || 'Someone'; }
+function logAct(s,text){
+  if(!Array.isArray(s.activity)) s.activity=[];
+  s.activity.push({ id:uid(), ts:new Date().toISOString(), who:actorName(), text });
+  if(s.activity.length>40) s.activity=s.activity.slice(-40);
+}
 function addDaysLocal(localStr, days){
   const d=new Date(localStr); d.setDate(d.getDate()+days);
   const p=n=>String(n).padStart(2,'0');
@@ -428,12 +465,17 @@ function AuthShell({children}){
 }
 function LoginScreen({onSend,msg,busy}){
   const [email,setEmail]=useState('');
+  const [name,setName]=useState(MY_NAME);
+  const go=()=>{ setMyName(name.trim()); onSend(email.trim()); };
   return (
     <div className="card">
       <div style={{fontFamily:'var(--display)',fontWeight:600,fontSize:18,marginBottom:6}}>Band sign-in</div>
       <div style={{fontSize:13,color:'var(--muted)',lineHeight:1.5,marginBottom:14}}>Enter the email your band uses and we'll send a one-time sign-in link. No password to remember.</div>
+      <label className="fl">Your name</label>
+      <input className="inp" dir="auto" style={{marginBottom:11}} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Dana"/>
+      <label className="fl">Email</label>
       <input className="inp" type="email" inputMode="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@email.com"/>
-      <div className="btnrow"><button className="btn" disabled={!validEmail(email)||busy} onClick={()=>onSend(email.trim())}>{busy?'Sending…':'Email me a link'}</button></div>
+      <div className="btnrow"><button className="btn" disabled={!validEmail(email)||busy} onClick={go}>{busy?'Sending…':'Email me a link'}</button></div>
       {msg && <div style={{fontSize:12.5,color:'var(--muted)',marginTop:10,lineHeight:1.5}}>{msg}</div>}
     </div>
   );
@@ -523,7 +565,7 @@ function App(){
     <React.Fragment>
       <Header state={state} update={update} />
       {isStaging() && <div className="stagingbar">STAGING COPY · changes here don’t touch the live board</div>}
-      {tab==='stage'    && <Stage state={state} go={setTab} />}
+      {tab==='stage'    && <Stage state={state} go={setTab} update={update} />}
       {tab==='setlist'  && <Setlist state={state} update={update} />}
       {tab==='rehearse' && <Rehearsals state={state} update={update} />}
       {tab==='setup'    && <Setup state={state} update={update} user={user} onSignOut={signOut} />}
@@ -560,12 +602,117 @@ function BandArt({src,update}){
   );
 }
 
+function ActivityModal({events,onClose}){
+  return (
+    <div className="modalwrap" onClick={onClose}>
+      <div className="modalcard" onClick={e=>e.stopPropagation()}>
+        <div className="modaltitle">Recent activity</div>
+        {events.length===0
+          ? <div style={{fontSize:13,color:'var(--muted)',padding:'8px 2px',lineHeight:1.5}}>Nothing yet. As the band adds songs and books rehearsals, you'll see who did what here.</div>
+          : events.map(e=>(
+              <div className="actrow" key={e.id}>
+                <div className="actwho" dir="auto">{e.who}</div>
+                <div className="acttext" dir="auto">{e.text}</div>
+                <div className="actwhen">{timeAgo(e.ts)}</div>
+              </div>
+            ))}
+        <div className="btnrow"><button className="btn" onClick={onClose}>Close</button></div>
+      </div>
+    </div>
+  );
+}
+function ActivityBell({state}){
+  const [open,setOpen]=useState(false);
+  const acts=Array.isArray(state.activity)?state.activity:[];
+  const events=[...acts].reverse();
+  const [seen,setSeen]=useState(()=>{ try{return localStorage.getItem('sc_seen_activity')||'';}catch(_){return '';} });
+  const lastFromOther=[...acts].reverse().find(e=>e.who!==actorName());
+  const hasNew=!!lastFromOther && lastFromOther.ts>seen;
+  const openFeed=()=>{ setOpen(true); const latest=acts[acts.length-1]; if(latest){ try{localStorage.setItem('sc_seen_activity',latest.ts);}catch(_){} setSeen(latest.ts); } };
+  return (
+    <React.Fragment>
+      <button className="bell" onClick={openFeed} aria-label="Recent activity">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+        {hasNew && <span className="bell-dot"></span>}
+      </button>
+      {open && <ActivityModal events={events} onClose={()=>setOpen(false)}/>}
+    </React.Fragment>
+  );
+}
+
+// Shared time-change proposal UI — used in Rehearsals and on Stage for the next rehearsal.
+function RehearsalProposal({r,update}){
+  const [proposing,setProposing]=useState(false);
+  const init=r.date?r.date.slice(0,16):'';
+  const [day,setDay]=useState(init?init.slice(0,10):'');
+  const [time,setTime]=useState(init?init.slice(11,16):'');
+  const p=r.proposal;
+
+  const submit=()=>{
+    if(!day||!time) return;
+    const newDate=day+'T'+time;
+    update(s=>{ const rr=s.rehearsals.find(x=>x.id===r.id); if(!rr) return s;
+      rr.proposal={ id:uid(), by:actorName(), date:newDate, votes:{[actorName()]:'up'}, ts:new Date().toISOString() };
+      logAct(s,'proposed moving the '+(r.date?fmtDate(r.date)+' ':'')+'rehearsal to '+fmtDate(newDate)+' '+fmtTime(newDate));
+      return s; });
+    setProposing(false);
+  };
+  const vote=(dir)=>update(s=>{ const rr=s.rehearsals.find(x=>x.id===r.id); if(!rr||!rr.proposal) return s;
+    if(rr.proposal.votes[actorName()]===dir) delete rr.proposal.votes[actorName()];
+    else rr.proposal.votes[actorName()]=dir; return s; });
+  const apply=()=>update(s=>{ const rr=s.rehearsals.find(x=>x.id===r.id); if(!rr||!rr.proposal) return s;
+    const nd=rr.proposal.date; rr.date=nd; rr.proposal=null;
+    logAct(s,'moved the rehearsal to '+fmtDate(nd)+' '+fmtTime(nd)); return s; });
+  const dismiss=()=>update(s=>{ const rr=s.rehearsals.find(x=>x.id===r.id); if(rr) rr.proposal=null; return s; });
+
+  if(p){
+    const vals=Object.values(p.votes||{});
+    const ups=vals.filter(v=>v==='up').length, downs=vals.filter(v=>v==='down').length;
+    const mine=p.votes?p.votes[actorName()]:null;
+    return (
+      <div className="prop">
+        <div className="prop-h">Proposed time change</div>
+        <div className="prop-new">{fmtDate(p.date)} · {fmtTime(p.date)}</div>
+        <div className="prop-by">by {p.by} · was {fmtDate(r.date)} {fmtTime(r.date)}</div>
+        <div className="prop-votes">
+          <button className={'vbtn up'+(mine==='up'?' on':'')} onClick={()=>vote('up')}>👍 {ups}</button>
+          <button className={'vbtn down'+(mine==='down'?' on':'')} onClick={()=>vote('down')}>👎 {downs}</button>
+        </div>
+        <div className="prop-act">
+          <button className="btn" onClick={apply}>Apply change</button>
+          <button className="btn ghost" onClick={dismiss}>Dismiss</button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="prop">
+      {!proposing
+        ? <button className="btn ghost" style={{width:'auto'}} onClick={()=>setProposing(true)}>Propose new time</button>
+        : <div className="propform">
+            <div className="prop-h">New day & time</div>
+            <div className="row2">
+              <input className="inp" type="date" value={day} onChange={e=>setDay(e.target.value)}/>
+              <input className="inp" type="time" value={time} onChange={e=>setTime(e.target.value)}/>
+            </div>
+            <div className="prop-act">
+              <button className="btn" disabled={!day||!time} onClick={submit}>Propose</button>
+              <button className="btn ghost" onClick={()=>setProposing(false)}>Cancel</button>
+            </div>
+          </div>}
+    </div>
+  );
+}
+
 function Header({state,update}){
   const d = daysUntil(state.concert.date);
   const sub = [state.concert.name, state.concert.venue, state.concert.date?fmtDate(state.concert.date):null].filter(Boolean).join(' · ') || 'Set up your show in Setup';
   return (
     <div className="topbar">
-      <div className="wordmark"><span className="dot"></span><h1>SOUNDCHECK</h1><span className="ver">v{VERSION}</span></div>
+      <div className="topline">
+        <div className="wordmark"><span className="dot"></span><h1>SOUNDCHECK</h1><span className="ver">v{VERSION}</span></div>
+        <ActivityBell state={state}/>
+      </div>
       <div className="topmeta">
         <div className="topleft">
           <BandArt src={state.bandArt} update={update}/>
@@ -609,15 +756,15 @@ function StatusPills({value,color,onPick}){
   );
 }
 
-function Stage({state,go}){
+function Stage({state,go,update}){
   const songs=state.songs.filter(x=>!x.excluded);
   const overall = songs.length? songs.reduce((a,s)=>a+songReadiness(s),0)/songs.length : 0;
   const totalMin = songs.reduce((a,s)=>a+(Number(s.duration)||0),0);
   const readyCount = songs.filter(s=>songReadiness(s)===1).length;
   const perMember = INSTR.map(i=>({...i, pct: songs.length? songs.reduce((a,s)=>a+score(s.parts[i.id]),0)/songs.length : 0 }));
   const next = [...state.rehearsals].filter(r=>!r.done && r.date).sort((a,b)=>new Date(a.date)-new Date(b.date))[0];
-  const attention = [...songs].filter(s=>songReadiness(s)<1).sort((a,b)=>songReadiness(a)-songReadiness(b)).slice(0,3);
-  if(songs.length===0){
+  const plannedCount = next ? ((next.focusPractice||[]).length + (next.focusLearn||[]).length) : 0;
+  if(songs.length===0 && !next){
     return <div className="page">
       <div className="empty"><div className="big">Nothing on the board yet</div>
         <div className="sm">Add your songs, then mark off each part — keys, drums, guitar, bass, vocals — as the band learns them.</div></div>
@@ -627,47 +774,42 @@ function Stage({state,go}){
   const ticks=Array.from({length:20});
   return (
     <div className="page">
-      <div className="master">
-        <div className="row"><div className="pct" style={{color:meterColor(overall)}}>{Math.round(overall*100)}%</div><div className="cap">show-ready</div></div>
-        <div className="ticks">
-          {ticks.map((_,k)=>{ const on=k<Math.round(overall*20); return <div key={k} className="tick" style={{height:on?(40+k*3)+'%':'30%',background:on?meterColor(overall):'var(--surface-3)'}}/>; })}
+      {songs.length>0 && <React.Fragment>
+        <div className="master">
+          <div className="row"><div className="pct" style={{color:meterColor(overall)}}>{Math.round(overall*100)}%</div><div className="cap">show-ready</div></div>
+          <div className="ticks">
+            {ticks.map((_,k)=>{ const on=k<Math.round(overall*20); return <div key={k} className="tick" style={{height:on?(40+k*3)+'%':'30%',background:on?meterColor(overall):'var(--surface-3)'}}/>; })}
+          </div>
         </div>
-      </div>
-      <div className="stats">
-        <div className="stat"><div className="v">{songs.length}</div><div className="k">songs</div></div>
-        <div className="stat"><div className="v">{readyCount}</div><div className="k">fully ready</div></div>
-        <div className="stat"><div className="v">{totalMin?totalMin+'m':'—'}</div><div className="k">set length</div></div>
-      </div>
-      {attention.length>0 && <React.Fragment>
-        <div className="section-h">Needs work</div>
-        {attention.map(s=>{ const r=songReadiness(s);
-          return <div className="card" key={s.id} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 14px'}}>
-            <CoverThumb src={s.cover} size={40} radius={9}/>
-            <div style={{minWidth:0,flex:1}}>
-              <div style={{fontFamily:'var(--display)',fontWeight:600,fontSize:14}} dir="auto">{s.title}</div>
-              <div style={{fontSize:11.5,color:'var(--muted)'}}>{Math.round(r*100)}% ready</div>
-            </div>
-            <Cells song={s}/>
-          </div>; })}
+        <div className="stats">
+          <div className="stat"><div className="v">{songs.length}</div><div className="k">songs</div></div>
+          <div className="stat"><div className="v">{readyCount}</div><div className="k">fully ready</div></div>
+          <div className="stat"><div className="v">{totalMin?totalMin+'m':'—'}</div><div className="k">set length</div></div>
+        </div>
       </React.Fragment>}
       <div className="section-h">Next rehearsal</div>
       {next ?
         <div className="card">
           <div className="reh-date">{fmtDate(next.date)}</div>
           <div className="reh-time">{fmtTime(next.date)}{next.location?' · '+next.location:''}</div>
-          <FocusTags songs={songs} learn={next.focusLearn} practice={next.focusPractice}/>
+          {plannedCount>0
+            ? <FocusTags songs={state.songs} learn={next.focusLearn} practice={next.focusPractice}/>
+            : <div style={{color:'var(--muted)',fontSize:12.5,marginTop:10}}>No songs planned yet — set the focus in Rehearsals.</div>}
+          <RehearsalProposal r={next} update={update}/>
         </div>
         : <div className="card"><div style={{color:'var(--muted)',fontSize:13}}>None booked. Add one in Rehearsals.</div></div>}
-      <div className="section-h">Player readiness</div>
-      <div className="card">
-        {perMember.map(m=>(
-          <div className="strip" key={m.id}>
-            <InstrBadge id={m.id} size={30}/>
-            <div className="track"><div className="fill" style={{width:(m.pct*100)+'%',background:m.color}}/></div>
-            <div className="val">{Math.round(m.pct*100)}%</div>
-          </div>
-        ))}
-      </div>
+      {songs.length>0 && <React.Fragment>
+        <div className="section-h">Player readiness</div>
+        <div className="card">
+          {perMember.map(m=>(
+            <div className="strip" key={m.id}>
+              <InstrBadge id={m.id} size={30}/>
+              <div className="track"><div className="fill" style={{width:(m.pct*100)+'%',background:m.color}}/></div>
+              <div className="val">{Math.round(m.pct*100)}%</div>
+            </div>
+          ))}
+        </div>
+      </React.Fragment>}
     </div>
   );
 }
@@ -685,7 +827,7 @@ function Setlist({state,update}){
   const addSong=(data)=>{ update(s=>{
     const song={id:uid(),parts:freshParts(),guests:[],files:[],cover:'',notes:'',excluded:false,encore:false,...data};
     const act=s.songs.filter(x=>!x.excluded), exc=s.songs.filter(x=>x.excluded);
-    s.songs=[...act,song,...exc]; return s; }); setAdding(false); };
+    s.songs=[...act,song,...exc]; logAct(s,'added “'+(song.title||'a song')+'”'); return s; }); setAdding(false); };
 
   const moveActive=(id,dir)=>update(s=>{
     const act=s.songs.filter(x=>!x.excluded), exc=s.songs.filter(x=>x.excluded);
@@ -695,12 +837,12 @@ function Setlist({state,update}){
     s.songs=[...act,...exc]; return s; });
 
   const excludeSong=(id)=>update(s=>{
-    const so=s.songs.find(x=>x.id===id); if(so){ so.excluded=true; so.encore=false; }
+    const so=s.songs.find(x=>x.id===id); if(so){ so.excluded=true; so.encore=false; logAct(s,'took “'+so.title+'” out of the set'); }
     const act=s.songs.filter(x=>!x.excluded), exc=s.songs.filter(x=>x.excluded);
     s.songs=[...act,...exc]; return s; });
 
   const includeSong=(id)=>update(s=>{
-    const so=s.songs.find(x=>x.id===id); if(!so) return s; so.excluded=false;
+    const so=s.songs.find(x=>x.id===id); if(!so) return s; so.excluded=false; logAct(s,'put “'+so.title+'” back in the set');
     const others=s.songs.filter(x=>x.id!==id);
     const act=others.filter(x=>!x.excluded), exc=others.filter(x=>x.excluded);
     s.songs=[...act,so,...exc]; return s; });
@@ -794,7 +936,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore}){
   const setGuestName=(gid,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);const g=so.guests.find(x=>x.id===gid);if(g)g.name=v;return st;});
   const setGuestStatus=(gid,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);const g=so.guests.find(x=>x.id===gid);if(g)g.status=v;return st;});
   const delGuest=(gid)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);so.guests=so.guests.filter(x=>x.id!==gid);return st;});
-  const del=()=>{ deleteStoragePath(coverPath(s.id)); (s.files||[]).forEach(f=>{ if(f.kind==='upload'&&f.path) deleteStoragePath(f.path); }); update(st=>{st.songs=st.songs.filter(x=>x.id!==s.id);return st;}); };
+  const del=()=>{ deleteStoragePath(coverPath(s.id)); (s.files||[]).forEach(f=>{ if(f.kind==='upload'&&f.path) deleteStoragePath(f.path); }); update(st=>{st.songs=st.songs.filter(x=>x.id!==s.id); logAct(st,'removed “'+s.title+'”'); return st;}); };
 
   const onCoverPick=(e)=>{ setFileMsg(''); const file=e.target.files&&e.target.files[0]; e.target.value=''; if(!file) return;
     const rd=new FileReader(); rd.onload=()=>setCropSrc(rd.result); rd.onerror=()=>setFileMsg('Couldn’t read that image.'); rd.readAsDataURL(file); };
@@ -997,25 +1139,25 @@ function Rehearsals({state,update}){
   const list=[...state.rehearsals].sort((a,b)=>new Date(a.date||0)-new Date(b.date||0));
   const upcoming=list.filter(r=>!r.done);
   const past=list.filter(r=>r.done);
-  const add=(items)=>{ update(s=>{ (Array.isArray(items)?items:[items]).forEach(data=>s.rehearsals.push({id:uid(),done:false,attendance:{},focusLearn:[],focusPractice:[],...data})); return s;}); setAdding(false); };
+  const add=(items)=>{ update(s=>{ (Array.isArray(items)?items:[items]).forEach(data=>{ s.rehearsals.push({id:uid(),done:false,attendance:{},focusLearn:[],focusPractice:[],proposal:null,...data}); logAct(s,'scheduled a rehearsal'+(data.date?' for '+fmtDate(data.date):'')); }); return s;}); setAdding(false); };
   const patch=(id,fn)=> update(s=>{ const r=s.rehearsals.find(x=>x.id===id); fn(r); return s;});
-  const del=(id)=> update(s=>{ s.rehearsals=s.rehearsals.filter(x=>x.id!==id); return s;});
+  const del=(id)=> update(s=>{ const r=s.rehearsals.find(x=>x.id===id); logAct(s,'removed the '+(r&&r.date?fmtDate(r.date)+' ':'')+'rehearsal'); s.rehearsals=s.rehearsals.filter(x=>x.id!==id); return s;});
   return (
     <div className="page">
       <div className="section-h">Upcoming · {upcoming.length}</div>
       {adding && <RehForm songs={state.songs} members={state.members} onSave={add} onCancel={()=>setAdding(false)}/>}
       {upcoming.length===0 && !adding &&
         <div className="empty"><div className="big">No rehearsals booked</div><div className="sm">Schedule a session and pick which songs to focus on.</div></div>}
-      {upcoming.map(r=><RehCard key={r.id} r={r} state={state} patch={patch} del={del}/>)}
+      {upcoming.map(r=><RehCard key={r.id} r={r} state={state} patch={patch} del={del} update={update}/>)}
       {!adding && <div className="add-bar"><button className="btn ghost" onClick={()=>{setAdding(true);window.scrollTo({top:0,behavior:'smooth'});}}>+ Schedule rehearsal</button></div>}
       {past.length>0 && <React.Fragment>
         <div className="section-h">Done · {past.length}</div>
-        {past.map(r=><RehCard key={r.id} r={r} state={state} patch={patch} del={del}/>)}
+        {past.map(r=><RehCard key={r.id} r={r} state={state} patch={patch} del={del} update={update}/>)}
       </React.Fragment>}
     </div>
   );
 }
-function RehCard({r,state,patch,del}){
+function RehCard({r,state,patch,del,update}){
   const songs=state.songs;
   const guestList=allGuests(songs);
   const [editFocus,setEditFocus]=useState(false);
@@ -1047,6 +1189,7 @@ function RehCard({r,state,patch,del}){
             onClick={()=>patch(r.id,x=>{x.attendance=x.attendance||{};x.attendance['g:'+n]=!x.attendance['g:'+n];})}>{n.trim()[0].toUpperCase()}</button>; })}
       </div>
       {r.notes && <div className="reh-loc" style={{marginTop:10}} dir="auto">{r.notes}</div>}
+      {!r.done && <RehearsalProposal r={r} update={update}/>}
       <div className="btnrow"><button className="btn danger sm" onClick={()=>del(r.id)}>Delete</button></div>
     </div>
   );
@@ -1101,6 +1244,8 @@ function RehForm({songs,members,onSave,onCancel}){
 function Setup({state,update,user,onSignOut}){
   const c=state.concert;
   const [cloneMsg,setCloneMsg]=useState('');
+  const [myNameLocal,setMyNameLocal]=useState(MY_NAME);
+  const saveName=(v)=>{ setMyNameLocal(v); setMyName(v); };
   const setC=(k,v)=>update(s=>{s.concert[k]=v;return s;});
   const setBand=(v)=>update(s=>{s.band=v;return s;});
   const setMember=(id,v)=>update(s=>{s.members[id].name=v;return s;});
@@ -1112,7 +1257,9 @@ function Setup({state,update,user,onSignOut}){
       <div className="card">
         <div className="savepill" style={{marginBottom:10}}><i style={{background: isStaging()?'var(--warn)':'var(--ok)'}}></i>{isStaging()?'Staging copy · isolated from live':'Live · synced for the whole band'}</div>
         <div style={{fontSize:13,color:'var(--text)'}} dir="auto">{user?user.email:''}</div>
-        {state._updatedAt && <div style={{fontSize:12,color:'var(--muted)',marginTop:4}}>Last change {timeAgo(state._updatedAt)}</div>}
+        <label className="fl" style={{marginTop:13}}>Your name (shown in activity)</label>
+        <input className="inp" dir="auto" value={myNameLocal} onChange={e=>saveName(e.target.value)} placeholder="e.g. Dana"/>
+        {state._updatedAt && <div style={{fontSize:12,color:'var(--muted)',marginTop:8}}>Last change {timeAgo(state._updatedAt)}</div>}
         <div className="btnrow"><button className="btn ghost" onClick={onSignOut}>Sign out</button></div>
       </div>
 
