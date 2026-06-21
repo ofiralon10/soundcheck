@@ -261,7 +261,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.117';
+const VERSION='0.118';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
@@ -469,6 +469,10 @@ function migrate(s){
   });
   if(!Array.isArray(s.activity)) s.activity=[];
   if(!Array.isArray(s.readinessHistory)) s.readinessHistory=[];
+  if(s.readinessHistory.length===0 && s.songs.length>0){
+    const act=s.songs.filter(x=>!x.excluded);
+    if(act.length>0){ const v=Math.round(act.reduce((a,x)=>a+songReadiness(x),0)/act.length*100); s.readinessHistory.push({d:new Date().toISOString().slice(0,10),v}); }
+  }
   if(!s.access||typeof s.access!=='object') s.access={};
   if(!Array.isArray(s.memberEmails)) s.memberEmails=[];
   return s;
@@ -989,7 +993,7 @@ function Stage({state,go,update,goSong}){
           ))}
         </div>
       </React.Fragment>}
-      {(state.readinessHistory||[]).length>1 && <React.Fragment>
+      {(state.readinessHistory||[]).length>=1 && <React.Fragment>
         <div className="section-h">Readiness over time</div>
         <ReadinessGraph history={state.readinessHistory}/>
       </React.Fragment>}
@@ -1000,12 +1004,12 @@ function ReadinessGraph({history}){
   const W=500,H=160,PAD=30,PADR=10,PADT=10,PADB=28;
   const now=new Date(); const yearAgo=new Date(now); yearAgo.setDate(yearAgo.getDate()-365);
   const pts=history.filter(p=>new Date(p.d)>=yearAgo).sort((a,b)=>a.d.localeCompare(b.d));
-  if(pts.length<2) return null;
+  if(pts.length===0) return null;
   const minD=yearAgo.getTime(), maxD=now.getTime(), rangeD=maxD-minD;
   const toX=d=>PAD+(new Date(d).getTime()-minD)/rangeD*(W-PAD-PADR);
   const toY=v=>PADT+(100-v)/100*(H-PADT-PADB);
-  const line=pts.map((p,i)=>(i===0?'M':'L')+toX(p.d).toFixed(1)+','+toY(p.v).toFixed(1)).join(' ');
-  const area=line+' L'+toX(pts[pts.length-1].d).toFixed(1)+','+(H-PADB)+' L'+toX(pts[0].d).toFixed(1)+','+(H-PADB)+' Z';
+  const line=pts.length>1?pts.map((p,i)=>(i===0?'M':'L')+toX(p.d).toFixed(1)+','+toY(p.v).toFixed(1)).join(' '):'';
+  const area=pts.length>1?line+' L'+toX(pts[pts.length-1].d).toFixed(1)+','+(H-PADB)+' L'+toX(pts[0].d).toFixed(1)+','+(H-PADB)+' Z':'';
   const months=[]; for(let m=0;m<12;m++){ const d=new Date(now); d.setMonth(d.getMonth()-11+m); d.setDate(1); if(d>=yearAgo) months.push(d); }
   return (
     <div className="card" style={{padding:'14px 8px 8px'}}>
@@ -1016,8 +1020,8 @@ function ReadinessGraph({history}){
           <text x={PAD-5} y={toY(v)+3.5} textAnchor="end" fill="var(--muted-2)" fontSize="9" fontFamily="var(--mono)">{v}%</text>
         </g>)}
         {months.map((d,i)=><text key={i} x={toX(d.toISOString().slice(0,10))} y={H-8} textAnchor="middle" fill="var(--muted-2)" fontSize="8" fontFamily="var(--mono)">{d.toLocaleDateString(undefined,{month:'short'})}</text>)}
-        <path d={area} fill="url(#rg)"/>
-        <path d={line} fill="none" stroke="var(--ok)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        {area && <path d={area} fill="url(#rg)"/>}
+        {line && <path d={line} fill="none" stroke="var(--ok)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>}
         <circle cx={toX(pts[pts.length-1].d)} cy={toY(pts[pts.length-1].v)} r="4" fill="var(--ok)"/>
       </svg>
     </div>
