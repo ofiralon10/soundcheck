@@ -244,7 +244,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.115';
+const VERSION='0.116';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
@@ -625,6 +625,7 @@ function App(){
   const [user,setUser]=useState(null);
   const [state,setState]=useState(null);
   const [tab,setTab]=useState('stage');
+  const [goSongId,setGoSongId]=useState(null);
   const [authMsg,setAuthMsg]=useState('');
   const [sending,setSending]=useState(false);
   const [sentTo,setSentTo]=useState('');
@@ -704,8 +705,8 @@ function App(){
     <React.Fragment>
       <Header state={state} update={update} onSwitch={switchBoard} />
       {isStaging() && <div className="stagingbar">STAGING COPY · changes here don't touch the live board</div>}
-      {tab==='stage'    && <Stage state={state} go={setTab} update={update} />}
-      {tab==='setlist'  && <Setlist state={state} update={update} />}
+      {tab==='stage'    && <Stage state={state} go={setTab} update={update} goSong={id=>{setTab('setlist');setGoSongId(id);}} />}
+      {tab==='setlist'  && <Setlist state={state} update={update} goSongId={goSongId} clearGoSong={()=>setGoSongId(null)} />}
       {tab==='rehearse' && <Rehearsals state={state} update={update} />}
       {tab==='setup'    && <Setup state={state} update={update} user={user} onSignOut={signOut} onSwitch={switchBoard} />}
       <TabBar tab={tab} setTab={setTab} />
@@ -900,7 +901,7 @@ function StatusPills({value,color,onPick}){
   );
 }
 
-function Stage({state,go,update}){
+function Stage({state,go,update,goSong}){
   const songs=state.songs.filter(x=>!x.excluded);
   const overall = songs.length? songs.reduce((a,s)=>a+songReadiness(s),0)/songs.length : 0;
   const totalMin = songs.reduce((a,s)=>a+(Number(s.duration)||0),0);
@@ -937,7 +938,7 @@ function Stage({state,go,update}){
           <div className="reh-date">{fmtDate(next.date)}</div>
           <div className="reh-time">{fmtTime(next.date)}{next.location?' · '+next.location:''}</div>
           {plannedCount>0
-            ? <FocusTags songs={state.songs} learn={next.focusLearn} practice={next.focusPractice}/>
+            ? <FocusTags songs={state.songs} learn={next.focusLearn} practice={next.focusPractice} onGoSong={goSong}/>
             : <div style={{color:'var(--muted)',fontSize:12.5,marginTop:10}}>No songs planned yet — set the focus in Rehearsals.</div>}
           <RehearsalProposal r={next} update={update}/>
         </div>
@@ -958,7 +959,7 @@ function Stage({state,go,update}){
   );
 }
 
-function Setlist({state,update}){
+function Setlist({state,update,goSongId,clearGoSong}){
   const wide=useWide();
   const [open,setOpen]=useState(null);
   const [adding,setAdding]=useState(false);
@@ -970,6 +971,7 @@ function Setlist({state,update}){
   const active=songs.filter(x=>!x.excluded);
   const excluded=songs.filter(x=>x.excluded);
   const numberOf={}; active.forEach((s,i)=>{ numberOf[s.id]=i+1; });
+  useEffect(()=>{ if(goSongId){ setOpen(goSongId); if(clearGoSong) clearGoSong(); } },[goSongId]);
 
   const addSong=(data)=>{ update(s=>{
     const song={id:uid(),parts:freshParts(),guests:[],files:[],cover:'',notes:'',excluded:false,encore:false,...data};
@@ -1114,7 +1116,7 @@ function Setlist({state,update}){
         ? reorderList
         : shown.map(s=>(
             <SongRow key={s.id} s={s} num={numberOf[s.id]} members={state.members}
-              open={open===s.id} toggle={()=>setOpen(open===s.id?null:s.id)} update={update}
+              open={open===s.id} scrollInto={open===s.id} toggle={()=>setOpen(open===s.id?null:s.id)} update={update}
               onExclude={()=>excludeSong(s.id)} onToggleEncore={()=>toggleEncore(s.id)}/>
           ))}
 
@@ -1131,7 +1133,7 @@ function Setlist({state,update}){
   );
 }
 
-function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,compact,selected}){
+function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,compact,selected,scrollInto}){
   const r=songReadiness(s);
   const [linkMode,setLinkMode]=useState(false);
   const [linkUrl,setLinkUrl]=useState('');
@@ -1143,6 +1145,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [recState,setRecState]=useState(null);
   const [recTime,setRecTime]=useState(0);
   const [playingFile,setPlayingFile]=useState(null);
+  const [showCover,setShowCover]=useState(false);
+  const rowRef=useRef(null);
   const recorderRef=useRef(null);
   const chunksRef=useRef([]);
   const timerRef=useRef(null);
@@ -1152,6 +1156,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     clearInterval(timerRef.current);
     if(audioRef.current) audioRef.current.pause();
   },[]);
+  useEffect(()=>{ if(scrollInto&&rowRef.current) rowRef.current.scrollIntoView({behavior:'smooth',block:'start'}); },[scrollInto]);
   const setField=(k,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);so[k]=v;return st;});
   const setRole=(iid,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);so.parts[iid]=v;return st;});
   const addGuest=()=>update(st=>{const so=st.songs.find(x=>x.id===s.id);if(so.guests.length<MAX_GUESTS)so.guests.push({id:uid(),name:'',status:'todo'});return st;});
@@ -1230,10 +1235,12 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const meta=[s.artist, s.songKey&&('Key '+s.songKey), s.tempo&&(s.tempo+' bpm'), s.duration&&(s.duration+'m'), fileCount&&(fileCount+(fileCount>1?' files':' file'))].filter(Boolean);
 
   return (
-    <div className={'song'+(selected?' song-sel':'')}>
+    <div className={'song'+(selected?' song-sel':'')} ref={rowRef}>
       <button className="song-head" onClick={toggle}>
         {num!=null && <span className={'songnum'+(s.encore?' enc':'')}>{num}</span>}
-        <CoverThumb src={s.cover} size={46} radius={10}/>
+        <span onClick={e=>{if(open&&!compact){e.stopPropagation();setShowCover(v=>!v);}}}>
+          <CoverThumb src={s.cover} size={46} radius={10}/>
+        </span>
         <div style={{minWidth:0,flex:1}}>
           <div style={{display:'flex',alignItems:'center',gap:7,minWidth:0}}>
             <span className="song-title" style={{minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.title}</span>
@@ -1246,13 +1253,13 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       <div className="song-prog"><div className="pf" style={{width:(r*100)+'%',background:meterColor(r)}}/></div>
       {open && !compact &&
         <div className="song-body">
-          <div className="cover-edit">
+          {showCover && <div className="cover-edit">
             <CoverThumb src={s.cover} size={88} radius={12}/>
             <div className="cover-btns">
               <label className="btn ghost sm" style={{cursor:'pointer',opacity:busy==='cover'?0.5:1}}><input type="file" accept="image/*" hidden disabled={busy==='cover'} onChange={onCoverPick}/>{busy==='cover'?'Uploading…':(s.cover?'Replace cover':'Add cover art')}</label>
               {s.cover && busy!=='cover' && <button className="btn danger sm" onClick={clearCover}>Remove cover</button>}
             </div>
-          </div>
+          </div>}
           <label className="fl" style={{marginTop:4}}>Files</label>
           {(s.files||[]).map(f=>(
             <div className="fileitem" key={f.id}>
@@ -1358,11 +1365,11 @@ function SongForm({onSave,onCancel}){
   );
 }
 
-function FocusTags({songs,learn,practice}){
+function FocusTags({songs,learn,practice,onGoSong}){
   const row=(ids,color,label)=> ids && ids.length? (
     <div className="focus-tags" style={{marginTop:8}}>
       <span className="ftag" style={{borderColor:color,color,background:'transparent'}}>{label}</span>
-      {ids.map(id=>{ const n=focusName(id,songs); return n?<span className="ftag" key={id} dir="auto">{n}</span>:null;})}
+      {ids.map(id=>{ const n=focusName(id,songs); return n?<span className="ftag" key={id} dir="auto" style={onGoSong?{cursor:'pointer'}:null} onClick={onGoSong?()=>onGoSong(id):undefined}>{n}</span>:null;})}
     </div>
   ):null;
   if((!learn||!learn.length) && (!practice||!practice.length)) return null;
