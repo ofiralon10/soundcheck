@@ -108,7 +108,12 @@
   .reorder-btn{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--surface-2);border:1px solid var(--line-2);border-radius:8px;padding:8px 12px;display:inline-flex;align-items:center;gap:6px}
   .reorder-btn.on{color:#15141B;background:var(--text);border-color:transparent;font-weight:700}
   .ro-hint{font-size:11.5px;color:var(--muted);line-height:1.4}
-  .ro-row{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin-bottom:8px}
+  .ro-row{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin-bottom:8px;transition:opacity .15s}
+  .ro-row[draggable]{cursor:grab}
+  .ro-row.dragging{opacity:.3}
+  .ro-row.drop-above{box-shadow:0 -3px 0 0 var(--keys);border-top-color:var(--keys)}
+  .ro-row.drop-below{box-shadow:0 3px 0 0 var(--keys);border-bottom-color:var(--keys)}
+  .ro-grip{color:var(--muted-2);font-size:18px;flex-shrink:0;line-height:1;user-select:none}
   .ro-num{font-family:var(--mono);font-size:12.5px;font-weight:700;color:var(--muted);min-width:20px;text-align:center;font-variant-numeric:tabular-nums;flex-shrink:0}
   .ro-num.enc{color:var(--guitar)}
   .ro-title{flex:1;min-width:0;font-family:var(--display);font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:ltr}
@@ -239,7 +244,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.113';
+const VERSION='0.114';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
@@ -959,6 +964,8 @@ function Setlist({state,update}){
   const [adding,setAdding]=useState(false);
   const [roleFilter,setRoleFilter]=useState(null);
   const [reorder,setReorder]=useState(false);
+  const [dragId,setDragId]=useState(null);
+  const [dropPos,setDropPos]=useState(null);
   const songs=state.songs;
   const active=songs.filter(x=>!x.excluded);
   const excluded=songs.filter(x=>x.excluded);
@@ -975,6 +982,19 @@ function Setlist({state,update}){
     if(i<0||j<0||j>=act.length) return s;
     const t=act[i]; act[i]=act[j]; act[j]=t;
     s.songs=[...act,...exc]; return s; });
+
+  const moveTo=(fromId,targetId,before)=>update(s=>{
+    const act=s.songs.filter(x=>!x.excluded), exc=s.songs.filter(x=>x.excluded);
+    const fi=act.findIndex(x=>x.id===fromId); if(fi<0) return s;
+    const [item]=act.splice(fi,1);
+    let ti=act.findIndex(x=>x.id===targetId); if(ti<0) return s;
+    if(!before) ti++;
+    act.splice(ti,0,item);
+    s.songs=[...act,...exc]; return s; });
+  const onDragStart=(e,id)=>{ e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain',id); setDragId(id); };
+  const onDragOver=(e,id)=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; const r=e.currentTarget.getBoundingClientRect(); const half=(e.clientY-r.top)<r.height/2?'top':'bottom'; setDropPos({id,half}); };
+  const onDrop=(e)=>{ e.preventDefault(); if(dragId&&dropPos&&dragId!==dropPos.id) moveTo(dragId,dropPos.id,dropPos.half==='top'); setDragId(null); setDropPos(null); };
+  const onDragEnd=()=>{ setDragId(null); setDropPos(null); };
 
   const excludeSong=(id)=>update(s=>{
     const so=s.songs.find(x=>x.id===id); if(so){ so.excluded=true; so.encore=false; logAct(s,'took "'+so.title+'" out of the set'); }
@@ -1025,7 +1045,11 @@ function Setlist({state,update}){
   );
 
   const reorderList = active.map(s=>(
-    <div className="ro-row" key={s.id}>
+    <div className={'ro-row'+(dragId===s.id?' dragging':'')+(dropPos&&dropPos.id===s.id&&dragId!==s.id?(dropPos.half==='top'?' drop-above':' drop-below'):'')}
+      key={s.id} draggable
+      onDragStart={e=>onDragStart(e,s.id)} onDragOver={e=>onDragOver(e,s.id)}
+      onDrop={onDrop} onDragEnd={onDragEnd}>
+      <span className="ro-grip">⠿</span>
       <span className={'ro-num'+(s.encore?' enc':'')}>{numberOf[s.id]}</span>
       <span className="ro-title">{s.title}</span>
       <button className={'ro-btn enc'+(s.encore?' on':'')} onClick={()=>toggleEncore(s.id)} aria-label="Toggle encore">★</button>
