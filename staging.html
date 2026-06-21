@@ -210,6 +210,19 @@
   .done-modal{position:fixed;inset:0;z-index:50;display:flex;align-items:flex-end;justify-content:center;background:rgba(8,7,12,.66)}
   .done-panel{background:var(--surface);border:1px solid var(--line-2);border-radius:18px 18px 0 0;width:100%;max-width:560px;max-height:82vh;overflow:auto;padding:20px 18px calc(20px + env(safe-area-inset-bottom))}
   .song-reh-count{font-family:var(--mono);font-size:9.5px;color:var(--muted-2);background:var(--surface-2);border-radius:5px;padding:2px 6px;flex-shrink:0}
+  .player-overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:flex-end;justify-content:center;background:rgba(8,7,12,.66)}
+  .player-panel{background:var(--surface);border:1px solid var(--line-2);border-radius:18px 18px 0 0;width:100%;max-width:560px;padding:22px 20px calc(22px + env(safe-area-inset-bottom))}
+  .player-title{font-family:var(--display);font-weight:600;font-size:14px;margin-bottom:16px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .player-time{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--muted-2);margin-top:4px}
+  .player-seek{width:100%;height:6px;-webkit-appearance:none;appearance:none;background:var(--surface-3);border-radius:3px;outline:none;cursor:pointer}
+  .player-seek::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--text);cursor:pointer}
+  .player-seek::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:var(--text);border:none;cursor:pointer}
+  .player-controls{display:flex;align-items:center;justify-content:center;gap:20px;margin-top:16px}
+  .player-play{width:52px;height:52px;border-radius:50%;background:var(--text);color:#15141B;display:flex;align-items:center;justify-content:center;font-size:22px}
+  .player-vol{display:flex;align-items:center;gap:8px;margin-top:14px;justify-content:center}
+  .player-vol input{width:100px;height:4px;-webkit-appearance:none;appearance:none;background:var(--surface-3);border-radius:2px;outline:none}
+  .player-vol input::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--muted);cursor:pointer}
+  .player-vol input::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--muted);border:none;cursor:pointer}
   .reh-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
   .reh-date{font-family:var(--display);font-weight:600;font-size:15px}
   .reh-time{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:2px}
@@ -261,7 +274,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.118';
+const VERSION='0.119';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
@@ -1213,7 +1226,6 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [confirmDel,setConfirmDel]=useState(null);
   const [recState,setRecState]=useState(null);
   const [recTime,setRecTime]=useState(0);
-  const [playingFile,setPlayingFile]=useState(null);
   const [showCover,setShowCover]=useState(false);
   const rowRef=useRef(null);
   const recorderRef=useRef(null);
@@ -1253,6 +1265,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     setLinkUrl('');setLinkName('');setLinkMode(false);
   };
   const openFile=(f)=>{ if(f.url) window.open(f.url,'_blank','noopener'); };
+  const cameraRef=useRef(null);
+  const onCamera=(e)=>{ const file=e.target.files&&e.target.files[0]; e.target.value=''; if(!file) return; onUpload({target:{files:[file]}}); };
   const removeFile=(f)=>{ if(f.kind==='upload'&&f.path) deleteStoragePath(f.path); update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files=so.files.filter(x=>x.id!==f.id);return st;}); };
   const pendingBlobRef=useRef(null);
   const pendingMimeRef=useRef('');
@@ -1300,16 +1314,36 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     pendingBlobRef.current=null; setBusy(''); setRecTime(0);
   };
   const abandonRec=()=>{ pendingBlobRef.current=null; setRecConfirm(false); setRecTime(0); };
-  const playFile=(f)=>{
-    if(audioRef.current){ audioRef.current.pause(); audioRef.current=null; }
-    if(playingFile===f.id){ setPlayingFile(null); return; }
+  const [playerFile,setPlayerFile]=useState(null);
+  const [playerPlaying,setPlayerPlaying]=useState(false);
+  const [playerTime,setPlayerTime]=useState(0);
+  const [playerDur,setPlayerDur]=useState(0);
+  const [playerVol,setPlayerVol]=useState(1);
+  const playerTimerRef=useRef(null);
+  const openPlayer=(f)=>{
+    if(audioRef.current){ audioRef.current.pause(); clearInterval(playerTimerRef.current); }
     const a=new Audio(f.url);
-    a.onended=()=>setPlayingFile(null);
-    a.onerror=()=>{ setPlayingFile(null); setFileMsg('Could not play this file.'); };
+    a.volume=playerVol;
+    a.onloadedmetadata=()=>setPlayerDur(a.duration||0);
+    a.onended=()=>{ setPlayerPlaying(false); setPlayerTime(a.duration||0); clearInterval(playerTimerRef.current); };
+    a.onerror=()=>{ setPlayerFile(null); setPlayerPlaying(false); clearInterval(playerTimerRef.current); setFileMsg('Could not play this file.'); };
     a.play().catch(()=>setFileMsg('Playback failed.'));
     audioRef.current=a;
-    setPlayingFile(f.id);
+    setPlayerFile(f);
+    setPlayerPlaying(true);
+    setPlayerTime(0);
+    setPlayerDur(0);
+    clearInterval(playerTimerRef.current);
+    playerTimerRef.current=setInterval(()=>{ if(a&&!a.paused) setPlayerTime(a.currentTime); },250);
   };
+  const togglePlay=()=>{
+    if(!audioRef.current) return;
+    if(audioRef.current.paused){ audioRef.current.play(); setPlayerPlaying(true); playerTimerRef.current=setInterval(()=>setPlayerTime(audioRef.current.currentTime),250); }
+    else{ audioRef.current.pause(); setPlayerPlaying(false); clearInterval(playerTimerRef.current); }
+  };
+  const seekTo=(v)=>{ if(audioRef.current){ audioRef.current.currentTime=v; setPlayerTime(v); } };
+  const setVol=(v)=>{ setPlayerVol(v); if(audioRef.current) audioRef.current.volume=v; };
+  const closePlayer=()=>{ if(audioRef.current){ audioRef.current.pause(); audioRef.current=null; } clearInterval(playerTimerRef.current); setPlayerFile(null); setPlayerPlaying(false); setPlayerTime(0); };
 
   const fileCount=s.files?s.files.length:0;
   const rehCount=rehearsals?songRehCount(s.id,rehearsals):0;
@@ -1348,7 +1382,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
               <span className="ftype" style={{background:KIND_COLOR[f.type]||'var(--muted)'}}>{badgeText(f)}</span>
               <div className="fname" dir="auto">{f.name}{f.size?<span className="fsize"> · {fmtSize(f.size)}</span>:null}</div>
               {f.type==='audio'
-                ? <button className="fbtn" style={playingFile===f.id?{color:'var(--drums)'}:null} onClick={()=>playFile(f)}>{playingFile===f.id?'Stop':'Play'}</button>
+                ? <button className="fbtn" style={playerFile&&playerFile.id===f.id?{color:'var(--keys)'}:null} onClick={()=>openPlayer(f)}>{playerFile&&playerFile.id===f.id?'Playing…':'Play'}</button>
                 : <button className="fbtn" onClick={()=>openFile(f)}>Open</button>}
               {confirmDel===f.id
                 ? <React.Fragment>
@@ -1383,6 +1417,21 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
               </div>
             </div>
           </div>}
+          {playerFile && <div className="player-overlay" onClick={e=>{if(e.target===e.currentTarget) closePlayer();}}>
+            <div className="player-panel">
+              <div className="player-title" dir="auto">{playerFile.name}</div>
+              <input type="range" className="player-seek" min="0" max={playerDur||1} step="0.1" value={playerTime} onChange={e=>seekTo(+e.target.value)}/>
+              <div className="player-time"><span>{fmtSecs(Math.floor(playerTime))}</span><span>{playerDur?fmtSecs(Math.floor(playerDur)):'-:--'}</span></div>
+              <div className="player-controls">
+                <button className="player-play" onClick={togglePlay}>{playerPlaying?'❚❚':'▶'}</button>
+              </div>
+              <div className="player-vol">
+                <span style={{fontSize:12,color:'var(--muted-2)'}}>Vol</span>
+                <input type="range" min="0" max="1" step="0.05" value={playerVol} onChange={e=>setVol(+e.target.value)}/>
+              </div>
+              <div className="btnrow" style={{justifyContent:'center',marginTop:14}}><button className="btn ghost sm" onClick={closePlayer}>Close</button></div>
+            </div>
+          </div>}
           {busy==='rec' && <div style={{fontSize:12,color:'var(--muted)',padding:'8px 0'}}>Saving recording…</div>}
           {linkMode
             ? <div className="linkadd">
@@ -1393,8 +1442,9 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
                   <button className="btn" onClick={saveLink} disabled={!linkUrl.trim()}>Add link</button>
                 </div>
               </div>
-            : <div className="filebtns">
+            : <div className="filebtns" style={{flexWrap:'wrap'}}>
                 <label className="addfile" style={{opacity:busy==='file'?0.5:1}}><input type="file" hidden disabled={busy==='file'} onChange={onUpload}/>{busy==='file'?'Uploading…':'Upload file'}</label>
+                <label className="addfile" style={{opacity:busy==='file'?0.5:1,cursor:'pointer'}}><input type="file" accept="image/*" capture="environment" hidden disabled={busy==='file'} onChange={onCamera}/>📷 Camera</label>
                 <button className="addfile" onClick={()=>setLinkMode(true)}>Add link</button>
                 {!recState && <button className="addfile" style={{color:'var(--drums)',borderColor:'rgba(242,84,91,.4)'}} onClick={startRec}>● Record</button>}
               </div>}
