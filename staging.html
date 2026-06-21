@@ -193,6 +193,23 @@
   .reh{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px}
   .reh+.reh{margin-top:10px}
   .reh.done{opacity:.62}
+  .reh.live{border-color:var(--drums);box-shadow:0 0 12px rgba(242,84,91,.2)}
+  .reh-live-dot{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--drums);margin-top:6px}
+  .reh-live-dot i{width:8px;height:8px;border-radius:50%;background:var(--drums);animation:pulse 1.5s ease-in-out infinite}
+  .rec-overlay{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(8,7,12,.7)}
+  .rec-panel{background:var(--surface);border:2px solid var(--drums);border-radius:20px;width:90%;max-width:400px;padding:36px 24px;text-align:center}
+  .rec-dot{width:28px;height:28px;border-radius:50%;background:var(--drums);margin:0 auto 18px;animation:pulse 1.2s ease-in-out infinite}
+  .rec-label{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--drums);margin-bottom:8px}
+  .rec-timer{font-family:var(--mono);font-size:42px;font-weight:700;color:var(--text);margin-bottom:24px}
+  .rec-btns{display:flex;gap:12px;justify-content:center}
+  .rec-btn{padding:12px 24px;border-radius:10px;font-size:14px;font-weight:600}
+  .rec-btn.stop{background:var(--drums);color:#fff}
+  .rec-btn.pause{background:var(--surface-2);color:var(--text);border:1px solid var(--line)}
+  .rec-confirm{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(8,7,12,.7)}
+  .rec-confirm-panel{background:var(--surface);border:1px solid var(--line-2);border-radius:18px;width:90%;max-width:340px;padding:28px 22px;text-align:center}
+  .done-modal{position:fixed;inset:0;z-index:50;display:flex;align-items:flex-end;justify-content:center;background:rgba(8,7,12,.66)}
+  .done-panel{background:var(--surface);border:1px solid var(--line-2);border-radius:18px 18px 0 0;width:100%;max-width:560px;max-height:82vh;overflow:auto;padding:20px 18px calc(20px + env(safe-area-inset-bottom))}
+  .song-reh-count{font-family:var(--mono);font-size:9.5px;color:var(--muted-2);background:var(--surface-2);border-radius:5px;padding:2px 6px;flex-shrink:0}
   .reh-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
   .reh-date{font-family:var(--display);font-weight:600;font-size:15px}
   .reh-time{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:2px}
@@ -244,7 +261,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.116';
+const VERSION='0.117';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
@@ -372,6 +389,16 @@ async function completeLinkIfPresent(){
 }
 let latestStamp=null, saveT=null, pendingDoc=null;
 function saveState(s){
+  const activeSongs=s.songs.filter(x=>!x.excluded);
+  if(activeSongs.length>0){
+    const overall=activeSongs.reduce((a,x)=>a+songReadiness(x),0)/activeSongs.length;
+    const today=new Date().toISOString().slice(0,10);
+    if(!Array.isArray(s.readinessHistory)) s.readinessHistory=[];
+    const last=s.readinessHistory[s.readinessHistory.length-1];
+    if(!last||last.d!==today) s.readinessHistory.push({d:today,v:Math.round(overall*100)});
+    else last.v=Math.round(overall*100);
+    if(s.readinessHistory.length>365) s.readinessHistory=s.readinessHistory.slice(-365);
+  }
   pendingDoc=s;
   clearTimeout(saveT);
   saveT=setTimeout(()=>{ if(pendingDoc && boardRef){ try{ boardRef.set(JSON.parse(JSON.stringify(pendingDoc))); }catch(e){} } }, 400);
@@ -405,7 +432,7 @@ async function deleteBandDoc(){ if(boardRef) await boardRef.delete(); }
 /* ---------- state helpers ---------- */
 function defaultState(){
   const members={}; INSTR.forEach(i=>members[i.id]={name:i.label});
-  return {band:'', bandArt:'', concert:{name:'',date:'',venue:''}, members, songs:[], rehearsals:[], activity:[], access:{}, memberEmails:[], _rev:0, _updatedAt:null};
+  return {band:'', bandArt:'', concert:{name:'',date:'',venue:''}, members, songs:[], rehearsals:[], activity:[], access:{}, memberEmails:[], readinessHistory:[], _rev:0, _updatedAt:null};
 }
 function freshParts(){ const p={}; INSTR.forEach(i=>p[i.id]='todo'); return p; }
 function deriveFromStatus(st){ return st==='ready'?'ready' : (st==='practicing')?'practicing' : (st==='rehearsing'||st==='learning')?'learning' : 'todo'; }
@@ -437,8 +464,11 @@ function migrate(s){
     if(r.proposal!==undefined && r.proposal!==null && typeof r.proposal==='object'){
       if(!r.proposal.votes || typeof r.proposal.votes!=='object') r.proposal.votes={};
     } else { r.proposal=null; }
+    if(!Array.isArray(r.coveredSongs)) r.coveredSongs=[];
+    if(r.duration===undefined) r.duration='';
   });
   if(!Array.isArray(s.activity)) s.activity=[];
+  if(!Array.isArray(s.readinessHistory)) s.readinessHistory=[];
   if(!s.access||typeof s.access!=='object') s.access={};
   if(!Array.isArray(s.memberEmails)) s.memberEmails=[];
   return s;
@@ -477,6 +507,9 @@ function addDaysLocal(localStr, days){
 function performers(song){ return [ ...INSTR.map(i=>({status:song.parts[i.id]})), ...song.guests.map(g=>({status:g.status})) ]; }
 const songReadiness = song => { const p=performers(song); return p.length? p.reduce((a,x)=>a+score(x.status),0)/p.length : 0; };
 function allGuests(songs){ const seen=[]; songs.forEach(s=>s.guests.forEach(g=>{ const n=(g.name||'').trim(); if(n && !seen.includes(n)) seen.push(n); })); return seen; }
+function songRehCount(songId,rehearsals){ return rehearsals.filter(r=>r.done && r.coveredSongs && r.coveredSongs.includes(songId)).length; }
+function isRehLive(r){ if(!r||!r.date||r.done) return false; const start=new Date(r.date).getTime(); const dur=parseFloat(r.duration)||2; const end=start+dur*3600000; const now=Date.now(); return now>=start && now<=end; }
+function fmtDuration(d){ if(!d) return ''; const h=Math.floor(d); const m=Math.round((d-h)*60); return h+'h'+(m?(' '+m+'m'):''); }
 const KIND_COLOR={audio:'#EC6FA9',pdf:'#F2545B',slides:'#F4A93C',doc:'#5B9DF9',image:'#2DD4BF',sheet:'#3DD68C',file:'#948FA6',link:'#C9A6FF'};
 function fileKind(name){
   const e=((name||'').split('.').pop()||'').toLowerCase();
@@ -934,9 +967,10 @@ function Stage({state,go,update,goSong}){
       </React.Fragment>}
       <div className="section-h">Next rehearsal</div>
       {next ?
-        <div className="card">
+        <div className={'card'+(isRehLive(next)?' live':'')}>
           <div className="reh-date">{fmtDate(next.date)}</div>
-          <div className="reh-time">{fmtTime(next.date)}{next.location?' · '+next.location:''}</div>
+          <div className="reh-time">{fmtTime(next.date)}{next.duration?' · '+fmtDuration(next.duration):''}{next.location?' · '+next.location:''}</div>
+          {isRehLive(next) && <div className="reh-live-dot"><i></i>Rehearsal in progress</div>}
           {plannedCount>0
             ? <FocusTags songs={state.songs} learn={next.focusLearn} practice={next.focusPractice} onGoSong={goSong}/>
             : <div style={{color:'var(--muted)',fontSize:12.5,marginTop:10}}>No songs planned yet — set the focus in Rehearsals.</div>}
@@ -955,6 +989,37 @@ function Stage({state,go,update,goSong}){
           ))}
         </div>
       </React.Fragment>}
+      {(state.readinessHistory||[]).length>1 && <React.Fragment>
+        <div className="section-h">Readiness over time</div>
+        <ReadinessGraph history={state.readinessHistory}/>
+      </React.Fragment>}
+    </div>
+  );
+}
+function ReadinessGraph({history}){
+  const W=500,H=160,PAD=30,PADR=10,PADT=10,PADB=28;
+  const now=new Date(); const yearAgo=new Date(now); yearAgo.setDate(yearAgo.getDate()-365);
+  const pts=history.filter(p=>new Date(p.d)>=yearAgo).sort((a,b)=>a.d.localeCompare(b.d));
+  if(pts.length<2) return null;
+  const minD=yearAgo.getTime(), maxD=now.getTime(), rangeD=maxD-minD;
+  const toX=d=>PAD+(new Date(d).getTime()-minD)/rangeD*(W-PAD-PADR);
+  const toY=v=>PADT+(100-v)/100*(H-PADT-PADB);
+  const line=pts.map((p,i)=>(i===0?'M':'L')+toX(p.d).toFixed(1)+','+toY(p.v).toFixed(1)).join(' ');
+  const area=line+' L'+toX(pts[pts.length-1].d).toFixed(1)+','+(H-PADB)+' L'+toX(pts[0].d).toFixed(1)+','+(H-PADB)+' Z';
+  const months=[]; for(let m=0;m<12;m++){ const d=new Date(now); d.setMonth(d.getMonth()-11+m); d.setDate(1); if(d>=yearAgo) months.push(d); }
+  return (
+    <div className="card" style={{padding:'14px 8px 8px'}}>
+      <svg viewBox={'0 0 '+W+' '+H} style={{width:'100%',height:'auto'}}>
+        <defs><linearGradient id="rg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="var(--ok)" stopOpacity=".25"/><stop offset="100%" stopColor="var(--ok)" stopOpacity="0"/></linearGradient></defs>
+        {[0,25,50,75,100].map(v=><g key={v}>
+          <line x1={PAD} x2={W-PADR} y1={toY(v)} y2={toY(v)} stroke="var(--line)" strokeWidth=".7"/>
+          <text x={PAD-5} y={toY(v)+3.5} textAnchor="end" fill="var(--muted-2)" fontSize="9" fontFamily="var(--mono)">{v}%</text>
+        </g>)}
+        {months.map((d,i)=><text key={i} x={toX(d.toISOString().slice(0,10))} y={H-8} textAnchor="middle" fill="var(--muted-2)" fontSize="8" fontFamily="var(--mono)">{d.toLocaleDateString(undefined,{month:'short'})}</text>)}
+        <path d={area} fill="url(#rg)"/>
+        <path d={line} fill="none" stroke="var(--ok)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        <circle cx={toX(pts[pts.length-1].d)} cy={toY(pts[pts.length-1].v)} r="4" fill="var(--ok)"/>
+      </svg>
     </div>
   );
 }
@@ -1085,7 +1150,7 @@ function Setlist({state,update,goSongId,clearGoSong}){
         <div className="md">
           <div className="md-list">
             {shown.map(s=>(
-              <SongRow key={s.id} s={s} num={numberOf[s.id]} members={state.members}
+              <SongRow key={s.id} s={s} num={numberOf[s.id]} members={state.members} rehearsals={state.rehearsals}
                 open={false} compact selected={open===s.id}
                 toggle={()=>setOpen(s.id)} update={update}
                 onExclude={()=>excludeSong(s.id)} onToggleEncore={()=>toggleEncore(s.id)}/>
@@ -1095,7 +1160,7 @@ function Setlist({state,update,goSongId,clearGoSong}){
           </div>
           <div className="md-detail">
             {selSong
-              ? <SongRow key={'detail-'+selSong.id} s={selSong} num={numberOf[selSong.id]} members={state.members}
+              ? <SongRow key={'detail-'+selSong.id} s={selSong} num={numberOf[selSong.id]} members={state.members} rehearsals={state.rehearsals}
                   open={true} toggle={()=>{}} update={update}
                   onExclude={()=>{excludeSong(selSong.id);setOpen(null);}} onToggleEncore={()=>toggleEncore(selSong.id)}/>
               : <div className="md-empty">Select a song to view details</div>}
@@ -1115,7 +1180,7 @@ function Setlist({state,update,goSongId,clearGoSong}){
       {reorder
         ? reorderList
         : shown.map(s=>(
-            <SongRow key={s.id} s={s} num={numberOf[s.id]} members={state.members}
+            <SongRow key={s.id} s={s} num={numberOf[s.id]} members={state.members} rehearsals={state.rehearsals}
               open={open===s.id} scrollInto={open===s.id} toggle={()=>setOpen(open===s.id?null:s.id)} update={update}
               onExclude={()=>excludeSong(s.id)} onToggleEncore={()=>toggleEncore(s.id)}/>
           ))}
@@ -1133,7 +1198,7 @@ function Setlist({state,update,goSongId,clearGoSong}){
   );
 }
 
-function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,compact,selected,scrollInto}){
+function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,compact,selected,scrollInto,rehearsals}){
   const r=songReadiness(s);
   const [linkMode,setLinkMode]=useState(false);
   const [linkUrl,setLinkUrl]=useState('');
@@ -1185,30 +1250,23 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   };
   const openFile=(f)=>{ if(f.url) window.open(f.url,'_blank','noopener'); };
   const removeFile=(f)=>{ if(f.kind==='upload'&&f.path) deleteStoragePath(f.path); update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files=so.files.filter(x=>x.id!==f.id);return st;}); };
+  const pendingBlobRef=useRef(null);
+  const pendingMimeRef=useRef('');
+  const [recConfirm,setRecConfirm]=useState(false);
   const startRec=async()=>{ setFileMsg('');
     try{
       const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,sampleRate:48000}});
       const mr=new MediaRecorder(stream,{audioBitsPerSecond:256000});
       chunksRef.current=[];
       mr.ondataavailable=(e)=>{ if(e.data.size>0) chunksRef.current.push(e.data); };
-      mr.onstop=async()=>{
+      mr.onstop=()=>{
         stream.getTracks().forEach(t=>t.stop());
         clearInterval(timerRef.current);
         const blob=new Blob(chunksRef.current,{type:mr.mimeType||'audio/webm'});
         if(blob.size<100){ setRecState(null); setRecTime(0); return; }
-        setBusy('rec');
-        const fid=uid();
-        const ext=(mr.mimeType||'').includes('mp4')?'m4a':(mr.mimeType||'').includes('ogg')?'ogg':'webm';
-        const now=new Date();
-        const name='Recording '+now.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+now.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})+'.'+ext;
-        try{
-          const path='files/'+BOARD+'/'+fid+'-recording.'+ext;
-          const sRef=storage.ref().child(path);
-          await sRef.put(blob,{contentType:mr.mimeType||'audio/webm'});
-          const url=await sRef.getDownloadURL();
-          update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id:fid,name,kind:'upload',url,path,size:blob.size,type:'audio'});return st;});
-        }catch(err){ setFileMsg('Recording upload failed — '+prettyErr(err)); }
-        setBusy(''); setRecState(null); setRecTime(0);
+        pendingBlobRef.current=blob;
+        pendingMimeRef.current=mr.mimeType||'audio/webm';
+        setRecState(null); setRecConfirm(true);
       };
       mr.start(1000);
       recorderRef.current=mr;
@@ -1220,6 +1278,24 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const pauseRec=()=>{ if(recorderRef.current&&recorderRef.current.state==='recording'){ recorderRef.current.pause(); clearInterval(timerRef.current); setRecState('paused'); } };
   const resumeRec=()=>{ if(recorderRef.current&&recorderRef.current.state==='paused'){ recorderRef.current.resume(); timerRef.current=setInterval(()=>setRecTime(t=>t+1),1000); setRecState('recording'); } };
   const stopRec=()=>{ if(recorderRef.current&&recorderRef.current.state!=='inactive') recorderRef.current.stop(); };
+  const uploadRec=async()=>{
+    const blob=pendingBlobRef.current; const mime=pendingMimeRef.current;
+    if(!blob){ setRecConfirm(false); setRecTime(0); return; }
+    setBusy('rec'); setRecConfirm(false);
+    const fid=uid();
+    const ext=mime.includes('mp4')?'m4a':mime.includes('ogg')?'ogg':'webm';
+    const now=new Date();
+    const name='Recording '+now.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+now.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})+'.'+ext;
+    try{
+      const path='files/'+BOARD+'/'+fid+'-recording.'+ext;
+      const sRef=storage.ref().child(path);
+      await sRef.put(blob,{contentType:mime});
+      const url=await sRef.getDownloadURL();
+      update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id:fid,name,kind:'upload',url,path,size:blob.size,type:'audio'});return st;});
+    }catch(err){ setFileMsg('Recording upload failed — '+prettyErr(err)); }
+    pendingBlobRef.current=null; setBusy(''); setRecTime(0);
+  };
+  const abandonRec=()=>{ pendingBlobRef.current=null; setRecConfirm(false); setRecTime(0); };
   const playFile=(f)=>{
     if(audioRef.current){ audioRef.current.pause(); audioRef.current=null; }
     if(playingFile===f.id){ setPlayingFile(null); return; }
@@ -1232,6 +1308,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   };
 
   const fileCount=s.files?s.files.length:0;
+  const rehCount=rehearsals?songRehCount(s.id,rehearsals):0;
   const meta=[s.artist, s.songKey&&('Key '+s.songKey), s.tempo&&(s.tempo+' bpm'), s.duration&&(s.duration+'m'), fileCount&&(fileCount+(fileCount>1?' files':' file'))].filter(Boolean);
 
   return (
@@ -1244,6 +1321,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         <div style={{minWidth:0,flex:1}}>
           <div style={{display:'flex',alignItems:'center',gap:7,minWidth:0}}>
             <span className="song-title" style={{minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.title}</span>
+            {rehCount>0 && <span className="song-reh-count" title={rehCount+' rehearsal'+(rehCount>1?'s':'')}>{rehCount}×</span>}
             {s.encore && <span className="enc-pill">★ Enc</span>}
           </div>
           <div className="song-meta">{meta.join(' · ')||'—'}</div>
@@ -1277,16 +1355,28 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             </div>
           ))}
           {(s.files||[]).length===0 && !recState && <div className="fileempty">No files yet — add a chart, slides, or a reference track.</div>}
-          {recState && <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 0',borderTop:'1px solid var(--line)'}}>
-            <span style={{color:'var(--drums)',fontSize:13,fontFamily:'var(--mono)',fontWeight:700,display:'flex',alignItems:'center',gap:6}}>
-              <span style={{width:10,height:10,borderRadius:'50%',background:'var(--drums)',animation:recState==='recording'?'pulse 1.2s ease-in-out infinite':'none'}}></span>
-              {recState==='recording'?'Rec':'Paused'} {fmtSecs(recTime)}
-            </span>
-            <div style={{marginLeft:'auto',display:'flex',gap:8}}>
-              {recState==='recording'
-                ? <button className="fbtn" onClick={pauseRec}>Pause</button>
-                : <button className="fbtn" onClick={resumeRec}>Resume</button>}
-              <button className="fbtn" style={{color:'var(--drums)'}} onClick={stopRec}>Stop & Save</button>
+          {recState && <div className="rec-overlay">
+            <div className="rec-panel">
+              <div className="rec-dot"></div>
+              <div className="rec-label">{recState==='recording'?'Recording':'Paused'}</div>
+              <div className="rec-timer">{fmtSecs(recTime)}</div>
+              <div style={{fontSize:13,color:'var(--muted)',marginBottom:20}} dir="auto">{s.title}</div>
+              <div className="rec-btns">
+                {recState==='recording'
+                  ? <button className="rec-btn pause" onClick={pauseRec}>Pause</button>
+                  : <button className="rec-btn pause" onClick={resumeRec}>Resume</button>}
+                <button className="rec-btn stop" onClick={stopRec}>Stop</button>
+              </div>
+            </div>
+          </div>}
+          {recConfirm && <div className="rec-confirm">
+            <div className="rec-confirm-panel">
+              <div className="modaltitle">Save recording?</div>
+              <div style={{fontSize:13,color:'var(--muted)',marginBottom:18}}>{fmtSecs(recTime)} recorded for "{s.title}"</div>
+              <div className="btnrow">
+                <button className="btn danger" onClick={abandonRec}>Discard</button>
+                <button className="btn" onClick={uploadRec}>Save</button>
+              </div>
             </div>
           </div>}
           {busy==='rec' && <div style={{fontSize:12,color:'var(--muted)',padding:'8px 0'}}>Saving recording…</div>}
@@ -1456,18 +1546,43 @@ function RehCard({r,state,patch,del,update}){
   const songs=state.songs;
   const guestList=allGuests(songs);
   const [editFocus,setEditFocus]=useState(false);
+  const [markingDone,setMarkingDone]=useState(false);
+  const [covered,setCovered]=useState([]);
   const onToggle=(group,id)=>patch(r.id,x=>{ const res=toggleFocus(x.focusLearn||[],x.focusPractice||[],group,id); x.focusLearn=res.learn; x.focusPractice=res.practice; });
   const onSetOther=(group,text)=>patch(r.id,x=>{ const key=group==='practice'?'focusPractice':'focusLearn'; x[key]=setOtherInArr(x[key]||[],text); });
+  const startMarkDone=()=>{ const focus=[...(r.focusPractice||[]),...(r.focusLearn||[])].filter(x=>!isOther(x)); setCovered([...focus]); setMarkingDone(true); };
+  const confirmDone=()=>{ patch(r.id,x=>{x.done=true;x.coveredSongs=[...covered];}); setMarkingDone(false); };
+  const live=isRehLive(r);
   return (
-    <div className={'reh'+(r.done?' done':'')}>
+    <div className={'reh'+(r.done?' done':'')+(live?' live':'')}>
       <div className="reh-top">
         <div>
           <div className="reh-date">{r.date?fmtDate(r.date):'No date set'}</div>
-          <div className="reh-time">{r.date?fmtTime(r.date):''}</div>
+          <div className="reh-time">{r.date?fmtTime(r.date):''}{r.duration?' · '+fmtDuration(r.duration):''}</div>
           {r.location && <div className="reh-loc" dir="auto">{r.location}</div>}
+          {live && <div className="reh-live-dot"><i></i>Rehearsal in progress</div>}
         </div>
-        <button className="btn sm ghost" onClick={()=>patch(r.id,x=>x.done=!x.done)}>{r.done?'Reopen':'Mark done'}</button>
+        {r.done
+          ? <button className="btn sm ghost" onClick={()=>patch(r.id,x=>{x.done=false;})}>Reopen</button>
+          : <button className="btn sm ghost" onClick={startMarkDone}>Mark done</button>}
       </div>
+      {markingDone && <div className="done-modal" onClick={e=>{if(e.target===e.currentTarget) setMarkingDone(false);}}>
+        <div className="done-panel">
+          <div className="modaltitle">Which songs were covered?</div>
+          <div className="checklist">
+            {songs.filter(x=>!x.excluded).map(s=>(
+              <label className="checkrow" key={s.id}>
+                <input type="checkbox" checked={covered.includes(s.id)} onChange={()=>setCovered(c=>c.includes(s.id)?c.filter(x=>x!==s.id):[...c,s.id])}/>
+                <span dir="auto">{s.title}</span>
+              </label>
+            ))}
+          </div>
+          <div className="btnrow">
+            <button className="btn ghost" onClick={()=>setMarkingDone(false)}>Cancel</button>
+            <button className="btn" onClick={confirmDone}>Done</button>
+          </div>
+        </div>
+      </div>}
       <FocusTags songs={songs} learn={r.focusLearn} practice={r.focusPractice}/>
       {!editFocus
         ? <button className="btn sm ghost" style={{marginTop:11}} onClick={()=>setEditFocus(true)}>{(r.focusLearn&&r.focusLearn.length)||(r.focusPractice&&r.focusPractice.length)?'Edit focus songs':'+ Set focus songs'}</button>
@@ -1491,7 +1606,7 @@ function RehCard({r,state,patch,del,update}){
 }
 function RehForm({songs,members,onSave,onCancel}){
   const guestList=allGuests(songs);
-  const [f,setF]=useState({date:'',location:'',notes:'',learn:[],practice:[],repeat:'none',occurrences:4,attendance:Object.fromEntries(INSTR.map(i=>[i.id,true]))});
+  const [f,setF]=useState({date:'',duration:'2',location:'',notes:'',learn:[],practice:[],repeat:'none',occurrences:4,attendance:Object.fromEntries(INSTR.map(i=>[i.id,true]))});
   const onToggleFocus=(group,id)=>setF(p=>{const res=toggleFocus(p.learn,p.practice,group,id);return {...p,learn:res.learn,practice:res.practice};});
   const onSetOther=(group,text)=>setF(p=>({...p,[group]:setOtherInArr(p[group],text)}));
   const toggleAtt=id=>setF(p=>({...p,attendance:{...p.attendance,[id]:!p.attendance[id]}}));
@@ -1499,12 +1614,16 @@ function RehForm({songs,members,onSave,onCancel}){
   const buildDates=()=>{ if(!f.date) return ['']; if(f.repeat==='none') return [f.date]; const step=f.repeat==='biweekly'?14:7; const out=[]; for(let k=0;k<occ;k++) out.push(addDaysLocal(f.date,step*k)); return out; };
   const dates=buildDates();
   const multi = f.repeat!=='none' && !!f.date;
-  const save=()=>{ const items=dates.map(dt=>({date:dt,location:f.location,notes:f.notes,focusLearn:[...f.learn],focusPractice:[...f.practice],attendance:{...f.attendance}})); onSave(items); };
+  const save=()=>{ const items=dates.map(dt=>({date:dt,duration:f.duration,location:f.location,notes:f.notes,focusLearn:[...f.learn],focusPractice:[...f.practice],attendance:{...f.attendance}})); onSave(items); };
   return (
     <div className="card" style={{marginTop:14,borderColor:'var(--line-2)'}}>
       <div className="fieldgrid">
         <div className="full"><label className="fl">Date & time</label><input className="inp" type="datetime-local" value={f.date} onChange={e=>setF({...f,date:e.target.value})}/></div>
-        <div className="full"><label className="fl">Location</label><input className="inp" dir="auto" value={f.location} onChange={e=>setF({...f,location:e.target.value})} placeholder="Studio, garage, address…"/></div>
+        <div><label className="fl">Duration</label>
+          <select className="inp" value={f.duration} onChange={e=>setF({...f,duration:e.target.value})}>
+            {['0.5','1','1.5','2','2.5','3','3.5','4','5','6'].map(v=><option key={v} value={v}>{fmtDuration(v)}</option>)}
+          </select></div>
+        <div><label className="fl">Location</label><input className="inp" dir="auto" value={f.location} onChange={e=>setF({...f,location:e.target.value})} placeholder="Studio, garage…"/></div>
       </div>
       <label className="fl" style={{marginTop:14}}>Repeat — same time & place</label>
       <div className="chip-pick">
