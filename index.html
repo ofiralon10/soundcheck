@@ -19,6 +19,13 @@
   html,body{margin:0;padding:0}
   body{background:var(--bg);color:var(--text);font-family:var(--body);-webkit-font-smoothing:antialiased;line-height:1.45}
   #root{max-width:540px;margin:0 auto;min-height:100vh;position:relative}
+  @media(min-width:900px){#root{max-width:1200px}}
+  .md{display:flex;gap:16px;height:calc(100vh - 200px);min-height:400px}
+  .md-list{width:380px;flex-shrink:0;overflow-y:auto;padding-right:4px}
+  .md-detail{flex:1;overflow-y:auto;min-width:0;padding:0 4px}
+  .md-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted-2);font-size:15px;font-family:var(--display)}
+  .song-sel{outline:2px solid var(--keys);outline-offset:-2px}
+  .song-sel .song-head{background:rgba(139,124,246,.06)}
   button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
   input,textarea,select{font-family:inherit}
   ::selection{background:var(--keys);color:#fff}
@@ -87,8 +94,8 @@
   .song{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
   .song+.song{margin-top:10px}
   .song-head{display:flex;align-items:center;gap:12px;padding:13px 14px;width:100%;text-align:left}
-  .song-title{font-family:var(--display);font-weight:600;font-size:15px;line-height:1.2}
-  .song-meta{font-size:11.5px;color:var(--muted);margin-top:3px}
+  .song-title{font-family:var(--display);font-weight:600;font-size:15px;line-height:1.2;direction:ltr}
+  .song-meta{font-size:11.5px;color:var(--muted);margin-top:3px;direction:ltr}
   .cells{display:flex;gap:5px;margin-left:auto;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;max-width:170px}
   .cell{width:24px;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:10px;font-weight:700;border:1.5px solid;transition:all .2s}
   .cell svg{display:block}
@@ -101,10 +108,15 @@
   .reorder-btn{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--surface-2);border:1px solid var(--line-2);border-radius:8px;padding:8px 12px;display:inline-flex;align-items:center;gap:6px}
   .reorder-btn.on{color:#15141B;background:var(--text);border-color:transparent;font-weight:700}
   .ro-hint{font-size:11.5px;color:var(--muted);line-height:1.4}
-  .ro-row{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin-bottom:8px}
+  .ro-row{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin-bottom:8px;transition:opacity .15s}
+  .ro-row[draggable]{cursor:grab}
+  .ro-row.dragging{opacity:.3}
+  .ro-row.drop-above{box-shadow:0 -3px 0 0 var(--keys);border-top-color:var(--keys)}
+  .ro-row.drop-below{box-shadow:0 3px 0 0 var(--keys);border-bottom-color:var(--keys)}
+  .ro-grip{color:var(--muted-2);font-size:18px;flex-shrink:0;line-height:1;user-select:none}
   .ro-num{font-family:var(--mono);font-size:12.5px;font-weight:700;color:var(--muted);min-width:20px;text-align:center;font-variant-numeric:tabular-nums;flex-shrink:0}
   .ro-num.enc{color:var(--guitar)}
-  .ro-title{flex:1;min-width:0;font-family:var(--display);font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ro-title{flex:1;min-width:0;font-family:var(--display);font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:ltr}
   .ro-btn{width:34px;height:34px;border-radius:8px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);font-size:15px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
   .ro-btn:disabled{opacity:.28}
   .ro-btn.enc{color:var(--muted-2)}
@@ -114,7 +126,7 @@
   .excl-h::after{content:"";flex:1;height:1px;background:var(--line)}
   .excl-row{display:flex;align-items:center;gap:11px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px 12px;margin-bottom:8px}
   .excl-row .cover-thumb{opacity:.6}
-  .ex-title{flex:1;min-width:0;font-family:var(--display);font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+  .ex-title{flex:1;min-width:0;font-family:var(--display);font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);direction:ltr}
   .incl-btn{font-family:var(--mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--ok);background:rgba(61,214,140,.08);border:1px solid rgba(61,214,140,.4);border-radius:8px;padding:8px 13px;flex-shrink:0}
   .songact{display:flex;gap:9px;margin-top:14px}
   .songact .btn{flex:1}
@@ -205,6 +217,7 @@
   .savepill{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
   .savepill i{width:7px;height:7px;border-radius:50%}
   .tabbar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:540px;display:flex;background:rgba(26,25,33,.92);backdrop-filter:blur(14px);border-top:1px solid var(--line);padding:8px 6px calc(8px + env(safe-area-inset-bottom));z-index:30}
+  @media(min-width:900px){.tabbar{max-width:1200px}}
   .tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;color:var(--muted-2);font-size:10px;letter-spacing:.03em;border-radius:10px}
   .tab.on{color:var(--text)}
   .tab svg{width:21px;height:21px}
@@ -230,8 +243,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 
 <script type="text/babel">
-const {useState,useEffect,useRef} = React;
-const VERSION='0.110';
+const {useState,useEffect,useRef,useCallback} = React;
+const VERSION='0.114';
+function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
    ▼▼▼  PASTE YOUR FIREBASE CONFIG HERE  ▼▼▼
@@ -945,10 +959,13 @@ function Stage({state,go,update}){
 }
 
 function Setlist({state,update}){
+  const wide=useWide();
   const [open,setOpen]=useState(null);
   const [adding,setAdding]=useState(false);
   const [roleFilter,setRoleFilter]=useState(null);
   const [reorder,setReorder]=useState(false);
+  const [dragId,setDragId]=useState(null);
+  const [dropPos,setDropPos]=useState(null);
   const songs=state.songs;
   const active=songs.filter(x=>!x.excluded);
   const excluded=songs.filter(x=>x.excluded);
@@ -966,6 +983,19 @@ function Setlist({state,update}){
     const t=act[i]; act[i]=act[j]; act[j]=t;
     s.songs=[...act,...exc]; return s; });
 
+  const moveTo=(fromId,targetId,before)=>update(s=>{
+    const act=s.songs.filter(x=>!x.excluded), exc=s.songs.filter(x=>x.excluded);
+    const fi=act.findIndex(x=>x.id===fromId); if(fi<0) return s;
+    const [item]=act.splice(fi,1);
+    let ti=act.findIndex(x=>x.id===targetId); if(ti<0) return s;
+    if(!before) ti++;
+    act.splice(ti,0,item);
+    s.songs=[...act,...exc]; return s; });
+  const onDragStart=(e,id)=>{ e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain',id); setDragId(id); };
+  const onDragOver=(e,id)=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; const r=e.currentTarget.getBoundingClientRect(); const half=(e.clientY-r.top)<r.height/2?'top':'bottom'; setDropPos({id,half}); };
+  const onDrop=(e)=>{ e.preventDefault(); if(dragId&&dropPos&&dragId!==dropPos.id) moveTo(dragId,dropPos.id,dropPos.half==='top'); setDragId(null); setDropPos(null); };
+  const onDragEnd=()=>{ setDragId(null); setDropPos(null); };
+
   const excludeSong=(id)=>update(s=>{
     const so=s.songs.find(x=>x.id===id); if(so){ so.excluded=true; so.encore=false; logAct(s,'took "'+so.title+'" out of the set'); }
     const act=s.songs.filter(x=>!x.excluded), exc=s.songs.filter(x=>x.excluded);
@@ -981,12 +1011,10 @@ function Setlist({state,update}){
 
   const shown = roleFilter ? active.filter(s=>s.parts[roleFilter]!=='ready') : active;
   const roleLabel = roleFilter ? state.members[roleFilter].name : null;
+  const selSong = open ? songs.find(x=>x.id===open) : null;
 
-  return (
-    <div className="page">
-      <div className="section-h">Setlist · {active.length}{excluded.length?(' · '+excluded.length+' out'):''}</div>
-      {adding && <SongForm onSave={addSong} onCancel={()=>setAdding(false)}/>}
-
+  const toolbar = (
+    <React.Fragment>
       {active.length>1 && !adding &&
         <div className="setlist-tools">
           <button className={'reorder-btn'+(reorder?' on':'')} onClick={()=>{ setReorder(v=>!v); setRoleFilter(null); setOpen(null); }}>
@@ -994,7 +1022,6 @@ function Setlist({state,update}){
           </button>
           {reorder && <span className="ro-hint">↑ ↓ set play order · ★ marks an encore · ⊘ moves a song out</span>}
         </div>}
-
       {!reorder && active.length>0 &&
         <div className="filterbar">
           <button className={'chip'+(roleFilter===null?' on':'')} onClick={()=>setRoleFilter(null)}>All songs</button>
@@ -1005,42 +1032,94 @@ function Setlist({state,update}){
           ))}
         </div>}
       {!reorder && roleFilter && <div className="filterhint">Songs where {roleLabel} still needs work · {shown.length}</div>}
+    </React.Fragment>
+  );
 
+  const emptyStates = (
+    <React.Fragment>
       {active.length===0 && excluded.length===0 && !adding &&
         <div className="empty"><div className="big">No songs yet</div><div className="sm">Add the first track you're working up for the show.</div></div>}
       {active.length>0 && roleFilter && shown.length===0 &&
         <div className="empty"><div className="big">{roleLabel} is all set</div><div className="sm">Every song on the list is marked ready for this part.</div></div>}
+    </React.Fragment>
+  );
+
+  const reorderList = active.map(s=>(
+    <div className={'ro-row'+(dragId===s.id?' dragging':'')+(dropPos&&dropPos.id===s.id&&dragId!==s.id?(dropPos.half==='top'?' drop-above':' drop-below'):'')}
+      key={s.id} draggable
+      onDragStart={e=>onDragStart(e,s.id)} onDragOver={e=>onDragOver(e,s.id)}
+      onDrop={onDrop} onDragEnd={onDragEnd}>
+      <span className="ro-grip">⠿</span>
+      <span className={'ro-num'+(s.encore?' enc':'')}>{numberOf[s.id]}</span>
+      <span className="ro-title">{s.title}</span>
+      <button className={'ro-btn enc'+(s.encore?' on':'')} onClick={()=>toggleEncore(s.id)} aria-label="Toggle encore">★</button>
+      <button className="ro-btn excl" onClick={()=>excludeSong(s.id)} aria-label="Exclude from set">⊘</button>
+      <button className="ro-btn" disabled={numberOf[s.id]===1} onClick={()=>moveActive(s.id,-1)} aria-label="Move up">↑</button>
+      <button className="ro-btn" disabled={numberOf[s.id]===active.length} onClick={()=>moveActive(s.id,1)} aria-label="Move down">↓</button>
+    </div>
+  ));
+
+  const excludedSection = (!reorder && excluded.length>0 &&
+    <React.Fragment>
+      <div className="excl-h">Excluded · {excluded.length}</div>
+      {excluded.map(s=>(
+        <div className="excl-row" key={s.id}>
+          <CoverThumb src={s.cover} size={38} radius={9}/>
+          <span className="ex-title">{s.title}</span>
+          <button className="incl-btn" onClick={()=>includeSong(s.id)}>＋ Include</button>
+        </div>
+      ))}
+    </React.Fragment>);
+
+  const addBar = (!reorder && !adding && <div className="add-bar"><button className="btn ghost" onClick={()=>{setAdding(true);window.scrollTo({top:0,behavior:'smooth'});}}>+ Add song</button></div>);
+
+  if(wide && !reorder){
+    return (
+      <div className="page">
+        <div className="section-h">Setlist · {active.length}{excluded.length?(' · '+excluded.length+' out'):''}</div>
+        {adding && <SongForm onSave={addSong} onCancel={()=>setAdding(false)}/>}
+        {toolbar}
+        {emptyStates}
+        <div className="md">
+          <div className="md-list">
+            {shown.map(s=>(
+              <SongRow key={s.id} s={s} num={numberOf[s.id]} members={state.members}
+                open={false} compact selected={open===s.id}
+                toggle={()=>setOpen(s.id)} update={update}
+                onExclude={()=>excludeSong(s.id)} onToggleEncore={()=>toggleEncore(s.id)}/>
+            ))}
+            {excludedSection}
+            {addBar}
+          </div>
+          <div className="md-detail">
+            {selSong
+              ? <SongRow key={'detail-'+selSong.id} s={selSong} num={numberOf[selSong.id]} members={state.members}
+                  open={true} toggle={()=>{}} update={update}
+                  onExclude={()=>{excludeSong(selSong.id);setOpen(null);}} onToggleEncore={()=>toggleEncore(selSong.id)}/>
+              : <div className="md-empty">Select a song to view details</div>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page">
+      <div className="section-h">Setlist · {active.length}{excluded.length?(' · '+excluded.length+' out'):''}</div>
+      {adding && <SongForm onSave={addSong} onCancel={()=>setAdding(false)}/>}
+      {toolbar}
+      {emptyStates}
 
       {reorder
-        ? active.map(s=>(
-            <div className="ro-row" key={s.id}>
-              <span className={'ro-num'+(s.encore?' enc':'')}>{numberOf[s.id]}</span>
-              <span className="ro-title" dir="auto">{s.title}</span>
-              <button className={'ro-btn enc'+(s.encore?' on':'')} onClick={()=>toggleEncore(s.id)} aria-label="Toggle encore">★</button>
-              <button className="ro-btn excl" onClick={()=>excludeSong(s.id)} aria-label="Exclude from set">⊘</button>
-              <button className="ro-btn" disabled={numberOf[s.id]===1} onClick={()=>moveActive(s.id,-1)} aria-label="Move up">↑</button>
-              <button className="ro-btn" disabled={numberOf[s.id]===active.length} onClick={()=>moveActive(s.id,1)} aria-label="Move down">↓</button>
-            </div>
-          ))
+        ? reorderList
         : shown.map(s=>(
             <SongRow key={s.id} s={s} num={numberOf[s.id]} members={state.members}
               open={open===s.id} toggle={()=>setOpen(open===s.id?null:s.id)} update={update}
               onExclude={()=>excludeSong(s.id)} onToggleEncore={()=>toggleEncore(s.id)}/>
           ))}
 
-      {!reorder && excluded.length>0 &&
-        <React.Fragment>
-          <div className="excl-h">Excluded · {excluded.length}</div>
-          {excluded.map(s=>(
-            <div className="excl-row" key={s.id}>
-              <CoverThumb src={s.cover} size={38} radius={9}/>
-              <span className="ex-title" dir="auto">{s.title}</span>
-              <button className="incl-btn" onClick={()=>includeSong(s.id)}>＋ Include</button>
-            </div>
-          ))}
-        </React.Fragment>}
-
-      {!reorder && !adding && <div className="add-bar"><button className="btn ghost" onClick={()=>{setAdding(true);window.scrollTo({top:0,behavior:'smooth'});}}>+ Add song</button></div>}
+      {excludedSection}
+      {addBar}
       {active.length>0 && !reorder &&
         <div className="legend">
           <span><i className="lg" style={{borderColor:'var(--line-2)'}}></i>to do</span>
@@ -1052,7 +1131,7 @@ function Setlist({state,update}){
   );
 }
 
-function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore}){
+function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,compact,selected}){
   const r=songReadiness(s);
   const [linkMode,setLinkMode]=useState(false);
   const [linkUrl,setLinkUrl]=useState('');
@@ -1151,21 +1230,21 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore}){
   const meta=[s.artist, s.songKey&&('Key '+s.songKey), s.tempo&&(s.tempo+' bpm'), s.duration&&(s.duration+'m'), fileCount&&(fileCount+(fileCount>1?' files':' file'))].filter(Boolean);
 
   return (
-    <div className="song">
+    <div className={'song'+(selected?' song-sel':'')}>
       <button className="song-head" onClick={toggle}>
         {num!=null && <span className={'songnum'+(s.encore?' enc':'')}>{num}</span>}
         <CoverThumb src={s.cover} size={46} radius={10}/>
         <div style={{minWidth:0,flex:1}}>
           <div style={{display:'flex',alignItems:'center',gap:7,minWidth:0}}>
-            <span className="song-title" dir="auto" style={{minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.title}</span>
+            <span className="song-title" style={{minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.title}</span>
             {s.encore && <span className="enc-pill">★ Enc</span>}
           </div>
-          <div className="song-meta" dir="auto">{meta.join(' · ')||'—'}</div>
+          <div className="song-meta">{meta.join(' · ')||'—'}</div>
         </div>
         <Cells song={s}/>
       </button>
       <div className="song-prog"><div className="pf" style={{width:(r*100)+'%',background:meterColor(r)}}/></div>
-      {open &&
+      {open && !compact &&
         <div className="song-body">
           <div className="cover-edit">
             <CoverThumb src={s.cover} size={88} radius={12}/>
