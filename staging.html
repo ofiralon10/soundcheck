@@ -94,8 +94,8 @@
   .song{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
   .song+.song{margin-top:10px}
   .song-head{display:flex;align-items:center;gap:12px;padding:13px 14px;width:100%;text-align:left}
-  .song-title{font-family:var(--display);font-weight:600;font-size:15px;line-height:1.2}
-  .song-meta{font-size:11.5px;color:var(--muted);margin-top:3px}
+  .song-title{font-family:var(--display);font-weight:600;font-size:15px;line-height:1.2;direction:ltr}
+  .song-meta{font-size:11.5px;color:var(--muted);margin-top:3px;direction:ltr}
   .cells{display:flex;gap:5px;margin-left:auto;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;max-width:170px}
   .cell{width:24px;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:10px;font-weight:700;border:1.5px solid;transition:all .2s}
   .cell svg{display:block}
@@ -111,7 +111,7 @@
   .ro-row{display:flex;align-items:center;gap:9px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px 11px;margin-bottom:8px}
   .ro-num{font-family:var(--mono);font-size:12.5px;font-weight:700;color:var(--muted);min-width:20px;text-align:center;font-variant-numeric:tabular-nums;flex-shrink:0}
   .ro-num.enc{color:var(--guitar)}
-  .ro-title{flex:1;min-width:0;font-family:var(--display);font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ro-title{flex:1;min-width:0;font-family:var(--display);font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;direction:ltr}
   .ro-btn{width:34px;height:34px;border-radius:8px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);font-size:15px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
   .ro-btn:disabled{opacity:.28}
   .ro-btn.enc{color:var(--muted-2)}
@@ -121,7 +121,7 @@
   .excl-h::after{content:"";flex:1;height:1px;background:var(--line)}
   .excl-row{display:flex;align-items:center;gap:11px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:9px 12px;margin-bottom:8px}
   .excl-row .cover-thumb{opacity:.6}
-  .ex-title{flex:1;min-width:0;font-family:var(--display);font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+  .ex-title{flex:1;min-width:0;font-family:var(--display);font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted);direction:ltr}
   .incl-btn{font-family:var(--mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--ok);background:rgba(61,214,140,.08);border:1px solid rgba(61,214,140,.4);border-radius:8px;padding:8px 13px;flex-shrink:0}
   .songact{display:flex;gap:9px;margin-top:14px}
   .songact .btn{flex:1}
@@ -239,7 +239,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.112';
+const VERSION='0.113';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
