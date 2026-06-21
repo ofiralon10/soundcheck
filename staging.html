@@ -152,12 +152,12 @@
   .checkrow:first-child{border-top:none}
   .checkrow input{width:20px;height:20px;accent-color:var(--keys);flex-shrink:0}
   .song-body{padding:8px 14px 16px;border-top:1px solid var(--line)}
-  .editrow{display:flex;flex-direction:column;gap:8px;padding:11px 0}
+  .editrow{display:flex;align-items:center;gap:10px;padding:9px 0}
   .editrow+.editrow{border-top:1px solid var(--line)}
   .editrow .ename{font-family:var(--display);font-weight:600;font-size:13px}
   .status-pills{display:flex;gap:5px;width:100%}
   .status-pills .pill{flex:1;text-align:center}
-  .pill{font-family:var(--mono);font-size:9.5px;letter-spacing:.03em;text-transform:uppercase;padding:8px 4px;border-radius:7px;border:1px solid var(--line-2);color:var(--muted);white-space:nowrap}
+  .pill{font-family:var(--mono);font-size:9px;letter-spacing:.03em;text-transform:uppercase;padding:7px 3px;border-radius:7px;border:1px solid var(--line-2);color:var(--muted);white-space:nowrap}
   .pill.on{color:#15141B;font-weight:700;border-color:transparent}
   .guest-edit{padding:11px 0;border-top:1px dashed rgba(201,166,255,.28)}
   .guest-top{display:flex;gap:8px;align-items:center}
@@ -244,7 +244,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.114';
+const VERSION='0.115';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
