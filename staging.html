@@ -274,7 +274,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.119';
+const VERSION='0.120';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
@@ -445,7 +445,7 @@ async function deleteBandDoc(){ if(boardRef) await boardRef.delete(); }
 /* ---------- state helpers ---------- */
 function defaultState(){
   const members={}; INSTR.forEach(i=>members[i.id]={name:i.label});
-  return {band:'', bandArt:'', concert:{name:'',date:'',venue:''}, members, songs:[], rehearsals:[], activity:[], access:{}, memberEmails:[], readinessHistory:[], _rev:0, _updatedAt:null};
+  return {band:'', bandArt:'', concert:{name:'',date:'',venue:''}, members, songs:[], rehearsals:[], activity:[], access:{}, memberEmails:[], readinessHistory:[], album:[], _rev:0, _updatedAt:null};
 }
 function freshParts(){ const p={}; INSTR.forEach(i=>p[i.id]='todo'); return p; }
 function deriveFromStatus(st){ return st==='ready'?'ready' : (st==='practicing')?'practicing' : (st==='rehearsing'||st==='learning')?'learning' : 'todo'; }
@@ -486,6 +486,7 @@ function migrate(s){
     const act=s.songs.filter(x=>!x.excluded);
     if(act.length>0){ const v=Math.round(act.reduce((a,x)=>a+songReadiness(x),0)/act.length*100); s.readinessHistory.push({d:new Date().toISOString().slice(0,10),v}); }
   }
+  if(!Array.isArray(s.album)) s.album=[];
   if(!s.access||typeof s.access!=='object') s.access={};
   if(!Array.isArray(s.memberEmails)) s.memberEmails=[];
   return s;
@@ -758,6 +759,7 @@ function App(){
       {tab==='stage'    && <Stage state={state} go={setTab} update={update} goSong={id=>{setTab('setlist');setGoSongId(id);}} />}
       {tab==='setlist'  && <Setlist state={state} update={update} goSongId={goSongId} clearGoSong={()=>setGoSongId(null)} />}
       {tab==='rehearse' && <Rehearsals state={state} update={update} />}
+      {tab==='album'    && <Album state={state} update={update} />}
       {tab==='setup'    && <Setup state={state} update={update} user={user} onSignOut={signOut} onSwitch={switchBoard} />}
       <TabBar tab={tab} setTab={setTab} />
     </React.Fragment>
@@ -1265,8 +1267,24 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     setLinkUrl('');setLinkName('');setLinkMode(false);
   };
   const openFile=(f)=>{ if(f.url) window.open(f.url,'_blank','noopener'); };
-  const cameraRef=useRef(null);
-  const onCamera=(e)=>{ const file=e.target.files&&e.target.files[0]; e.target.value=''; if(!file) return; onUpload({target:{files:[file]}}); };
+  const [pendingPhoto,setPendingPhoto]=useState(null);
+  const [photoPreview,setPhotoPreview]=useState(null);
+  const onCamera=(e)=>{ const file=e.target.files&&e.target.files[0]; e.target.value=''; if(!file) return;
+    setPendingPhoto(file);
+    const rd=new FileReader(); rd.onload=()=>setPhotoPreview(rd.result); rd.readAsDataURL(file);
+  };
+  const uploadPhotoAsFile=()=>{ if(!pendingPhoto) return; const f=pendingPhoto; setPendingPhoto(null); setPhotoPreview(null); onUpload({target:{files:[f]}}); };
+  const uploadPhotoToAlbum=async()=>{ if(!pendingPhoto) return; const file=pendingPhoto; setPendingPhoto(null); setPhotoPreview(null);
+    setBusy('file'); const id=uid();
+    try{
+      const path='album/'+BOARD+'/'+id+'-'+file.name.replace(/[^\w.\-]+/g,'_');
+      const ref=storage.ref().child(path); await ref.put(file);
+      const url=await ref.getDownloadURL();
+      update(st=>{st.album.push({id,url,path,ts:new Date().toISOString(),name:file.name,by:actorName()}); logAct(st,'added a photo to the album'); return st;});
+    }catch(err){ setFileMsg('Album upload failed — '+prettyErr(err)); }
+    setBusy('');
+  };
+  const discardPhoto=()=>{ setPendingPhoto(null); setPhotoPreview(null); };
   const removeFile=(f)=>{ if(f.kind==='upload'&&f.path) deleteStoragePath(f.path); update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files=so.files.filter(x=>x.id!==f.id);return st;}); };
   const pendingBlobRef=useRef(null);
   const pendingMimeRef=useRef('');
@@ -1430,6 +1448,17 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
                 <input type="range" min="0" max="1" step="0.05" value={playerVol} onChange={e=>setVol(+e.target.value)}/>
               </div>
               <div className="btnrow" style={{justifyContent:'center',marginTop:14}}><button className="btn ghost sm" onClick={closePlayer}>Close</button></div>
+            </div>
+          </div>}
+          {pendingPhoto && <div className="rec-confirm">
+            <div className="rec-confirm-panel">
+              {photoPreview && <img src={photoPreview} style={{width:'100%',maxHeight:200,objectFit:'contain',borderRadius:10,marginBottom:14}} alt="Preview"/>}
+              <div className="modaltitle">What to do with this photo?</div>
+              <div style={{display:'flex',flexDirection:'column',gap:9}}>
+                <button className="btn" onClick={uploadPhotoAsFile}>Save to this song</button>
+                <button className="btn ghost" onClick={uploadPhotoToAlbum}>Save to band album</button>
+                <button className="btn danger" onClick={discardPhoto}>Discard</button>
+              </div>
             </div>
           </div>}
           {busy==='rec' && <div style={{fontSize:12,color:'var(--muted)',padding:'8px 0'}}>Saving recording…</div>}
@@ -1840,14 +1869,85 @@ function CropModal({src,onCancel,onDone}){
   );
 }
 
+function Album({state,update}){
+  const [viewing,setViewing]=useState(null);
+  const photos=[...(state.album||[])].sort((a,b)=>(b.ts||'').localeCompare(a.ts||''));
+  const cameraRef=useRef(null);
+  const [pendingPhoto,setPendingPhoto]=useState(null);
+  const [photoPreview,setPhotoPreview]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const onCapture=(e)=>{ const file=e.target.files&&e.target.files[0]; e.target.value=''; if(!file) return;
+    setPendingPhoto(file); const rd=new FileReader(); rd.onload=()=>setPhotoPreview(rd.result); rd.readAsDataURL(file);
+  };
+  const uploadToAlbum=async()=>{ if(!pendingPhoto) return; const file=pendingPhoto; setPendingPhoto(null); setPhotoPreview(null);
+    setBusy(true); const id=uid();
+    try{
+      const path='album/'+BOARD+'/'+id+'-'+file.name.replace(/[^\w.\-]+/g,'_');
+      const ref=storage.ref().child(path); await ref.put(file);
+      const url=await ref.getDownloadURL();
+      update(st=>{st.album.push({id,url,path,ts:new Date().toISOString(),name:file.name,by:actorName()}); logAct(st,'added a photo to the album'); return st;});
+    }catch(e){}
+    setBusy(false);
+  };
+  const discard=()=>{ setPendingPhoto(null); setPhotoPreview(null); };
+  const del=(photo)=>{ if(photo.path) deleteStoragePath(photo.path); update(st=>{st.album=st.album.filter(x=>x.id!==photo.id); return st;}); setViewing(null); };
+  const [confirmDel,setConfirmDel]=useState(null);
+  return (
+    <div className="page">
+      <div className="section-h">Band Album · {photos.length}</div>
+      <div className="add-bar"><label className="btn ghost" style={{cursor:'pointer'}}><input type="file" accept="image/*" capture="environment" hidden onChange={onCapture}/>{busy?'Uploading…':'📷 Take photo'}</label></div>
+      <div className="add-bar" style={{marginTop:6}}><label className="btn ghost" style={{cursor:'pointer'}}><input type="file" accept="image/*" hidden onChange={onCapture}/>Upload from gallery</label></div>
+      {pendingPhoto && <div className="rec-confirm">
+        <div className="rec-confirm-panel">
+          {photoPreview && <img src={photoPreview} style={{width:'100%',maxHeight:200,objectFit:'contain',borderRadius:10,marginBottom:14}} alt="Preview"/>}
+          <div className="modaltitle">Save to album?</div>
+          <div style={{display:'flex',flexDirection:'column',gap:9}}>
+            <button className="btn" onClick={uploadToAlbum}>Save</button>
+            <button className="btn danger" onClick={discard}>Discard</button>
+          </div>
+        </div>
+      </div>}
+      {photos.length===0 && !busy &&
+        <div className="empty"><div className="big">No photos yet</div><div className="sm">Capture rehearsal moments, stage setups, or chord sheets with the camera.</div></div>}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:6,marginTop:14}}>
+        {photos.map(p=>(
+          <div key={p.id} style={{aspectRatio:'1',borderRadius:10,overflow:'hidden',cursor:'pointer',background:'var(--surface-2)'}} onClick={()=>setViewing(p)}>
+            <img src={p.url} style={{width:'100%',height:'100%',objectFit:'cover'}} alt={p.name||''} loading="lazy"/>
+          </div>
+        ))}
+      </div>
+      {viewing && <div className="modalwrap" onClick={e=>{if(e.target===e.currentTarget) setViewing(null);}}>
+        <div className="modalcard" style={{borderRadius:18,padding:0,maxHeight:'92vh',display:'flex',flexDirection:'column'}}>
+          <img src={viewing.url} style={{width:'100%',maxHeight:'70vh',objectFit:'contain',borderRadius:'18px 18px 0 0'}} alt={viewing.name||''}/>
+          <div style={{padding:'14px 18px'}}>
+            <div style={{fontSize:12,color:'var(--muted)'}}>
+              {viewing.by && <span>{viewing.by} · </span>}
+              {viewing.ts && fmtDate(viewing.ts)}
+            </div>
+            <div className="btnrow" style={{marginTop:10}}>
+              {confirmDel===viewing.id
+                ? <React.Fragment>
+                    <button className="btn danger sm" onClick={()=>del(viewing)}>Confirm delete</button>
+                    <button className="btn ghost sm" onClick={()=>setConfirmDel(null)}>Cancel</button>
+                  </React.Fragment>
+                : <button className="btn danger sm" onClick={()=>setConfirmDel(viewing.id)}>Delete</button>}
+              <button className="btn ghost sm" onClick={()=>{setViewing(null);setConfirmDel(null);}}>Close</button>
+            </div>
+          </div>
+        </div>
+      </div>}
+    </div>
+  );
+}
 const ICONS={
   stage:'M3 13h2l1.5-6 2.5 12 2-6h2l1.5 4 1.5-4h3',
   setlist:'M4 6h12M4 12h12M4 18h8 M19 5v9 M19 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
   rehearse:'M5 4h14v16l-7-4-7 4z',
+  album:'M4 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5z M9 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M4 16l4-4 3 3 4-4 5 5',
   setup:'M10 3h4l.5 3 2 1 3-1.5 2 3.5-2.5 2v2l2.5 2-2 3.5-3-1.5-2 1L14 21h-4l-.5-3-2-1-3 1.5-2-3.5 2.5-2v-2L0 9'
 };
 function TabBar({tab,setTab}){
-  const items=[['stage','Stage'],['setlist','Setlist'],['rehearse','Rehearsals'],['setup','Setup']];
+  const items=[['stage','Stage'],['setlist','Setlist'],['rehearse','Rehearsals'],['album','Album'],['setup','Setup']];
   return (
     <nav className="tabbar">
       {items.map(([id,label])=>(
