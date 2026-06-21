@@ -239,7 +239,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.111';
+const VERSION='0.112';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
@@ -1027,7 +1027,7 @@ function Setlist({state,update}){
   const reorderList = active.map(s=>(
     <div className="ro-row" key={s.id}>
       <span className={'ro-num'+(s.encore?' enc':'')}>{numberOf[s.id]}</span>
-      <span className="ro-title" dir="auto">{s.title}</span>
+      <span className="ro-title">{s.title}</span>
       <button className={'ro-btn enc'+(s.encore?' on':'')} onClick={()=>toggleEncore(s.id)} aria-label="Toggle encore">★</button>
       <button className="ro-btn excl" onClick={()=>excludeSong(s.id)} aria-label="Exclude from set">⊘</button>
       <button className="ro-btn" disabled={numberOf[s.id]===1} onClick={()=>moveActive(s.id,-1)} aria-label="Move up">↑</button>
@@ -1041,7 +1041,7 @@ function Setlist({state,update}){
       {excluded.map(s=>(
         <div className="excl-row" key={s.id}>
           <CoverThumb src={s.cover} size={38} radius={9}/>
-          <span className="ex-title" dir="auto">{s.title}</span>
+          <span className="ex-title">{s.title}</span>
           <button className="incl-btn" onClick={()=>includeSong(s.id)}>＋ Include</button>
         </div>
       ))}
@@ -1212,10 +1212,10 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         <CoverThumb src={s.cover} size={46} radius={10}/>
         <div style={{minWidth:0,flex:1}}>
           <div style={{display:'flex',alignItems:'center',gap:7,minWidth:0}}>
-            <span className="song-title" dir="auto" style={{minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.title}</span>
+            <span className="song-title" style={{minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.title}</span>
             {s.encore && <span className="enc-pill">★ Enc</span>}
           </div>
-          <div className="song-meta" dir="auto">{meta.join(' · ')||'—'}</div>
+          <div className="song-meta">{meta.join(' · ')||'—'}</div>
         </div>
         <Cells song={s}/>
       </button>
