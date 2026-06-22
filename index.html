@@ -728,7 +728,7 @@ function App(){
         setBands(list);
         if(list.length===1){ startBoard(list[0].id); return; }
         let last=null; try{ last=localStorage.getItem('sc_board'); }catch(_){}
-        if(last && list.find(b=>b.id===last)){ startBoard(last); return; }
+        if(last && last!=='staging' && list.find(b=>b.id===last)){ startBoard(last); return; }
         setPhase('pickband');
       }).catch(()=>{ setBands([]); setPhase('pickband'); });
     });
