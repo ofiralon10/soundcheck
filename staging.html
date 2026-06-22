@@ -283,7 +283,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.125';
+const VERSION='0.126';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
@@ -537,6 +537,7 @@ function allGuests(songs){ const seen=[]; songs.forEach(s=>s.guests.forEach(g=>{
 function songRehCount(songId,rehearsals){ return rehearsals.filter(r=>r.done && r.coveredSongs && r.coveredSongs.includes(songId)).length; }
 function isRehLive(r){ if(!r||!r.date||r.done) return false; const start=new Date(r.date).getTime(); const dur=parseFloat(r.duration)||2; const end=start+dur*3600000; const now=Date.now(); return now>=start && now<=end; }
 function fmtDuration(d){ if(!d) return ''; const h=Math.floor(d); const m=Math.round((d-h)*60); return h+'h'+(m?(' '+m+'m'):''); }
+function fmtTimeRange(iso,dur){ if(!iso) return ''; const s=new Date(iso); const st=fmtTime(iso); if(!dur) return st; const e=new Date(s.getTime()+dur*3600000); const et=e.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); return st+'–'+et; }
 const KIND_COLOR={audio:'#EC6FA9',pdf:'#F2545B',slides:'#F4A93C',doc:'#5B9DF9',image:'#2DD4BF',sheet:'#3DD68C',file:'#948FA6',link:'#C9A6FF'};
 const FILE_CATS=[{id:'original',label:'Original',color:'#EC6FA9'},{id:'slide',label:'Slide',color:'#F4A93C'},{id:'sheets',label:'Music Sheets',color:'#3DD68C'},{id:'minus',label:'Minus',color:'#5B9DF9'}];
 function fileKind(name){
@@ -969,6 +970,8 @@ function Stage({state,go,update,goSong}){
   const totalMin = songs.reduce((a,s)=>a+(Number(s.duration)||0),0);
   const readyCount = songs.filter(s=>songReadiness(s)===1).length;
   const perMember = INSTR.map(i=>({...i, pct: songs.length? songs.reduce((a,s)=>a+score(s.parts[i.id]),0)/songs.length : 0 }));
+  const [bulkInstr,setBulkInstr]=useState(null);
+  const bulkSet=(songId,iid,v)=>update(st=>{const so=st.songs.find(x=>x.id===songId);so.parts[iid]=v;return st;});
   const next = [...state.rehearsals].filter(r=>!r.done && r.date).sort((a,b)=>new Date(a.date)-new Date(b.date))[0];
   const plannedCount = next ? ((next.focusPractice||[]).length + (next.focusLearn||[]).length) : 0;
   if(songs.length===0 && !next){
@@ -998,7 +1001,7 @@ function Stage({state,go,update,goSong}){
       {next ?
         <div className={'card'+(isRehLive(next)?' live':'')}>
           <div className="reh-date">{fmtDate(next.date)}</div>
-          <div className="reh-time">{fmtTime(next.date)}{next.duration?' · '+fmtDuration(next.duration):''}{next.location?' · '+next.location:''}</div>
+          <div className="reh-time">{fmtTimeRange(next.date,next.duration)}{next.location?' · '+next.location:''}</div>
           {isRehLive(next) && <div className="reh-live-dot"><i></i>Rehearsal in progress</div>}
           {plannedCount>0
             ? <FocusTags songs={state.songs} learn={next.focusLearn} practice={next.focusPractice} onGoSong={goSong}/>
@@ -1010,13 +1013,35 @@ function Stage({state,go,update,goSong}){
         <div className="section-h">Player readiness</div>
         <div className="card">
           {perMember.map(m=>(
-            <div className="strip" key={m.id}>
+            <div className="strip" key={m.id} style={{cursor:'pointer'}} onClick={()=>setBulkInstr(m.id)}>
               <InstrBadge id={m.id} size={30}/>
               <div className="track"><div className="fill" style={{width:(m.pct*100)+'%',background:m.color}}/></div>
               <div className="val">{Math.round(m.pct*100)}%</div>
             </div>
           ))}
         </div>
+        {bulkInstr && (()=>{
+          const instr=INSTR.find(i=>i.id===bulkInstr);
+          return <div className="files-modal" onClick={e=>{if(e.target===e.currentTarget) setBulkInstr(null);}}>
+            <div className="files-panel">
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+                <div className="modaltitle" style={{margin:0,display:'flex',alignItems:'center',gap:10}}>
+                  <InstrBadge id={bulkInstr} size={28}/> {instr.label} — All Songs
+                </div>
+                <button className="xbtn" onClick={()=>setBulkInstr(null)}>×</button>
+              </div>
+              {songs.map(s=>(
+                <div key={s.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:'1px solid var(--line)'}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div className="song-title" style={{fontSize:13}}>{s.title}</div>
+                    {s.artist && <div style={{fontSize:11,color:'var(--muted-2)'}}>{s.artist}</div>}
+                  </div>
+                  <StatusPills value={s.parts[bulkInstr]} color={instr.color} onPick={v=>bulkSet(s.id,bulkInstr,v)}/>
+                </div>
+              ))}
+            </div>
+          </div>;
+        })()}
       </React.Fragment>}
       {(state.readinessHistory||[]).length>=1 && <React.Fragment>
         <div className="section-h">Readiness over time</div>
@@ -1253,7 +1278,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   },[]);
   useEffect(()=>{ if(scrollInto&&rowRef.current){ const tb=document.querySelector('.topbar'); const off=tb?tb.getBoundingClientRect().height+6:80; const y=rowRef.current.getBoundingClientRect().top+window.scrollY-off; window.scrollTo({top:y,behavior:'smooth'}); } },[scrollInto]);
   const setField=(k,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);so[k]=v;return st;});
-  const setRole=(iid,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);so.parts[iid]=v;const il=(INSTR.find(i=>i.id===iid)||{}).label||iid;logAct(st,'set '+il+' to '+v+' on "'+so.title+'"');return st;});
+  const setRole=(iid,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);so.parts[iid]=v;return st;});
   const addGuest=()=>update(st=>{const so=st.songs.find(x=>x.id===s.id);if(so.guests.length<MAX_GUESTS)so.guests.push({id:uid(),name:'',status:'todo'});return st;});
   const setGuestName=(gid,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);const g=so.guests.find(x=>x.id===gid);if(g)g.name=v;return st;});
   const setGuestStatus=(gid,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);const g=so.guests.find(x=>x.id===gid);if(g)g.status=v;return st;});
@@ -1684,7 +1709,7 @@ function RehCard({r,state,patch,del,update}){
       <div className="reh-top">
         <div>
           <div className="reh-date">{r.date?fmtDate(r.date):'No date set'}</div>
-          <div className="reh-time">{r.date?fmtTime(r.date):''}{r.duration?' · '+fmtDuration(r.duration):''}</div>
+          <div className="reh-time">{r.date?fmtTimeRange(r.date,r.duration):''}</div>
           {r.location && <div className="reh-loc" dir="auto">{r.location}</div>}
           {live && <div className="reh-live-dot"><i></i>Rehearsal in progress</div>}
         </div>
