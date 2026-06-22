@@ -283,7 +283,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.124';
+const VERSION='0.125';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
@@ -1251,7 +1251,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     clearInterval(timerRef.current);
     if(audioRef.current) audioRef.current.pause();
   },[]);
-  useEffect(()=>{ if(scrollInto&&rowRef.current) rowRef.current.scrollIntoView({behavior:'smooth',block:'start'}); },[scrollInto]);
+  useEffect(()=>{ if(scrollInto&&rowRef.current){ const tb=document.querySelector('.topbar'); const off=tb?tb.getBoundingClientRect().height+6:80; const y=rowRef.current.getBoundingClientRect().top+window.scrollY-off; window.scrollTo({top:y,behavior:'smooth'}); } },[scrollInto]);
   const setField=(k,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);so[k]=v;return st;});
   const setRole=(iid,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);so.parts[iid]=v;const il=(INSTR.find(i=>i.id===iid)||{}).label||iid;logAct(st,'set '+il+' to '+v+' on "'+so.title+'"');return st;});
   const addGuest=()=>update(st=>{const so=st.songs.find(x=>x.id===s.id);if(so.guests.length<MAX_GUESTS)so.guests.push({id:uid(),name:'',status:'todo'});return st;});
