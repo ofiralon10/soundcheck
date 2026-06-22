@@ -231,7 +231,7 @@
   .files-cat-h{font-family:var(--display);font-weight:600;font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
   .files-cat-h .cat-dot{width:8px;height:8px;border-radius:50%}
   .files-na{font-size:12px;color:var(--muted-2);font-style:italic}
-  .slide-badge{position:absolute;top:-2px;left:-5px;font-family:var(--mono);font-size:8px;font-weight:700;color:var(--drums);line-height:1}
+  .slide-badge{position:absolute;top:50%;left:-10px;transform:translateY(-50%);font-family:var(--mono);font-size:14px;font-weight:700;color:var(--drums);line-height:1}
   .file-dot{position:absolute;top:-4px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%}
   .access-files-btn{width:100%;padding:11px 0;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);font-family:var(--display);font-weight:600;font-size:13.5px;color:var(--text);cursor:pointer;margin-bottom:10px;text-align:center;transition:background .15s}
   .access-files-btn:active{background:var(--surface-3)}
@@ -286,7 +286,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.130';
+const VERSION='0.131';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
