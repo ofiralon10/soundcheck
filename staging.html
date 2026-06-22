@@ -225,7 +225,7 @@
   .player-vol input::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--muted);cursor:pointer}
   .player-vol input::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--muted);border:none;cursor:pointer}
   .files-modal{position:fixed;inset:0;z-index:55;display:flex;align-items:flex-end;justify-content:center;background:rgba(8,7,12,.66)}
-  .files-panel{background:var(--surface);border:1px solid var(--line-2);border-radius:18px 18px 0 0;width:100%;max-width:560px;padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .files-panel{background:var(--surface);border:1px solid var(--line-2);border-radius:18px 18px 0 0;width:100%;max-width:560px;padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
   .files-cat{margin-bottom:12px;border:1.5px solid var(--line-2);border-radius:12px;padding:12px;transition:border-color .15s,background .15s}
   .files-cat.drop-over{border-color:var(--keys);background:rgba(139,124,246,.08)}
   .files-cat-h{font-family:var(--display);font-weight:600;font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
@@ -233,8 +233,9 @@
   .files-na{font-size:12px;color:var(--muted-2);font-style:italic}
   .slide-badge{position:absolute;top:50%;left:-10px;transform:translateY(-50%);font-family:var(--mono);font-size:14px;font-weight:700;color:var(--drums);line-height:1}
   .file-dot{position:absolute;top:-4px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%}
-  .access-files-btn{width:100%;padding:11px 0;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);font-family:var(--display);font-weight:600;font-size:13.5px;color:var(--text);cursor:pointer;margin-bottom:10px;text-align:center;transition:background .15s}
-  .access-files-btn:active{background:var(--surface-3)}
+  .song-action-row{display:flex;gap:8px;margin-bottom:10px}
+  .song-action-btn{flex:1;padding:11px 0;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);font-family:var(--display);font-weight:600;font-size:13.5px;color:var(--text);cursor:pointer;text-align:center;transition:background .15s}
+  .song-action-btn:active{background:var(--surface-3)}
   .reh-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
   .reh-date{font-family:var(--display);font-weight:600;font-size:15px}
   .reh-time{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:2px}
@@ -286,7 +287,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.131';
+const VERSION='0.132';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
@@ -542,7 +543,7 @@ function isRehLive(r){ if(!r||!r.date||r.done) return false; const start=new Dat
 function fmtDuration(d){ if(!d) return ''; const h=Math.floor(d); const m=Math.round((d-h)*60); return h+'h'+(m?(' '+m+'m'):''); }
 function fmtTimeRange(iso,dur){ if(!iso) return ''; const s=new Date(iso); const st=fmtTime(iso); if(!dur) return st; const e=new Date(s.getTime()+dur*3600000); const et=e.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); return st+'–'+et; }
 const KIND_COLOR={audio:'#EC6FA9',pdf:'#F2545B',slides:'#F4A93C',doc:'#5B9DF9',image:'#2DD4BF',sheet:'#3DD68C',file:'#948FA6',link:'#C9A6FF'};
-const FILE_CATS=[{id:'original',label:'Original',color:'#EC6FA9'},{id:'slide',label:'Slide',color:'#F4A93C'},{id:'sheets',label:'Music Sheets',color:'#3DD68C'},{id:'minus',label:'Minus',color:'#5B9DF9'}];
+const FILE_CATS=[{id:'original',label:'Original',color:'#EC6FA9',icon:'note'},{id:'slide',label:'Slide',color:'#F4A93C',icon:'slide'},{id:'keys',label:'Keys',color:'#8B7CF6',instr:'keys'},{id:'drums',label:'Drums',color:'#F2545B',instr:'drums'},{id:'guitar',label:'Guitar',color:'#F4A93C',instr:'guitar'},{id:'bass',label:'Bass',color:'#2DD4BF',instr:'bass'},{id:'vocals',label:'Vocals',color:'#EC6FA9',instr:'vocals'}];
 function fileKind(name){
   const e=((name||'').split('.').pop()||'').toLowerCase();
   if(['mp3','wav','m4a','aac','ogg','flac','aif','aiff'].includes(e)) return 'audio';
@@ -954,11 +955,14 @@ function Cell({iid,text,color,status,fileDot,slideBadge}){
   </div>;
 }
 function songFileFlags(song){
-  const files=(song.files||[]).filter(f=>f.kind==='upload');
-  const hasSlide=(song.files||[]).some(f=>(f.cat||'original')==='slide');
+  const files=(song.files||[]);
+  const hasSlide=files.some(f=>(f.cat||'original')==='slide');
   const dots={};
-  const map=[['keys','#8B7CF6'],['drums','#F2545B'],['guitar','#F4A93C'],['bass','#2DD4BF'],['vocals','#EC6FA9']];
-  map.forEach(([k,c])=>{ if(files.some(f=>(f.name||'').toLowerCase().includes(k))) dots[k]=c; });
+  const instrIds=['keys','drums','guitar','bass','vocals'];
+  const instrColors={keys:'#8B7CF6',drums:'#F2545B',guitar:'#F4A93C',bass:'#2DD4BF',vocals:'#EC6FA9'};
+  instrIds.forEach(k=>{
+    if(files.some(f=>f.cat===k || (f.kind==='upload'&&(f.name||'').toLowerCase().includes(k)))) dots[k]=instrColors[k];
+  });
   return {hasSlide,dots};
 }
 function Cells({song}){
@@ -1457,9 +1461,14 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
               {s.cover && busy!=='cover' && <button className="btn danger sm" onClick={clearCover}>Remove cover</button>}
             </div>
           </div>}
-          <button className="access-files-btn" onClick={()=>setFilesOpen(true)}>
-            Access Files{fileCount?' ('+fileCount+')':''}
-          </button>
+          <div className="song-action-row">
+            <button className="song-action-btn" onClick={()=>setFilesOpen(true)}>
+              Access Files{fileCount?' ('+fileCount+')':''}
+            </button>
+            <button className="song-action-btn" onClick={()=>{}}>
+              Practice Song
+            </button>
+          </div>
           {filesOpen && <div className="files-modal" onClick={e=>{if(e.target===e.currentTarget){setFilesOpen(false);setPickCat(null);setLinkMode(false);}}}>
             <div className="files-panel">
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
@@ -1473,7 +1482,12 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
                     onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';setDropCat(cat.id);}}
                     onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget)) setDropCat(null);}}
                     onDrop={e=>{e.preventDefault();setDropCat(null);onDropFiles(e.dataTransfer.files,cat.id);}}>
-                    <div className="files-cat-h"><span className="cat-dot" style={{background:cat.color}}/>{cat.label}</div>
+                    <div className="files-cat-h">
+                      {cat.icon==='note' && <svg width="16" height="16" viewBox="0 0 24 24" fill={cat.color} stroke="none"><path d="M12 3v12.26A4.5 4.5 0 1 0 14 19V7h4V3h-6z"/></svg>}
+                      {cat.icon==='slide' && <span style={{fontFamily:'var(--mono)',fontWeight:700,fontSize:14,color:cat.color}}>S</span>}
+                      {cat.instr && <InstrBadge id={cat.instr} size={20}/>}
+                      {cat.label}
+                    </div>
                     {catFiles.length===0 && <div className="files-na">N/A — drop files here or use buttons below</div>}
                     {catFiles.map(f=>(
                       <div className="fileitem" key={f.id}>
@@ -1515,9 +1529,11 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
                   </div>
                 : <div>
                     <div style={{fontSize:12,color:'var(--muted)',marginBottom:8}}>Add file to category:</div>
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                    <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
                       {FILE_CATS.map(cat=>(
-                        <button key={cat.id} className="btn ghost sm" style={{borderColor:cat.color,color:cat.color}} onClick={()=>setPickCat(cat.id)}>{cat.label}</button>
+                        <button key={cat.id} className="btn ghost sm" style={{borderColor:cat.color,color:cat.color,display:'inline-flex',alignItems:'center',gap:5}} onClick={()=>setPickCat(cat.id)}>
+                          {cat.instr && <InstrIcon id={cat.instr} size={13}/>}{cat.label}
+                        </button>
                       ))}
                     </div>
                   </div>}
