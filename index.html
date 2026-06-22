@@ -283,7 +283,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.122';
+const VERSION='0.123';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
@@ -353,7 +353,7 @@ function urlBoard(){
   try{
     const p=new URLSearchParams(location.search);
     let b=p.get('board');
-    if(!b && /staging/i.test(location.pathname)) b='staging';
+    if(!b && /staging\.html/i.test(location.pathname)) b='staging';
     if(!b) return null;
     b=b.replace(/[^a-zA-Z0-9_-]/g,'');
     return b||null;
@@ -1990,7 +1990,7 @@ const ICONS={
   setup:'M10 3h4l.5 3 2 1 3-1.5 2 3.5-2.5 2v2l2.5 2-2 3.5-3-1.5-2 1L14 21h-4l-.5-3-2-1-3 1.5-2-3.5 2.5-2v-2L0 9'
 };
 function TabBar({tab,setTab}){
-  const items=[['stage','Stage'],['setlist','Setlist'],['rehearse','Rehearsals'],['album','Album'],['setup','Setup']];
+  const items=[['stage','Stage'],['setlist','Setlist'],['rehearse','Rehearsals'],['album','Gallery'],['setup','Setup']];
   return (
     <nav className="tabbar">
       {items.map(([id,label])=>(
