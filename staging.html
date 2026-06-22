@@ -236,6 +236,20 @@
   .song-action-row{display:flex;gap:8px;margin-bottom:10px}
   .song-action-btn{flex:1;padding:11px 0;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);font-family:var(--display);font-weight:600;font-size:13.5px;color:var(--text);cursor:pointer;text-align:center;transition:background .15s}
   .song-action-btn:active{background:var(--surface-3)}
+  .practice-overlay{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column}
+  .practice-visual{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:8px;min-height:0}
+  .practice-visual img,.practice-visual iframe{max-width:100%;max-height:100%;object-fit:contain;border:none;border-radius:8px}
+  .practice-visual iframe{width:100%;height:100%}
+  .practice-audio{flex-shrink:0;background:var(--surface);border-top:1px solid var(--line-2);padding:10px 16px calc(10px + env(safe-area-inset-bottom))}
+  .practice-exit{position:absolute;top:12px;right:12px;z-index:61;width:36px;height:36px;border-radius:10px;background:var(--surface-2);border:1px solid var(--line-2);color:var(--text);display:flex;align-items:center;justify-content:center;font-size:18px;cursor:pointer}
+  .practice-title{position:absolute;top:12px;left:12px;z-index:61;font-family:var(--display);font-weight:600;font-size:14px;color:var(--muted);max-width:calc(100% - 70px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .prac-pick{margin-bottom:14px}
+  .prac-pick-h{font-family:var(--display);font-weight:600;font-size:13px;margin-bottom:8px;color:var(--muted)}
+  .prac-opt{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1.5px solid var(--line-2);border-radius:10px;margin-bottom:6px;cursor:pointer;transition:border-color .15s}
+  .prac-opt.sel{border-color:var(--keys);background:rgba(139,124,246,.08)}
+  .prac-opt.dis{opacity:.35;cursor:default}
+  .prac-opt-label{font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .prac-opt-na{font-size:11px;color:var(--muted-2);font-style:italic}
   .reh-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
   .reh-date{font-family:var(--display);font-weight:600;font-size:15px}
   .reh-time{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:2px}
@@ -287,7 +301,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.135';
+const VERSION='0.136';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
@@ -406,9 +420,10 @@ function sendLink(email){
 }
 async function completeLinkIfPresent(){
   if(!auth.isSignInWithEmailLink(location.href)) return;
+  if(auth.currentUser){ history.replaceState(null,'',location.pathname); return; }
   let email=null; try{ email=localStorage.getItem('sc_email'); }catch(_){}
   if(!email) email=window.prompt('Confirm your email to finish signing in');
-  if(!email) return;
+  if(!email){ history.replaceState(null,'',location.pathname); return; }
   await auth.signInWithEmailLink(email, location.href);
   try{ localStorage.removeItem('sc_email'); }catch(_){}
   history.replaceState(null,'',location.pathname);
@@ -919,7 +934,7 @@ function InstrPicker(){
   const pick=(id)=>{ setMyInstr(id); setMyI(id); setOpen(false); };
   return (
     <div style={{position:'relative'}}>
-      <button className="bell" onClick={()=>setOpen(v=>!v)} aria-label="My instrument" title="My instrument">
+      <button className="bell" onClick={()=>setOpen(v=>!v)} aria-label="My instrument" title="My instrument" style={myI?{color:(INSTR.find(x=>x.id===myI)||{}).color||'currentColor'}:null}>
         {myI ? <InstrIcon id={myI} size={18}/> : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/></svg>}
       </button>
       {open && <div style={{position:'absolute',top:'100%',right:0,marginTop:6,background:'var(--surface)',border:'1px solid var(--line-2)',borderRadius:12,padding:6,display:'flex',gap:4,zIndex:30,boxShadow:'0 8px 24px rgba(0,0,0,.4)'}}>
@@ -1001,7 +1016,7 @@ function StatusPills({value,color,onPick}){
   return (
     <div className="status-pills">
       {STATUS.map(st=>(
-        <button key={st} className={'pill'+(value===st?' on':'')} style={value===st?{background: st==='ready'?color : PILL_BG[st]}:{}} onClick={()=>onPick(st)}>{PILL_LABEL[st]}</button>
+        <button key={st} className={'pill'+(value===st?' on':'')} style={value===st?{background: st==='ready'?color : PILL_BG[st]}:{}} onClick={onPick?()=>onPick(st):undefined} disabled={!onPick}>{PILL_LABEL[st]}</button>
       ))}
     </div>
   );
@@ -1056,7 +1071,7 @@ function Stage({state,go,update,goSong}){
         <div className="section-h">Player readiness</div>
         <div className="card">
           {perMember.map(m=>(
-            <div className="strip" key={m.id} style={{cursor:'pointer'}} onClick={()=>setBulkInstr(m.id)}>
+            <div className="strip" key={m.id} style={{cursor:(!MY_INSTR||m.id===MY_INSTR)?'pointer':'default',opacity:MY_INSTR&&m.id!==MY_INSTR?.5:1}} onClick={()=>{if(!MY_INSTR||m.id===MY_INSTR) setBulkInstr(m.id);}}>
               <InstrBadge id={m.id} size={30}/>
               <div className="track"><div className="fill" style={{width:(m.pct*100)+'%',background:m.color}}/></div>
               <div className="val">{Math.round(m.pct*100)}%</div>
@@ -1310,6 +1325,16 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [filesOpen,setFilesOpen]=useState(false);
   const [pickCat,setPickCat]=useState(null);
   const [dropCat,setDropCat]=useState(null);
+  const [pracPick,setPracPick]=useState(false);
+  const [pracAudioChoice,setPracAudioChoice]=useState(null);
+  const [pracVisualChoice,setPracVisualChoice]=useState(null);
+  const [pracMode,setPracMode]=useState(null);
+  const [pracPlaying,setPracPlaying]=useState(false);
+  const [pracTime,setPracTime]=useState(0);
+  const [pracDur,setPracDur]=useState(0);
+  const [pracVol,setPracVol]=useState(1);
+  const pracAudioRef=useRef(null);
+  const pracTimerRef=useRef(null);
   const rowRef=useRef(null);
   const recorderRef=useRef(null);
   const chunksRef=useRef([]);
@@ -1453,6 +1478,38 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const setVol=(v)=>{ setPlayerVol(v); if(audioRef.current) audioRef.current.volume=v; };
   const closePlayer=()=>{ if(audioRef.current){ audioRef.current.pause(); audioRef.current=null; } clearInterval(playerTimerRef.current); setPlayerFile(null); setPlayerPlaying(false); setPlayerTime(0); };
 
+  const myInstr=MY_INSTR||'keys';
+  const filesArr=s.files||[];
+  const pracOrigAudio=filesArr.filter(f=>(f.cat||'original')==='original'&&(f.type==='audio'||f.kind==='link'));
+  const pracInstrAudio=filesArr.filter(f=>f.cat===myInstr&&(f.type==='audio'||f.kind==='link'));
+  const pracSlideFiles=filesArr.filter(f=>f.cat==='slide');
+  const pracPartFiles=filesArr.filter(f=>f.cat===myInstr&&f.type!=='audio');
+  const openPracPick=()=>{ setPracAudioChoice(null); setPracVisualChoice(null); setPracPick(true); };
+  const startPractice=()=>{
+    if(!pracAudioChoice&&!pracVisualChoice) return;
+    setPracPick(false);
+    const audioId=pracAudioChoice?pracAudioChoice.split('__')[0]:null;
+    const af=audioId? filesArr.find(f=>f.id===audioId):null;
+    const vf=pracVisualChoice? filesArr.find(f=>f.id===pracVisualChoice):null;
+    if(af){
+      const a=new Audio(af.url); a.volume=pracVol;
+      a.onloadedmetadata=()=>setPracDur(a.duration||0);
+      a.onended=()=>{ setPracPlaying(false); clearInterval(pracTimerRef.current); };
+      pracAudioRef.current=a;
+      clearInterval(pracTimerRef.current);
+      setPracPlaying(false); setPracTime(0); setPracDur(0);
+    }
+    setPracMode({audio:af,visual:vf});
+  };
+  const pracToggle=()=>{
+    if(!pracAudioRef.current) return;
+    if(pracAudioRef.current.paused){ pracAudioRef.current.play(); setPracPlaying(true); pracTimerRef.current=setInterval(()=>setPracTime(pracAudioRef.current.currentTime),250); }
+    else{ pracAudioRef.current.pause(); setPracPlaying(false); clearInterval(pracTimerRef.current); }
+  };
+  const pracSeek=(v)=>{ if(pracAudioRef.current){ pracAudioRef.current.currentTime=v; setPracTime(v); } };
+  const pracSetVol=(v)=>{ setPracVol(v); if(pracAudioRef.current) pracAudioRef.current.volume=v; };
+  const exitPractice=()=>{ if(pracAudioRef.current){ pracAudioRef.current.pause(); pracAudioRef.current=null; } clearInterval(pracTimerRef.current); setPracMode(null); setPracPlaying(false); setPracTime(0); };
+
   const fileCount=s.files?s.files.length:0;
   const rehCount=rehearsals?songRehCount(s.id,rehearsals):0;
   const meta=[s.artist, s.songKey&&('Key '+s.songKey), s.tempo&&(s.tempo+' bpm'), s.duration&&(s.duration+'m'), fileCount&&(fileCount+(fileCount>1?' files':' file'))].filter(Boolean);
@@ -1488,7 +1545,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             <button className="song-action-btn" onClick={()=>setFilesOpen(true)}>
               Access Files{fileCount?' ('+fileCount+')':''}
             </button>
-            <button className="song-action-btn" onClick={()=>{}}>
+            <button className="song-action-btn" onClick={openPracPick}>
               Practice Song
             </button>
           </div>
@@ -1615,9 +1672,9 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           </div>}
           {busy==='rec' && <div style={{fontSize:12,color:'var(--muted)',padding:'8px 0'}}>Saving recording…</div>}
           {INSTR.map(i=>(
-            <div className="editrow" key={i.id}>
+            <div className="editrow" key={i.id} style={MY_INSTR&&i.id!==MY_INSTR?{opacity:.5}:null}>
               <InstrBadge id={i.id} size={26}/>
-              <StatusPills value={s.parts[i.id]} color={i.color} onPick={v=>setRole(i.id,v)}/>
+              <StatusPills value={s.parts[i.id]} color={i.color} onPick={(!MY_INSTR||i.id===MY_INSTR)?v=>setRole(i.id,v):null}/>
             </div>
           ))}
           <label className="fl" style={{marginTop:15}}>Guests ({s.guests.length}/{MAX_GUESTS})</label>
@@ -1646,6 +1703,58 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           </div>
           <div className="btnrow"><button className="btn danger" onClick={del}>Remove song</button></div>
         </div>}
+      {pracPick && <div className="files-modal" onClick={e=>{if(e.target===e.currentTarget) setPracPick(false);}}>
+        <div className="files-panel" style={{maxWidth:380}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+            <div className="modaltitle" style={{margin:0}}>Practice — {s.title}</div>
+            <button className="xbtn" onClick={()=>setPracPick(false)}>×</button>
+          </div>
+          <div className="prac-pick">
+            <div className="prac-pick-h">Audio source</div>
+            {[{id:'original',label:'Original',files:pracOrigAudio},{id:'isolated',label:'Isolated ('+((FILE_CATS.find(c=>c.id===myInstr)||{}).label||myInstr)+')',files:pracInstrAudio},{id:'minus',label:'Minus ('+((FILE_CATS.find(c=>c.id===myInstr)||{}).label||myInstr)+')',files:pracInstrAudio}].map(opt=>{
+              const audioFiles=opt.files.filter(f=>f.type==='audio'||(f.kind==='link'&&f.url));
+              const avail=audioFiles.length>0;
+              return <div key={opt.id} className={'prac-opt'+(pracAudioChoice&&pracAudioChoice===((audioFiles[0]||{}).id+'__'+opt.id)?' sel':'')+(avail?'':' dis')} onClick={()=>{if(avail) setPracAudioChoice(audioFiles[0].id+'__'+opt.id);}}>
+                <div className="prac-opt-label">{opt.label}</div>
+                {!avail && <div className="prac-opt-na">no file</div>}
+              </div>;
+            })}
+          </div>
+          <div className="prac-pick">
+            <div className="prac-pick-h">Visual</div>
+            {[{id:'slide',label:'Slide',files:pracSlideFiles},{id:'part',label:'Part ('+((FILE_CATS.find(c=>c.id===myInstr)||{}).label||myInstr)+')',files:pracPartFiles}].map(opt=>{
+              const vizFiles=opt.files.filter(f=>f.type!=='audio');
+              const avail=vizFiles.length>0;
+              return <div key={opt.id} className={'prac-opt'+(pracVisualChoice===((vizFiles[0]||{}).id)?' sel':'')+(avail?'':' dis')} onClick={()=>{if(avail) setPracVisualChoice(vizFiles[0].id);}}>
+                <div className="prac-opt-label">{opt.label}</div>
+                {!avail && <div className="prac-opt-na">no file</div>}
+              </div>;
+            })}
+          </div>
+          <div className="btnrow" style={{justifyContent:'center',gap:10,marginTop:8}}>
+            <button className="btn ghost sm" onClick={()=>setPracPick(false)}>Cancel</button>
+            <button className="btn sm" disabled={!pracAudioChoice&&!pracVisualChoice} onClick={startPractice}>Start Practice</button>
+          </div>
+        </div>
+      </div>}
+      {pracMode && <div className="practice-overlay">
+        <div className="practice-title">{s.title}{pracMode.visual?' — '+(pracMode.visual.name||''):''}
+        </div>
+        <button className="practice-exit" onClick={exitPractice}>×</button>
+        <div className="practice-visual">
+          {pracMode.visual && (pracMode.visual.type==='pdf'||fileKind(pracMode.visual.name)==='pdf'
+            ? <iframe src={pracMode.visual.url+'#toolbar=0'} title="Part"/>
+            : <img src={pracMode.visual.url} alt={pracMode.visual.name||'Visual'}/>)}
+          {!pracMode.visual && <div style={{color:'var(--muted)',fontStyle:'italic'}}>No visual selected</div>}
+        </div>
+        {pracMode.audio && <div className="practice-audio">
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <button style={{background:'none',border:'none',color:'var(--text)',fontSize:22,cursor:'pointer',padding:0,lineHeight:1}} onClick={pracToggle}>{pracPlaying?'❚❚':'▶'}</button>
+            <input type="range" style={{flex:1}} min="0" max={pracDur||1} step="0.1" value={pracTime} onChange={e=>pracSeek(+e.target.value)}/>
+            <span style={{fontSize:11,color:'var(--muted)',minWidth:70,textAlign:'right'}}>{fmtSecs(Math.floor(pracTime))}/{pracDur?fmtSecs(Math.floor(pracDur)):'-:--'}</span>
+          </div>
+        </div>}
+      </div>}
       {cropSrc && <CropModal src={cropSrc} onCancel={()=>setCropSrc(null)} onDone={onCropDone}/>}
     </div>
   );
