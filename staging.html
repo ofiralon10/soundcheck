@@ -283,7 +283,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.128';
+const VERSION='0.129';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
@@ -1032,9 +1032,9 @@ function Stage({state,go,update,goSong}){
               </div>
               {songs.map(s=>(
                 <div key={s.id} style={{padding:'9px 0',borderBottom:'1px solid var(--line)'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:8,marginBottom:5,direction:'ltr'}}>
+                  <div style={{display:'flex',alignItems:'baseline',gap:6,marginBottom:5,direction:'ltr'}}>
                     <span className="song-title" style={{fontSize:13}}>{s.title}</span>
-                    {s.artist && <span style={{fontSize:11,color:'var(--muted-2)',flexShrink:0}}>{s.artist}</span>}
+                    {s.artist && <span style={{fontSize:11,color:'var(--muted-2)'}}>· {s.artist}</span>}
                   </div>
                   <StatusPills value={s.parts[bulkInstr]} color={instr.color} onPick={v=>bulkSet(s.id,bulkInstr,v)}/>
                 </div>
