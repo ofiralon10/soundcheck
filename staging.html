@@ -226,10 +226,13 @@
   .player-vol input::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--muted);border:none;cursor:pointer}
   .files-modal{position:fixed;inset:0;z-index:55;display:flex;align-items:flex-end;justify-content:center;background:rgba(8,7,12,.66)}
   .files-panel{background:var(--surface);border:1px solid var(--line-2);border-radius:18px 18px 0 0;width:100%;max-width:560px;padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
-  .files-cat{margin-bottom:18px}
+  .files-cat{margin-bottom:12px;border:1.5px solid var(--line-2);border-radius:12px;padding:12px;transition:border-color .15s,background .15s}
+  .files-cat.drop-over{border-color:var(--keys);background:rgba(139,124,246,.08)}
   .files-cat-h{font-family:var(--display);font-weight:600;font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
   .files-cat-h .cat-dot{width:8px;height:8px;border-radius:50%}
   .files-na{font-size:12px;color:var(--muted-2);font-style:italic}
+  .slide-badge{position:absolute;top:-2px;left:-5px;font-family:var(--mono);font-size:8px;font-weight:700;color:var(--drums);line-height:1}
+  .file-dot{position:absolute;top:-4px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%}
   .access-files-btn{width:100%;padding:11px 0;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);font-family:var(--display);font-weight:600;font-size:13.5px;color:var(--text);cursor:pointer;margin-bottom:10px;text-align:center;transition:background .15s}
   .access-files-btn:active{background:var(--surface-3)}
   .reh-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
@@ -283,7 +286,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.129';
+const VERSION='0.130';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
@@ -939,17 +942,30 @@ function Header({state,update,onSwitch}){
   );
 }
 
-function Cell({iid,text,color,status}){
+function Cell({iid,text,color,status,fileDot,slideBadge}){
   const style = status==='ready' ? {background:color,borderColor:color,color:'#15141B'}
     : status==='practicing' ? {background:color+'40',borderColor:color,color}
     : status==='learning' ? {background:'transparent',borderColor:color,color}
     : {background:'transparent',borderColor:'var(--line-2)',color:'var(--muted-2)'};
-  return <div className="cell" style={style}>{iid ? <InstrIcon id={iid}/> : text}</div>;
+  return <div className="cell" style={{...style,position:'relative'}}>
+    {slideBadge && <span className="slide-badge">s</span>}
+    {fileDot && <span className="file-dot" style={{background:fileDot}}/>}
+    {iid ? <InstrIcon id={iid}/> : text}
+  </div>;
+}
+function songFileFlags(song){
+  const files=(song.files||[]).filter(f=>f.kind==='upload');
+  const hasSlide=(song.files||[]).some(f=>(f.cat||'original')==='slide');
+  const dots={};
+  const map=[['keys','#8B7CF6'],['drums','#F2545B'],['guitar','#F4A93C'],['bass','#2DD4BF'],['vocals','#EC6FA9']];
+  map.forEach(([k,c])=>{ if(files.some(f=>(f.name||'').toLowerCase().includes(k))) dots[k]=c; });
+  return {hasSlide,dots};
 }
 function Cells({song}){
+  const {hasSlide,dots}=songFileFlags(song);
   return (
     <div className="cells">
-      {INSTR.map(i=> <Cell key={i.id} iid={i.id} color={i.color} status={song.parts[i.id]} />)}
+      {INSTR.map(i=> <Cell key={i.id} iid={i.id} color={i.color} status={song.parts[i.id]} fileDot={dots[i.id]} slideBadge={i.id==='keys'&&hasSlide} />)}
       {song.guests.map(g=>{ const t=(g.name||'').trim(); return <Cell key={g.id} text={t? t[0].toUpperCase() : '+'} color={GUEST_COLOR} status={g.status} />; })}
     </div>
   );
@@ -1266,6 +1282,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [showCover,setShowCover]=useState(false);
   const [filesOpen,setFilesOpen]=useState(false);
   const [pickCat,setPickCat]=useState(null);
+  const [dropCat,setDropCat]=useState(null);
   const rowRef=useRef(null);
   const recorderRef=useRef(null);
   const chunksRef=useRef([]);
@@ -1291,6 +1308,15 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     setBusy('cover'); try{ const url=await uploadCover(s.id,data); setField('cover',url); }catch(err){ setFileMsg('Cover upload failed — '+prettyErr(err)); } setBusy(''); };
   const clearCover=()=>{ deleteStoragePath(coverPath(s.id)); setField('cover',''); };
 
+  const onDropFiles=(files,cat)=>{ if(!files||!files.length) return;
+    Array.from(files).forEach(file=>{
+      if(file.size>FILE_CAP){ setFileMsg('File "'+file.name+'" is over 25 MB.'); return; }
+      setBusy('file'); const id=uid();
+      uploadFileToStorage(id,file).then(({url,path})=>{
+        update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id,name:file.name,kind:'upload',url,path,size:file.size,type:fileKind(file.name),cat:cat||'original'});logAct(st,'uploaded "'+file.name+'" to "'+so.title+'"');return st;});
+      }).catch(err=>setFileMsg('Upload failed — '+prettyErr(err))).finally(()=>setBusy(''));
+    });
+  };
   const onUpload=(e,cat)=>{ setFileMsg(''); const file=e.target.files&&e.target.files[0]; e.target.value=''; if(!file) return;
     if(file.size>FILE_CAP){ setFileMsg('That file is over 25 MB — add it as a link instead.'); return; }
     setBusy('file'); const id=uid();
@@ -1443,9 +1469,12 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
               {FILE_CATS.map(cat=>{
                 const catFiles=(s.files||[]).filter(f=>(f.cat||'original')===cat.id);
                 return (
-                  <div className="files-cat" key={cat.id}>
+                  <div className={'files-cat'+(dropCat===cat.id?' drop-over':'')} key={cat.id}
+                    onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';setDropCat(cat.id);}}
+                    onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget)) setDropCat(null);}}
+                    onDrop={e=>{e.preventDefault();setDropCat(null);onDropFiles(e.dataTransfer.files,cat.id);}}>
                     <div className="files-cat-h"><span className="cat-dot" style={{background:cat.color}}/>{cat.label}</div>
-                    {catFiles.length===0 && <div className="files-na">N/A</div>}
+                    {catFiles.length===0 && <div className="files-na">N/A — drop files here or use buttons below</div>}
                     {catFiles.map(f=>(
                       <div className="fileitem" key={f.id}>
                         <span className="ftype" style={{background:KIND_COLOR[f.type]||'var(--muted)'}}>{badgeText(f)}</span>
