@@ -225,13 +225,31 @@
   .player-vol input::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:var(--muted);cursor:pointer}
   .player-vol input::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--muted);border:none;cursor:pointer}
   .files-modal{position:fixed;inset:0;z-index:55;display:flex;align-items:flex-end;justify-content:center;background:rgba(8,7,12,.66)}
-  .files-panel{background:var(--surface);border:1px solid var(--line-2);border-radius:18px 18px 0 0;width:100%;max-width:560px;padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-height:85vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
-  .files-cat{margin-bottom:18px}
+  .files-panel{background:var(--surface);border:1px solid var(--line-2);border-radius:18px 18px 0 0;width:100%;max-width:560px;padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .files-cat{margin-bottom:12px;border:1.5px solid var(--line-2);border-radius:12px;padding:12px;transition:border-color .15s,background .15s}
+  .files-cat.drop-over{border-color:var(--keys);background:rgba(139,124,246,.08)}
   .files-cat-h{font-family:var(--display);font-weight:600;font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
   .files-cat-h .cat-dot{width:8px;height:8px;border-radius:50%}
   .files-na{font-size:12px;color:var(--muted-2);font-style:italic}
-  .access-files-btn{width:100%;padding:11px 0;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);font-family:var(--display);font-weight:600;font-size:13.5px;color:var(--text);cursor:pointer;margin-bottom:10px;text-align:center;transition:background .15s}
-  .access-files-btn:active{background:var(--surface-3)}
+  .slide-badge{position:absolute;top:50%;left:-10px;transform:translateY(-50%);font-family:var(--mono);font-size:14px;font-weight:700;color:var(--drums);line-height:1}
+  .file-dot{position:absolute;top:-7px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%}
+  .song-action-row{display:flex;gap:8px;margin-bottom:10px}
+  .song-action-btn{flex:1;padding:11px 0;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);font-family:var(--display);font-weight:600;font-size:13.5px;color:var(--text);cursor:pointer;text-align:center;transition:background .15s}
+  .song-action-btn:active{background:var(--surface-3)}
+  .practice-overlay{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column}
+  .practice-visual{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:8px;min-height:0}
+  .practice-visual img,.practice-visual iframe{max-width:100%;max-height:100%;object-fit:contain;border:none;border-radius:8px}
+  .practice-visual iframe{width:100%;height:100%}
+  .practice-audio{flex-shrink:0;background:var(--surface);border-top:1px solid var(--line-2);padding:10px 16px calc(10px + env(safe-area-inset-bottom))}
+  .practice-exit{position:absolute;top:12px;right:12px;z-index:61;width:36px;height:36px;border-radius:10px;background:var(--surface-2);border:1px solid var(--line-2);color:var(--text);display:flex;align-items:center;justify-content:center;font-size:18px;cursor:pointer}
+  .practice-title{position:absolute;top:12px;left:12px;z-index:61;font-family:var(--display);font-weight:600;font-size:14px;color:var(--muted);max-width:calc(100% - 70px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .prac-pick{margin-bottom:14px}
+  .prac-pick-h{font-family:var(--display);font-weight:600;font-size:13px;margin-bottom:8px;color:var(--muted)}
+  .prac-opt{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1.5px solid var(--line-2);border-radius:10px;margin-bottom:6px;cursor:pointer;transition:border-color .15s}
+  .prac-opt.sel{border-color:var(--keys);background:rgba(139,124,246,.08)}
+  .prac-opt.dis{opacity:.35;cursor:default}
+  .prac-opt-label{font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .prac-opt-na{font-size:11px;color:var(--muted-2);font-style:italic}
   .reh-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
   .reh-date{font-family:var(--display);font-weight:600;font-size:15px}
   .reh-time{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:2px}
@@ -283,7 +301,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.129';
+const VERSION='0.136';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
@@ -402,9 +420,10 @@ function sendLink(email){
 }
 async function completeLinkIfPresent(){
   if(!auth.isSignInWithEmailLink(location.href)) return;
+  if(auth.currentUser){ history.replaceState(null,'',location.pathname); return; }
   let email=null; try{ email=localStorage.getItem('sc_email'); }catch(_){}
   if(!email) email=window.prompt('Confirm your email to finish signing in');
-  if(!email) return;
+  if(!email){ history.replaceState(null,'',location.pathname); return; }
   await auth.signInWithEmailLink(email, location.href);
   try{ localStorage.removeItem('sc_email'); }catch(_){}
   history.replaceState(null,'',location.pathname);
@@ -520,6 +539,8 @@ function timeAgo(iso){ if(!iso) return ''; const s=Math.floor((Date.now()-new Da
   if(m<60) return m+'m ago'; const h=Math.floor(m/60); if(h<24) return h+'h ago'; return Math.floor(h/24)+'d ago'; }
 let MY_NAME=''; try{ MY_NAME=localStorage.getItem('sc_name')||''; }catch(_){}
 function setMyName(n){ MY_NAME=(n||'').trim(); try{ localStorage.setItem('sc_name',MY_NAME); }catch(_){} }
+let MY_INSTR=''; try{ MY_INSTR=localStorage.getItem('sc_instr')||''; }catch(_){}
+function setMyInstr(id){ MY_INSTR=id||''; try{ localStorage.setItem('sc_instr',MY_INSTR); }catch(_){} }
 function actorName(){ return MY_NAME || 'Someone'; }
 function logAct(s,text){
   if(!Array.isArray(s.activity)) s.activity=[];
@@ -539,7 +560,7 @@ function isRehLive(r){ if(!r||!r.date||r.done) return false; const start=new Dat
 function fmtDuration(d){ if(!d) return ''; const h=Math.floor(d); const m=Math.round((d-h)*60); return h+'h'+(m?(' '+m+'m'):''); }
 function fmtTimeRange(iso,dur){ if(!iso) return ''; const s=new Date(iso); const st=fmtTime(iso); if(!dur) return st; const e=new Date(s.getTime()+dur*3600000); const et=e.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); return st+'–'+et; }
 const KIND_COLOR={audio:'#EC6FA9',pdf:'#F2545B',slides:'#F4A93C',doc:'#5B9DF9',image:'#2DD4BF',sheet:'#3DD68C',file:'#948FA6',link:'#C9A6FF'};
-const FILE_CATS=[{id:'original',label:'Original',color:'#EC6FA9'},{id:'slide',label:'Slide',color:'#F4A93C'},{id:'sheets',label:'Music Sheets',color:'#3DD68C'},{id:'minus',label:'Minus',color:'#5B9DF9'}];
+const FILE_CATS=[{id:'original',label:'Original',color:'#EC6FA9',icon:'note'},{id:'slide',label:'Slide',color:'#F4A93C',icon:'slide'},{id:'keys',label:'Keys',color:'#8B7CF6',instr:'keys'},{id:'drums',label:'Drums',color:'#F2545B',instr:'drums'},{id:'guitar',label:'Guitar',color:'#F4A93C',instr:'guitar'},{id:'bass',label:'Bass',color:'#2DD4BF',instr:'bass'},{id:'vocals',label:'Vocals',color:'#EC6FA9',instr:'vocals'}];
 function fileKind(name){
   const e=((name||'').split('.').pop()||'').toLowerCase();
   if(['mp3','wav','m4a','aac','ogg','flac','aif','aiff'].includes(e)) return 'audio';
@@ -907,6 +928,25 @@ function RehearsalProposal({r,update}){
   );
 }
 
+function InstrPicker(){
+  const [myI,setMyI]=useState(MY_INSTR);
+  const [open,setOpen]=useState(false);
+  const pick=(id)=>{ setMyInstr(id); setMyI(id); setOpen(false); };
+  return (
+    <div style={{position:'relative'}}>
+      <button className="bell" onClick={()=>setOpen(v=>!v)} aria-label="My instrument" title="My instrument" style={myI?{color:(INSTR.find(x=>x.id===myI)||{}).color||'currentColor'}:null}>
+        {myI ? <InstrIcon id={myI} size={18}/> : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/></svg>}
+      </button>
+      {open && <div style={{position:'absolute',top:'100%',right:0,marginTop:6,background:'var(--surface)',border:'1px solid var(--line-2)',borderRadius:12,padding:6,display:'flex',gap:4,zIndex:30,boxShadow:'0 8px 24px rgba(0,0,0,.4)'}}>
+        {INSTR.map(i=>(
+          <button key={i.id} style={{padding:4,borderRadius:8,border:'none',background:myI===i.id?'var(--surface-3)':'transparent',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>pick(i.id)} title={i.label}>
+            <InstrBadge id={i.id} size={28}/>
+          </button>
+        ))}
+      </div>}
+    </div>
+  );
+}
 function Header({state,update,onSwitch}){
   const d = daysUntil(state.concert.date);
   const sub = [state.concert.name, state.concert.venue, state.concert.date?fmtDate(state.concert.date):null].filter(Boolean).join(' · ') || 'Set up your show in Setup';
@@ -915,6 +955,8 @@ function Header({state,update,onSwitch}){
       <div className="topline">
         <div className="wordmark"><span className="dot"></span><h1>SOUNDCHECK</h1><span className="ver">v{VERSION}</span></div>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
+          {MY_NAME && <span style={{fontFamily:'var(--display)',fontSize:12,color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap'}}>{MY_NAME}</span>}
+          <InstrPicker/>
           {onSwitch && <button className="bell" onClick={onSwitch} aria-label="Switch band" title="Switch band">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
           </button>}
@@ -939,17 +981,33 @@ function Header({state,update,onSwitch}){
   );
 }
 
-function Cell({iid,text,color,status}){
+function Cell({iid,text,color,status,fileDot,slideBadge}){
   const style = status==='ready' ? {background:color,borderColor:color,color:'#15141B'}
     : status==='practicing' ? {background:color+'40',borderColor:color,color}
     : status==='learning' ? {background:'transparent',borderColor:color,color}
     : {background:'transparent',borderColor:'var(--line-2)',color:'var(--muted-2)'};
-  return <div className="cell" style={style}>{iid ? <InstrIcon id={iid}/> : text}</div>;
+  return <div className="cell" style={{...style,position:'relative'}}>
+    {slideBadge && <span className="slide-badge">s</span>}
+    {fileDot && <span className="file-dot" style={{background:fileDot}}/>}
+    {iid ? <InstrIcon id={iid}/> : text}
+  </div>;
+}
+function songFileFlags(song){
+  const files=(song.files||[]);
+  const hasSlide=files.some(f=>(f.cat||'original')==='slide');
+  const dots={};
+  const instrIds=['keys','drums','guitar','bass','vocals'];
+  const instrColors={keys:'#8B7CF6',drums:'#F2545B',guitar:'#F4A93C',bass:'#2DD4BF',vocals:'#EC6FA9'};
+  instrIds.forEach(k=>{
+    if(files.some(f=>f.cat===k || (f.kind==='upload'&&(f.name||'').toLowerCase().includes(k)))) dots[k]=instrColors[k];
+  });
+  return {hasSlide,dots};
 }
 function Cells({song}){
+  const {hasSlide,dots}=songFileFlags(song);
   return (
     <div className="cells">
-      {INSTR.map(i=> <Cell key={i.id} iid={i.id} color={i.color} status={song.parts[i.id]} />)}
+      {INSTR.map(i=> <Cell key={i.id} iid={i.id} color={i.color} status={song.parts[i.id]} fileDot={dots[i.id]} slideBadge={i.id==='keys'&&hasSlide} />)}
       {song.guests.map(g=>{ const t=(g.name||'').trim(); return <Cell key={g.id} text={t? t[0].toUpperCase() : '+'} color={GUEST_COLOR} status={g.status} />; })}
     </div>
   );
@@ -958,7 +1016,7 @@ function StatusPills({value,color,onPick}){
   return (
     <div className="status-pills">
       {STATUS.map(st=>(
-        <button key={st} className={'pill'+(value===st?' on':'')} style={value===st?{background: st==='ready'?color : PILL_BG[st]}:{}} onClick={()=>onPick(st)}>{PILL_LABEL[st]}</button>
+        <button key={st} className={'pill'+(value===st?' on':'')} style={value===st?{background: st==='ready'?color : PILL_BG[st]}:{}} onClick={onPick?()=>onPick(st):undefined} disabled={!onPick}>{PILL_LABEL[st]}</button>
       ))}
     </div>
   );
@@ -1013,7 +1071,7 @@ function Stage({state,go,update,goSong}){
         <div className="section-h">Player readiness</div>
         <div className="card">
           {perMember.map(m=>(
-            <div className="strip" key={m.id} style={{cursor:'pointer'}} onClick={()=>setBulkInstr(m.id)}>
+            <div className="strip" key={m.id} style={{cursor:(!MY_INSTR||m.id===MY_INSTR)?'pointer':'default',opacity:MY_INSTR&&m.id!==MY_INSTR?.5:1}} onClick={()=>{if(!MY_INSTR||m.id===MY_INSTR) setBulkInstr(m.id);}}>
               <InstrBadge id={m.id} size={30}/>
               <div className="track"><div className="fill" style={{width:(m.pct*100)+'%',background:m.color}}/></div>
               <div className="val">{Math.round(m.pct*100)}%</div>
@@ -1266,6 +1324,17 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [showCover,setShowCover]=useState(false);
   const [filesOpen,setFilesOpen]=useState(false);
   const [pickCat,setPickCat]=useState(null);
+  const [dropCat,setDropCat]=useState(null);
+  const [pracPick,setPracPick]=useState(false);
+  const [pracAudioChoice,setPracAudioChoice]=useState(null);
+  const [pracVisualChoice,setPracVisualChoice]=useState(null);
+  const [pracMode,setPracMode]=useState(null);
+  const [pracPlaying,setPracPlaying]=useState(false);
+  const [pracTime,setPracTime]=useState(0);
+  const [pracDur,setPracDur]=useState(0);
+  const [pracVol,setPracVol]=useState(1);
+  const pracAudioRef=useRef(null);
+  const pracTimerRef=useRef(null);
   const rowRef=useRef(null);
   const recorderRef=useRef(null);
   const chunksRef=useRef([]);
@@ -1291,6 +1360,15 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     setBusy('cover'); try{ const url=await uploadCover(s.id,data); setField('cover',url); }catch(err){ setFileMsg('Cover upload failed — '+prettyErr(err)); } setBusy(''); };
   const clearCover=()=>{ deleteStoragePath(coverPath(s.id)); setField('cover',''); };
 
+  const onDropFiles=(files,cat)=>{ if(!files||!files.length) return;
+    Array.from(files).forEach(file=>{
+      if(file.size>FILE_CAP){ setFileMsg('File "'+file.name+'" is over 25 MB.'); return; }
+      setBusy('file'); const id=uid();
+      uploadFileToStorage(id,file).then(({url,path})=>{
+        update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id,name:file.name,kind:'upload',url,path,size:file.size,type:fileKind(file.name),cat:cat||'original'});logAct(st,'uploaded "'+file.name+'" to "'+so.title+'"');return st;});
+      }).catch(err=>setFileMsg('Upload failed — '+prettyErr(err))).finally(()=>setBusy(''));
+    });
+  };
   const onUpload=(e,cat)=>{ setFileMsg(''); const file=e.target.files&&e.target.files[0]; e.target.value=''; if(!file) return;
     if(file.size>FILE_CAP){ setFileMsg('That file is over 25 MB — add it as a link instead.'); return; }
     setBusy('file'); const id=uid();
@@ -1400,6 +1478,38 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const setVol=(v)=>{ setPlayerVol(v); if(audioRef.current) audioRef.current.volume=v; };
   const closePlayer=()=>{ if(audioRef.current){ audioRef.current.pause(); audioRef.current=null; } clearInterval(playerTimerRef.current); setPlayerFile(null); setPlayerPlaying(false); setPlayerTime(0); };
 
+  const myInstr=MY_INSTR||'keys';
+  const filesArr=s.files||[];
+  const pracOrigAudio=filesArr.filter(f=>(f.cat||'original')==='original'&&(f.type==='audio'||f.kind==='link'));
+  const pracInstrAudio=filesArr.filter(f=>f.cat===myInstr&&(f.type==='audio'||f.kind==='link'));
+  const pracSlideFiles=filesArr.filter(f=>f.cat==='slide');
+  const pracPartFiles=filesArr.filter(f=>f.cat===myInstr&&f.type!=='audio');
+  const openPracPick=()=>{ setPracAudioChoice(null); setPracVisualChoice(null); setPracPick(true); };
+  const startPractice=()=>{
+    if(!pracAudioChoice&&!pracVisualChoice) return;
+    setPracPick(false);
+    const audioId=pracAudioChoice?pracAudioChoice.split('__')[0]:null;
+    const af=audioId? filesArr.find(f=>f.id===audioId):null;
+    const vf=pracVisualChoice? filesArr.find(f=>f.id===pracVisualChoice):null;
+    if(af){
+      const a=new Audio(af.url); a.volume=pracVol;
+      a.onloadedmetadata=()=>setPracDur(a.duration||0);
+      a.onended=()=>{ setPracPlaying(false); clearInterval(pracTimerRef.current); };
+      pracAudioRef.current=a;
+      clearInterval(pracTimerRef.current);
+      setPracPlaying(false); setPracTime(0); setPracDur(0);
+    }
+    setPracMode({audio:af,visual:vf});
+  };
+  const pracToggle=()=>{
+    if(!pracAudioRef.current) return;
+    if(pracAudioRef.current.paused){ pracAudioRef.current.play(); setPracPlaying(true); pracTimerRef.current=setInterval(()=>setPracTime(pracAudioRef.current.currentTime),250); }
+    else{ pracAudioRef.current.pause(); setPracPlaying(false); clearInterval(pracTimerRef.current); }
+  };
+  const pracSeek=(v)=>{ if(pracAudioRef.current){ pracAudioRef.current.currentTime=v; setPracTime(v); } };
+  const pracSetVol=(v)=>{ setPracVol(v); if(pracAudioRef.current) pracAudioRef.current.volume=v; };
+  const exitPractice=()=>{ if(pracAudioRef.current){ pracAudioRef.current.pause(); pracAudioRef.current=null; } clearInterval(pracTimerRef.current); setPracMode(null); setPracPlaying(false); setPracTime(0); };
+
   const fileCount=s.files?s.files.length:0;
   const rehCount=rehearsals?songRehCount(s.id,rehearsals):0;
   const meta=[s.artist, s.songKey&&('Key '+s.songKey), s.tempo&&(s.tempo+' bpm'), s.duration&&(s.duration+'m'), fileCount&&(fileCount+(fileCount>1?' files':' file'))].filter(Boolean);
@@ -1431,9 +1541,14 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
               {s.cover && busy!=='cover' && <button className="btn danger sm" onClick={clearCover}>Remove cover</button>}
             </div>
           </div>}
-          <button className="access-files-btn" onClick={()=>setFilesOpen(true)}>
-            Access Files{fileCount?' ('+fileCount+')':''}
-          </button>
+          <div className="song-action-row">
+            <button className="song-action-btn" onClick={()=>setFilesOpen(true)}>
+              Access Files{fileCount?' ('+fileCount+')':''}
+            </button>
+            <button className="song-action-btn" onClick={openPracPick}>
+              Practice Song
+            </button>
+          </div>
           {filesOpen && <div className="files-modal" onClick={e=>{if(e.target===e.currentTarget){setFilesOpen(false);setPickCat(null);setLinkMode(false);}}}>
             <div className="files-panel">
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
@@ -1443,9 +1558,17 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
               {FILE_CATS.map(cat=>{
                 const catFiles=(s.files||[]).filter(f=>(f.cat||'original')===cat.id);
                 return (
-                  <div className="files-cat" key={cat.id}>
-                    <div className="files-cat-h"><span className="cat-dot" style={{background:cat.color}}/>{cat.label}</div>
-                    {catFiles.length===0 && <div className="files-na">N/A</div>}
+                  <div className={'files-cat'+(dropCat===cat.id?' drop-over':'')} key={cat.id}
+                    onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';setDropCat(cat.id);}}
+                    onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget)) setDropCat(null);}}
+                    onDrop={e=>{e.preventDefault();setDropCat(null);onDropFiles(e.dataTransfer.files,cat.id);}}>
+                    <div className="files-cat-h">
+                      {cat.icon==='note' && <svg width="16" height="16" viewBox="0 0 24 24" fill={cat.color} stroke="none"><path d="M12 3v12.26A4.5 4.5 0 1 0 14 19V7h4V3h-6z"/></svg>}
+                      {cat.icon==='slide' && <span style={{fontFamily:'var(--mono)',fontWeight:700,fontSize:14,color:cat.color}}>S</span>}
+                      {cat.instr && <InstrBadge id={cat.instr} size={20}/>}
+                      {cat.label}
+                    </div>
+                    {catFiles.length===0 && <div className="files-na">N/A — drop files here or use buttons below</div>}
                     {catFiles.map(f=>(
                       <div className="fileitem" key={f.id}>
                         <span className="ftype" style={{background:KIND_COLOR[f.type]||'var(--muted)'}}>{badgeText(f)}</span>
@@ -1486,9 +1609,11 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
                   </div>
                 : <div>
                     <div style={{fontSize:12,color:'var(--muted)',marginBottom:8}}>Add file to category:</div>
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                    <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
                       {FILE_CATS.map(cat=>(
-                        <button key={cat.id} className="btn ghost sm" style={{borderColor:cat.color,color:cat.color}} onClick={()=>setPickCat(cat.id)}>{cat.label}</button>
+                        <button key={cat.id} className="btn ghost sm" style={{borderColor:cat.color,color:cat.color,display:'inline-flex',alignItems:'center',gap:5}} onClick={()=>setPickCat(cat.id)}>
+                          {cat.instr && <InstrIcon id={cat.instr} size={13}/>}{cat.label}
+                        </button>
                       ))}
                     </div>
                   </div>}
@@ -1547,9 +1672,9 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           </div>}
           {busy==='rec' && <div style={{fontSize:12,color:'var(--muted)',padding:'8px 0'}}>Saving recording…</div>}
           {INSTR.map(i=>(
-            <div className="editrow" key={i.id}>
+            <div className="editrow" key={i.id} style={MY_INSTR&&i.id!==MY_INSTR?{opacity:.5}:null}>
               <InstrBadge id={i.id} size={26}/>
-              <StatusPills value={s.parts[i.id]} color={i.color} onPick={v=>setRole(i.id,v)}/>
+              <StatusPills value={s.parts[i.id]} color={i.color} onPick={(!MY_INSTR||i.id===MY_INSTR)?v=>setRole(i.id,v):null}/>
             </div>
           ))}
           <label className="fl" style={{marginTop:15}}>Guests ({s.guests.length}/{MAX_GUESTS})</label>
@@ -1578,6 +1703,58 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           </div>
           <div className="btnrow"><button className="btn danger" onClick={del}>Remove song</button></div>
         </div>}
+      {pracPick && <div className="files-modal" onClick={e=>{if(e.target===e.currentTarget) setPracPick(false);}}>
+        <div className="files-panel" style={{maxWidth:380}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
+            <div className="modaltitle" style={{margin:0}}>Practice — {s.title}</div>
+            <button className="xbtn" onClick={()=>setPracPick(false)}>×</button>
+          </div>
+          <div className="prac-pick">
+            <div className="prac-pick-h">Audio source</div>
+            {[{id:'original',label:'Original',files:pracOrigAudio},{id:'isolated',label:'Isolated ('+((FILE_CATS.find(c=>c.id===myInstr)||{}).label||myInstr)+')',files:pracInstrAudio},{id:'minus',label:'Minus ('+((FILE_CATS.find(c=>c.id===myInstr)||{}).label||myInstr)+')',files:pracInstrAudio}].map(opt=>{
+              const audioFiles=opt.files.filter(f=>f.type==='audio'||(f.kind==='link'&&f.url));
+              const avail=audioFiles.length>0;
+              return <div key={opt.id} className={'prac-opt'+(pracAudioChoice&&pracAudioChoice===((audioFiles[0]||{}).id+'__'+opt.id)?' sel':'')+(avail?'':' dis')} onClick={()=>{if(avail) setPracAudioChoice(audioFiles[0].id+'__'+opt.id);}}>
+                <div className="prac-opt-label">{opt.label}</div>
+                {!avail && <div className="prac-opt-na">no file</div>}
+              </div>;
+            })}
+          </div>
+          <div className="prac-pick">
+            <div className="prac-pick-h">Visual</div>
+            {[{id:'slide',label:'Slide',files:pracSlideFiles},{id:'part',label:'Part ('+((FILE_CATS.find(c=>c.id===myInstr)||{}).label||myInstr)+')',files:pracPartFiles}].map(opt=>{
+              const vizFiles=opt.files.filter(f=>f.type!=='audio');
+              const avail=vizFiles.length>0;
+              return <div key={opt.id} className={'prac-opt'+(pracVisualChoice===((vizFiles[0]||{}).id)?' sel':'')+(avail?'':' dis')} onClick={()=>{if(avail) setPracVisualChoice(vizFiles[0].id);}}>
+                <div className="prac-opt-label">{opt.label}</div>
+                {!avail && <div className="prac-opt-na">no file</div>}
+              </div>;
+            })}
+          </div>
+          <div className="btnrow" style={{justifyContent:'center',gap:10,marginTop:8}}>
+            <button className="btn ghost sm" onClick={()=>setPracPick(false)}>Cancel</button>
+            <button className="btn sm" disabled={!pracAudioChoice&&!pracVisualChoice} onClick={startPractice}>Start Practice</button>
+          </div>
+        </div>
+      </div>}
+      {pracMode && <div className="practice-overlay">
+        <div className="practice-title">{s.title}{pracMode.visual?' — '+(pracMode.visual.name||''):''}
+        </div>
+        <button className="practice-exit" onClick={exitPractice}>×</button>
+        <div className="practice-visual">
+          {pracMode.visual && (pracMode.visual.type==='pdf'||fileKind(pracMode.visual.name)==='pdf'
+            ? <iframe src={pracMode.visual.url+'#toolbar=0'} title="Part"/>
+            : <img src={pracMode.visual.url} alt={pracMode.visual.name||'Visual'}/>)}
+          {!pracMode.visual && <div style={{color:'var(--muted)',fontStyle:'italic'}}>No visual selected</div>}
+        </div>
+        {pracMode.audio && <div className="practice-audio">
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <button style={{background:'none',border:'none',color:'var(--text)',fontSize:22,cursor:'pointer',padding:0,lineHeight:1}} onClick={pracToggle}>{pracPlaying?'❚❚':'▶'}</button>
+            <input type="range" style={{flex:1}} min="0" max={pracDur||1} step="0.1" value={pracTime} onChange={e=>pracSeek(+e.target.value)}/>
+            <span style={{fontSize:11,color:'var(--muted)',minWidth:70,textAlign:'right'}}>{fmtSecs(Math.floor(pracTime))}/{pracDur?fmtSecs(Math.floor(pracDur)):'-:--'}</span>
+          </div>
+        </div>}
+      </div>}
       {cropSrc && <CropModal src={cropSrc} onCancel={()=>setCropSrc(null)} onDone={onCropDone}/>}
     </div>
   );
