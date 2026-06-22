@@ -91,7 +91,7 @@
   .strip .track{flex:1;height:8px;border-radius:5px;background:var(--surface-3);overflow:hidden}
   .strip .fill{height:100%;border-radius:5px;transition:width .6s cubic-bezier(.2,.7,.2,1)}
   .strip .val{font-family:var(--mono);font-size:12px;color:var(--muted);width:38px;text-align:right;flex-shrink:0}
-  .song{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .song{background:var(--surface);border:2px solid rgba(255,255,255,.18);border-radius:14px;overflow:hidden;scroll-margin-top:70px}
   .song+.song{margin-top:10px}
   .song-head{display:flex;align-items:center;gap:12px;padding:13px 14px;width:100%;text-align:left}
   .song-title{font-family:var(--display);font-weight:600;font-size:15px;line-height:1.2;direction:ltr}
@@ -104,6 +104,7 @@
   .songnum{font-family:var(--mono);font-size:12.5px;font-weight:700;color:var(--muted);min-width:22px;text-align:center;flex-shrink:0;font-variant-numeric:tabular-nums}
   .songnum.enc{color:var(--guitar)}
   .enc-pill{display:inline-flex;align-items:center;font-family:var(--mono);font-size:8.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--guitar);border:1px solid rgba(244,169,60,.5);border-radius:5px;padding:2px 5px;flex-shrink:0}
+  .setlist-ctrl{background:var(--surface);border:2px solid rgba(255,255,255,.18);border-radius:14px;padding:12px 14px;margin-bottom:10px}
   .setlist-tools{display:flex;align-items:center;gap:9px;margin:2px 0;flex-wrap:wrap}
   .reorder-btn{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--surface-2);border:1px solid var(--line-2);border-radius:8px;padding:8px 12px;display:inline-flex;align-items:center;gap:6px}
   .reorder-btn.on{color:#15141B;background:var(--text);border-color:transparent;font-weight:700}
@@ -282,7 +283,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.121';
+const VERSION='0.122';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
@@ -1108,16 +1109,16 @@ function Setlist({state,update,goSongId,clearGoSong}){
   const roleLabel = roleFilter ? state.members[roleFilter].name : null;
   const selSong = open ? songs.find(x=>x.id===open) : null;
 
-  const toolbar = (
-    <React.Fragment>
-      {active.length>1 && !adding &&
+  const toolbar = (active.length>0 && !adding) ? (
+    <div className="setlist-ctrl">
+      {active.length>1 &&
         <div className="setlist-tools">
           <button className={'reorder-btn'+(reorder?' on':'')} onClick={()=>{ setReorder(v=>!v); setRoleFilter(null); setOpen(null); }}>
             {reorder?'✓ Done':'⇅ Reorder'}
           </button>
           {reorder && <span className="ro-hint">↑ ↓ set play order · ★ marks an encore · ⊘ moves a song out</span>}
         </div>}
-      {!reorder && active.length>0 &&
+      {!reorder &&
         <div className="filterbar">
           <button className={'chip'+(roleFilter===null?' on':'')} onClick={()=>setRoleFilter(null)}>All songs</button>
           {INSTR.map(i=>(
@@ -1127,8 +1128,8 @@ function Setlist({state,update,goSongId,clearGoSong}){
           ))}
         </div>}
       {!reorder && roleFilter && <div className="filterhint">Songs where {roleLabel} still needs work · {shown.length}</div>}
-    </React.Fragment>
-  );
+    </div>
+  ) : null;
 
   const emptyStates = (
     <React.Fragment>
