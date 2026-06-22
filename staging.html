@@ -283,7 +283,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.123';
+const VERSION='0.124';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
@@ -1103,7 +1103,7 @@ function Setlist({state,update,goSongId,clearGoSong}){
     const act=others.filter(x=>!x.excluded), exc=others.filter(x=>x.excluded);
     s.songs=[...act,so,...exc]; return s; });
 
-  const toggleEncore=(id)=>update(s=>{ const so=s.songs.find(x=>x.id===id); if(so&&!so.excluded) so.encore=!so.encore; return s; });
+  const toggleEncore=(id)=>update(s=>{ const so=s.songs.find(x=>x.id===id); if(so&&!so.excluded){ so.encore=!so.encore; logAct(s,(so.encore?'marked':'unmarked')+' "'+so.title+'" as encore'); } return s; });
 
   const shown = roleFilter ? active.filter(s=>s.parts[roleFilter]!=='ready') : active;
   const roleLabel = roleFilter ? state.members[roleFilter].name : null;
@@ -1253,7 +1253,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   },[]);
   useEffect(()=>{ if(scrollInto&&rowRef.current) rowRef.current.scrollIntoView({behavior:'smooth',block:'start'}); },[scrollInto]);
   const setField=(k,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);so[k]=v;return st;});
-  const setRole=(iid,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);so.parts[iid]=v;return st;});
+  const setRole=(iid,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);so.parts[iid]=v;const il=(INSTR.find(i=>i.id===iid)||{}).label||iid;logAct(st,'set '+il+' to '+v+' on "'+so.title+'"');return st;});
   const addGuest=()=>update(st=>{const so=st.songs.find(x=>x.id===s.id);if(so.guests.length<MAX_GUESTS)so.guests.push({id:uid(),name:'',status:'todo'});return st;});
   const setGuestName=(gid,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);const g=so.guests.find(x=>x.id===gid);if(g)g.name=v;return st;});
   const setGuestStatus=(gid,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);const g=so.guests.find(x=>x.id===gid);if(g)g.status=v;return st;});
@@ -1270,12 +1270,12 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     if(file.size>FILE_CAP){ setFileMsg('That file is over 25 MB — add it as a link instead.'); return; }
     setBusy('file'); const id=uid();
     uploadFileToStorage(id,file).then(({url,path})=>{
-      update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id,name:file.name,kind:'upload',url,path,size:file.size,type:fileKind(file.name),cat:cat||'original'});return st;});
+      update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id,name:file.name,kind:'upload',url,path,size:file.size,type:fileKind(file.name),cat:cat||'original'});logAct(st,'uploaded "'+file.name+'" to "'+so.title+'"');return st;});
     }).catch(err=>setFileMsg('Upload failed — '+prettyErr(err))).finally(()=>setBusy(''));
   };
   const saveLink=(cat)=>{ const u=linkUrl.trim(); if(!u) return;
     const name=linkName.trim() || u.replace(/^https?:\/\//,'').replace(/\/$/,'').slice(0,42);
-    update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id:uid(),name,kind:'link',url:u,type:fileKind(name),cat:cat||'original'});return st;});
+    update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id:uid(),name,kind:'link',url:u,type:fileKind(name),cat:cat||'original'});logAct(st,'added link "'+name+'" to "'+so.title+'"');return st;});
     setLinkUrl('');setLinkName('');setLinkMode(false);
   };
   const openFile=(f)=>{ if(f.url) window.open(f.url,'_blank','noopener'); };
@@ -1297,7 +1297,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     setBusy('');
   };
   const discardPhoto=()=>{ setPendingPhoto(null); setPhotoPreview(null); };
-  const removeFile=(f)=>{ if(f.kind==='upload'&&f.path) deleteStoragePath(f.path); update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files=so.files.filter(x=>x.id!==f.id);return st;}); };
+  const removeFile=(f)=>{ if(f.kind==='upload'&&f.path) deleteStoragePath(f.path); update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files=so.files.filter(x=>x.id!==f.id);logAct(st,'removed "'+f.name+'" from "'+so.title+'"');return st;}); };
   const pendingBlobRef=useRef(null);
   const pendingMimeRef=useRef('');
   const [recConfirm,setRecConfirm]=useState(false);
@@ -1339,7 +1339,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       const sRef=storage.ref().child(path);
       await sRef.put(blob,{contentType:mime});
       const url=await sRef.getDownloadURL();
-      update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id:fid,name,kind:'upload',url,path,size:blob.size,type:'audio',cat:pickCat||'original'});return st;});
+      update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id:fid,name,kind:'upload',url,path,size:blob.size,type:'audio',cat:pickCat||'original'});logAct(st,'saved a recording to "'+so.title+'"');return st;});
     }catch(err){ setFileMsg('Recording upload failed — '+prettyErr(err)); }
     pendingBlobRef.current=null; setBusy(''); setRecTime(0);
   };
@@ -1677,7 +1677,7 @@ function RehCard({r,state,patch,del,update}){
   const onToggle=(group,id)=>patch(r.id,x=>{ const res=toggleFocus(x.focusLearn||[],x.focusPractice||[],group,id); x.focusLearn=res.learn; x.focusPractice=res.practice; });
   const onSetOther=(group,text)=>patch(r.id,x=>{ const key=group==='practice'?'focusPractice':'focusLearn'; x[key]=setOtherInArr(x[key]||[],text); });
   const startMarkDone=()=>{ const focus=[...(r.focusPractice||[]),...(r.focusLearn||[])].filter(x=>!isOther(x)); setCovered([...focus]); setMarkingDone(true); };
-  const confirmDone=()=>{ patch(r.id,x=>{x.done=true;x.coveredSongs=[...covered];}); setMarkingDone(false); };
+  const confirmDone=()=>{ update(s=>{const x=s.rehearsals.find(v=>v.id===r.id);x.done=true;x.coveredSongs=[...covered];logAct(s,'marked the '+(r.date?fmtDate(r.date)+' ':'')+'rehearsal done'+(covered.length?' ('+covered.length+' songs covered)':''));return s;}); setMarkingDone(false); };
   const live=isRehLive(r);
   return (
     <div className={'reh'+(r.done?' done':'')+(live?' live':'')}>
