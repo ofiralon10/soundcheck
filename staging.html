@@ -232,7 +232,7 @@
   .files-cat-h .cat-dot{width:8px;height:8px;border-radius:50%}
   .files-na{font-size:12px;color:var(--muted-2);font-style:italic}
   .slide-badge{position:absolute;top:50%;left:-10px;transform:translateY(-50%);font-family:var(--mono);font-size:14px;font-weight:700;color:var(--drums);line-height:1}
-  .file-dot{position:absolute;top:-4px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%}
+  .file-dot{position:absolute;top:-7px;left:50%;transform:translateX(-50%);width:5px;height:5px;border-radius:50%}
   .song-action-row{display:flex;gap:8px;margin-bottom:10px}
   .song-action-btn{flex:1;padding:11px 0;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);font-family:var(--display);font-weight:600;font-size:13.5px;color:var(--text);cursor:pointer;text-align:center;transition:background .15s}
   .song-action-btn:active{background:var(--surface-3)}
@@ -287,7 +287,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.132';
+const VERSION='0.133';
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
