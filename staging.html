@@ -304,7 +304,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.144';
+const VERSION='0.145';
 const CHANGELOG={
   '0.137':[
     'Practice Song mode — choose audio + visual and practice full-screen',
@@ -1583,8 +1583,9 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     <div className={'song'+(selected?' song-sel':'')} ref={rowRef}>
       <div className="song-head" onClick={toggle}>
         {num!=null && <span className={'songnum'+(s.encore?' enc':'')}>{num}</span>}
-        <span onClick={e=>{if(open&&!compact){e.stopPropagation();setShowCover(v=>!v);}}}>
+        <span style={{position:'relative'}} onClick={e=>{if(open&&!compact){e.stopPropagation();setShowCover(v=>!v);}}}>
           <CoverThumb src={s.cover} size={46} radius={10}/>
+          <span className="song-reh-count" style={{position:'absolute',bottom:-2,left:-2,fontSize:8,padding:'1px 4px',opacity:rehCount===0?.3:1}} title={rehCount+' rehearsal'+(rehCount>1?'s':'')}>{rehCount}×</span>
         </span>
         <div style={{minWidth:0,flex:1}}>
           <div style={{display:'flex',alignItems:'center',gap:7,minWidth:0,flexWrap:'wrap'}}>
@@ -1604,7 +1605,6 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           <button className="song-icon-btn" onClick={e=>{e.stopPropagation();startRec();}} title="Record" style={{color:'var(--drums)'}}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
           </button>
-          <span className="song-reh-count" title={rehCount+' rehearsal'+(rehCount>1?'s':'')} style={rehCount===0?{opacity:.3}:null}>{rehCount}×</span>
         </div>
       </div>
       <div className="song-prog"><div className="pf" style={{width:(r*100)+'%',background:meterColor(r)}}/></div>
