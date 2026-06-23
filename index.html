@@ -301,7 +301,21 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.136';
+const VERSION='0.137';
+const CHANGELOG={
+  '0.137':[
+    'Practice Song mode — choose audio + visual and practice full-screen',
+    'Instrument icon now shows in your instrument color',
+    'Status updates locked to your own instrument',
+    'Download and rename files in the Files panel',
+    'Smarter auto-naming for recordings and photos',
+  ],
+  '0.136':[
+    'Practice Song mode — choose audio + visual and practice full-screen',
+    'Instrument icon colored per instrument',
+    'Status updates restricted to your own instrument',
+  ],
+};
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
@@ -713,6 +727,8 @@ function App(){
   const [sending,setSending]=useState(false);
   const [sentTo,setSentTo]=useState('');
   const [bands,setBands]=useState(null);
+  const [showChangelog,setShowChangelog]=useState(()=>{try{const seen=localStorage.getItem('sc_seen_ver');return seen!==VERSION;}catch(_){return false;}});
+  const [showInstrPrompt,setShowInstrPrompt]=useState(false);
   const inited=useRef(false);
   const startBoardFn=useRef(null);
 
@@ -784,10 +800,38 @@ function App(){
   if(phase==='pickband') return <AuthShell><BandPicker bands={bands} onPick={pickBoard} user={user} onSignOut={signOut}/></AuthShell>;
   if(phase==='loading'|| !state) return <AuthShell><Loading label={user?'Loading board…':'Starting…'}/></AuthShell>;
 
+  const dismissChangelog=()=>{try{localStorage.setItem('sc_seen_ver',VERSION);}catch(_){} setShowChangelog(false); if(!MY_INSTR) setShowInstrPrompt(true);};
+  const pickInstrPrompt=(id)=>{setMyInstr(id); setShowInstrPrompt(false);};
+
   return (
     <React.Fragment>
       <Header state={state} update={update} onSwitch={switchBoard} />
       {isStaging() && <div className="stagingbar">STAGING COPY · changes here don't touch the live board</div>}
+      {showChangelog && <div className="files-modal" onClick={e=>{if(e.target===e.currentTarget) dismissChangelog();}}>
+        <div className="files-panel" style={{maxWidth:380,textAlign:'center'}}>
+          <div style={{fontSize:40,marginBottom:8}}>🎵</div>
+          <div className="modaltitle" style={{margin:'0 0 4px'}}>Soundcheck v{VERSION}</div>
+          <div style={{fontSize:13,color:'var(--muted)',marginBottom:14}}>What's new</div>
+          <ul style={{textAlign:'left',fontSize:13,lineHeight:1.7,color:'var(--text)',paddingLeft:20,margin:'0 0 18px'}}>
+            {(CHANGELOG[VERSION]||[]).map((c,i)=><li key={i}>{c}</li>)}
+          </ul>
+          <button className="btn" onClick={dismissChangelog}>Got it</button>
+        </div>
+      </div>}
+      {showInstrPrompt && <div className="files-modal" onClick={e=>{if(e.target===e.currentTarget) setShowInstrPrompt(false);}}>
+        <div className="files-panel" style={{maxWidth:340,textAlign:'center'}}>
+          <div className="modaltitle" style={{margin:'0 0 6px'}}>What do you play?</div>
+          <div style={{fontSize:13,color:'var(--muted)',marginBottom:16}}>Pick your instrument so we can personalize your view.</div>
+          <div style={{display:'flex',justifyContent:'center',gap:8,flexWrap:'wrap'}}>
+            {INSTR.map(i=>(
+              <button key={i.id} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,padding:'10px 12px',borderRadius:12,border:'1.5px solid var(--line-2)',background:'transparent',cursor:'pointer',minWidth:56}} onClick={()=>pickInstrPrompt(i.id)}>
+                <InstrBadge id={i.id} size={32}/>
+                <span style={{fontSize:11,color:'var(--text)'}}>{i.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>}
       {tab==='stage'    && <Stage state={state} go={setTab} update={update} goSong={id=>{setTab('setlist');setGoSongId(id);}} />}
       {tab==='setlist'  && <Setlist state={state} update={update} goSongId={goSongId} clearGoSong={()=>setGoSongId(null)} />}
       {tab==='rehearse' && <Rehearsals state={state} update={update} />}
@@ -1319,6 +1363,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [cropSrc,setCropSrc]=useState(null);
   const [busy,setBusy]=useState('');
   const [confirmDel,setConfirmDel]=useState(null);
+  const [renameId,setRenameId]=useState(null);
+  const [renameTxt,setRenameTxt]=useState('');
   const [recState,setRecState]=useState(null);
   const [recTime,setRecTime]=useState(0);
   const [showCover,setShowCover]=useState(false);
@@ -1388,7 +1434,11 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     setPendingPhoto(file);
     const rd=new FileReader(); rd.onload=()=>setPhotoPreview(rd.result); rd.readAsDataURL(file);
   };
-  const uploadPhotoAsFile=()=>{ if(!pendingPhoto) return; const f=pendingPhoto; setPendingPhoto(null); setPhotoPreview(null); onUpload({target:{files:[f]}},pickCat||'original'); };
+  const uploadPhotoAsFile=()=>{ if(!pendingPhoto) return; const f=pendingPhoto; setPendingPhoto(null); setPhotoPreview(null);
+    const ext=(f.name||'').split('.').pop()||'jpg';
+    const named=new File([f],autoName('image')+'.'+ext,{type:f.type});
+    onUpload({target:{files:[named]}},pickCat||'original');
+  };
   const uploadPhotoToAlbum=async()=>{ if(!pendingPhoto) return; const file=pendingPhoto; setPendingPhoto(null); setPhotoPreview(null);
     setBusy('file'); const id=uid();
     try{
@@ -1401,6 +1451,9 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   };
   const discardPhoto=()=>{ setPendingPhoto(null); setPhotoPreview(null); };
   const removeFile=(f)=>{ if(f.kind==='upload'&&f.path) deleteStoragePath(f.path); update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files=so.files.filter(x=>x.id!==f.id);logAct(st,'removed "'+f.name+'" from "'+so.title+'"');return st;}); };
+  const renameFile=(fid,newName)=>{ if(!newName.trim()) return; update(st=>{const so=st.songs.find(x=>x.id===s.id);const f=so.files.find(x=>x.id===fid);if(f) f.name=newName.trim();return st;}); setRenameId(null); };
+  const downloadFile=async(f)=>{ try{ const resp=await fetch(f.url); const blob=await resp.blob(); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=f.name||'file'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href); }catch(_){ setFileMsg('Download failed.'); } };
+  const autoName=(prefix)=>{ const d=new Date(); const dd=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getFullYear()).slice(-2); const files=s.files||[]; let maxN=0; files.forEach(f=>{ const m=(f.name||'').match(new RegExp(prefix+'-(\\d+)','i')); if(m) maxN=Math.max(maxN,parseInt(m[1],10)); }); return dd+' '+prefix+'-'+(maxN+1); };
   const pendingBlobRef=useRef(null);
   const pendingMimeRef=useRef('');
   const [recConfirm,setRecConfirm]=useState(false);
@@ -1435,8 +1488,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     setBusy('rec'); setRecConfirm(false);
     const fid=uid();
     const ext=mime.includes('mp4')?'m4a':mime.includes('ogg')?'ogg':'webm';
-    const now=new Date();
-    const name='Recording '+now.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' '+now.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})+'.'+ext;
+    const name=autoName('recording')+'.'+ext;
     try{
       const path='files/'+BOARD+'/'+fid+'-recording.'+ext;
       const sRef=storage.ref().child(path);
@@ -1457,7 +1509,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     if(audioRef.current){ audioRef.current.pause(); clearInterval(playerTimerRef.current); }
     const a=new Audio(f.url);
     a.volume=playerVol;
-    a.onloadedmetadata=()=>setPlayerDur(a.duration||0);
+    a.onloadedmetadata=()=>setPlayerDur(isFinite(a.duration)?a.duration:0);
+    a.ondurationchange=()=>{if(isFinite(a.duration)) setPlayerDur(a.duration);};
     a.onended=()=>{ setPlayerPlaying(false); setPlayerTime(a.duration||0); clearInterval(playerTimerRef.current); };
     a.onerror=()=>{ setPlayerFile(null); setPlayerPlaying(false); clearInterval(playerTimerRef.current); setFileMsg('Could not play this file.'); };
     a.play().catch(()=>setFileMsg('Playback failed.'));
@@ -1572,16 +1625,26 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
                     {catFiles.map(f=>(
                       <div className="fileitem" key={f.id}>
                         <span className="ftype" style={{background:KIND_COLOR[f.type]||'var(--muted)'}}>{badgeText(f)}</span>
-                        <div className="fname" dir="auto">{f.name}{f.size?<span className="fsize"> · {fmtSize(f.size)}</span>:null}</div>
-                        {f.type==='audio'
-                          ? <button className="fbtn" style={playerFile&&playerFile.id===f.id?{color:'var(--keys)'}:null} onClick={()=>openPlayer(f)}>{playerFile&&playerFile.id===f.id?'Playing…':'Play'}</button>
-                          : <button className="fbtn" onClick={()=>openFile(f)}>Open</button>}
-                        {confirmDel===f.id
-                          ? <React.Fragment>
-                              <button className="fbtn" style={{color:'var(--drums)'}} onClick={()=>{removeFile(f);setConfirmDel(null);}}>Delete</button>
-                              <button className="fbtn" onClick={()=>setConfirmDel(null)}>Cancel</button>
-                            </React.Fragment>
-                          : <button className="xmini" onClick={()=>setConfirmDel(f.id)} aria-label="Remove file">×</button>}
+                        {renameId===f.id
+                          ? <div style={{flex:1,display:'flex',gap:4,minWidth:0}}>
+                              <input className="inp" style={{flex:1,fontSize:12,padding:'4px 6px'}} value={renameTxt} onChange={e=>setRenameTxt(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter') renameFile(f.id,renameTxt);if(e.key==='Escape') setRenameId(null);}}/>
+                              <button className="fbtn" onClick={()=>renameFile(f.id,renameTxt)}>OK</button>
+                              <button className="fbtn" onClick={()=>setRenameId(null)}>✕</button>
+                            </div>
+                          : <div className="fname" dir="auto">{f.name}{f.size?<span className="fsize"> · {fmtSize(f.size)}</span>:null}</div>}
+                        {renameId!==f.id && <React.Fragment>
+                          {f.type==='audio'
+                            ? <button className="fbtn" style={playerFile&&playerFile.id===f.id?{color:'var(--keys)'}:null} onClick={()=>openPlayer(f)}>{playerFile&&playerFile.id===f.id?'Playing…':'Play'}</button>
+                            : <button className="fbtn" onClick={()=>openFile(f)}>Open</button>}
+                          {f.kind==='upload' && <button className="fbtn" onClick={()=>downloadFile(f)}>↓</button>}
+                          <button className="fbtn" onClick={()=>{setRenameId(f.id);setRenameTxt(f.name||'');}}>✎</button>
+                          {confirmDel===f.id
+                            ? <React.Fragment>
+                                <button className="fbtn" style={{color:'var(--drums)'}} onClick={()=>{removeFile(f);setConfirmDel(null);}}>Delete</button>
+                                <button className="fbtn" onClick={()=>setConfirmDel(null)}>Cancel</button>
+                              </React.Fragment>
+                            : <button className="xmini" onClick={()=>setConfirmDel(f.id)} aria-label="Remove file">×</button>}
+                        </React.Fragment>}
                       </div>
                     ))}
                   </div>
@@ -1648,7 +1711,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             <div className="player-panel">
               <div className="player-title" dir="auto">{playerFile.name}</div>
               <input type="range" className="player-seek" min="0" max={playerDur||1} step="0.1" value={playerTime} onChange={e=>seekTo(+e.target.value)}/>
-              <div className="player-time"><span>{fmtSecs(Math.floor(playerTime))}</span><span>{playerDur?fmtSecs(Math.floor(playerDur)):'-:--'}</span></div>
+              <div className="player-time"><span>{fmtSecs(Math.floor(playerTime))}</span><span>{playerDur&&isFinite(playerDur)?fmtSecs(Math.floor(playerDur)):'-:--'}</span></div>
               <div className="player-controls">
                 <button className="player-play" onClick={togglePlay}>{playerPlaying?'❚❚':'▶'}</button>
               </div>
