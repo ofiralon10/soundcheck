@@ -236,8 +236,9 @@
   .song-action-row{display:flex;gap:8px;margin-bottom:10px}
   .song-action-btn{flex:1;padding:11px 0;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);font-family:var(--display);font-weight:600;font-size:13.5px;color:var(--text);cursor:pointer;text-align:center;transition:background .15s}
   .song-action-btn:active{background:var(--surface-3)}
-  .song-icon-btn{position:relative;background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;border-radius:8px;display:flex;align-items:center;justify-content:center;transition:color .15s}
-  .song-icon-btn:active{color:var(--text)}
+  .song-icon-btn{position:relative;background:none;border:none;color:var(--muted);cursor:pointer;padding:8px;border-radius:8px;display:flex;align-items:center;justify-content:center;transition:color .15s;-webkit-tap-highlight-color:rgba(255,255,255,.1);touch-action:manipulation}
+  .song-icon-btn:active{color:var(--text);background:var(--surface-3)}
+  .song-icon-btn svg{pointer-events:none}
   .song-icon-badge{position:absolute;top:-4px;right:-6px;background:var(--keys);color:#fff;font-size:9px;font-weight:700;min-width:14px;height:14px;border-radius:7px;display:flex;align-items:center;justify-content:center;padding:0 3px;line-height:1}
   .practice-overlay{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column}
   .practice-visual{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:8px;min-height:0}
@@ -304,7 +305,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.145';
+const VERSION='0.146';
 const CHANGELOG={
   '0.137':[
     'Practice Song mode — choose audio + visual and practice full-screen',
@@ -1585,7 +1586,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         {num!=null && <span className={'songnum'+(s.encore?' enc':'')}>{num}</span>}
         <span style={{position:'relative'}} onClick={e=>{if(open&&!compact){e.stopPropagation();setShowCover(v=>!v);}}}>
           <CoverThumb src={s.cover} size={46} radius={10}/>
-          <span className="song-reh-count" style={{position:'absolute',bottom:-2,left:-2,fontSize:8,padding:'1px 4px',opacity:rehCount===0?.3:1}} title={rehCount+' rehearsal'+(rehCount>1?'s':'')}>{rehCount}×</span>
+          <span className="song-reh-count" style={{position:'absolute',bottom:-2,left:-2,fontSize:8,padding:'1px 4px',opacity:rehCount===0?.3:1,color:'#fff',background:'rgba(0,0,0,.55)'}} title={rehCount+' rehearsal'+(rehCount>1?'s':'')}>{rehCount}×</span>
         </span>
         <div style={{minWidth:0,flex:1}}>
           <div style={{display:'flex',alignItems:'center',gap:7,minWidth:0,flexWrap:'wrap'}}>
