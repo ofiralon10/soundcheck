@@ -301,7 +301,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.137';
+const VERSION='0.138';
 const CHANGELOG={
   '0.137':[
     'Practice Song mode — choose audio + visual and practice full-screen',
@@ -1452,7 +1452,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const discardPhoto=()=>{ setPendingPhoto(null); setPhotoPreview(null); };
   const removeFile=(f)=>{ if(f.kind==='upload'&&f.path) deleteStoragePath(f.path); update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files=so.files.filter(x=>x.id!==f.id);logAct(st,'removed "'+f.name+'" from "'+so.title+'"');return st;}); };
   const renameFile=(fid,newName)=>{ if(!newName.trim()) return; update(st=>{const so=st.songs.find(x=>x.id===s.id);const f=so.files.find(x=>x.id===fid);if(f) f.name=newName.trim();return st;}); setRenameId(null); };
-  const downloadFile=async(f)=>{ try{ const resp=await fetch(f.url); const blob=await resp.blob(); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=f.name||'file'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href); }catch(_){ setFileMsg('Download failed.'); } };
+  const downloadFile=(f)=>{ const a=document.createElement('a'); a.href=f.url; a.download=f.name||'file'; a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); a.remove(); };
   const autoName=(prefix)=>{ const d=new Date(); const dd=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getFullYear()).slice(-2); const files=s.files||[]; let maxN=0; files.forEach(f=>{ const m=(f.name||'').match(new RegExp(prefix+'-(\\d+)','i')); if(m) maxN=Math.max(maxN,parseInt(m[1],10)); }); return dd+' '+prefix+'-'+(maxN+1); };
   const pendingBlobRef=useRef(null);
   const pendingMimeRef=useRef('');
@@ -1582,8 +1582,18 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           </div>
           <div className="song-meta">{meta.join(' · ')||'—'}</div>
         </div>
-        <Cells song={s}/>
       </button>
+      {open && <div style={{display:'flex',gap:6,padding:'6px 10px',flexWrap:'wrap'}}>
+        <button className="song-action-btn" style={{flex:1,padding:'7px 0',fontSize:12}} onClick={()=>setFilesOpen(true)}>
+          Files{fileCount?' ('+fileCount+')':''}
+        </button>
+        <button className="song-action-btn" style={{flex:1,padding:'7px 0',fontSize:12}} onClick={openPracPick}>
+          Practice
+        </button>
+        {!recState && <button className="song-action-btn" style={{flex:'none',padding:'7px 10px',fontSize:12,color:'var(--drums)',borderColor:'rgba(242,84,91,.4)'}} onClick={startRec}>
+          ● Rec
+        </button>}
+      </div>}
       <div className="song-prog"><div className="pf" style={{width:(r*100)+'%',background:meterColor(r)}}/></div>
       {open && !compact &&
         <div className="song-body">
@@ -1594,14 +1604,6 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
               {s.cover && busy!=='cover' && <button className="btn danger sm" onClick={clearCover}>Remove cover</button>}
             </div>
           </div>}
-          <div className="song-action-row">
-            <button className="song-action-btn" onClick={()=>setFilesOpen(true)}>
-              Access Files{fileCount?' ('+fileCount+')':''}
-            </button>
-            <button className="song-action-btn" onClick={openPracPick}>
-              Practice Song
-            </button>
-          </div>
           {filesOpen && <div className="files-modal" onClick={e=>{if(e.target===e.currentTarget){setFilesOpen(false);setPickCat(null);setLinkMode(false);}}}>
             <div className="files-panel">
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
