@@ -93,7 +93,7 @@
   .strip .val{font-family:var(--mono);font-size:12px;color:var(--muted);width:38px;text-align:right;flex-shrink:0}
   .song{background:var(--surface);border:2px solid rgba(255,255,255,.18);border-radius:14px;overflow:hidden;scroll-margin-top:70px}
   .song+.song{margin-top:10px}
-  .song-head{display:flex;align-items:center;gap:12px;padding:13px 14px;width:100%;text-align:left}
+  .song-head{display:flex;align-items:center;gap:12px;padding:13px 14px;width:100%;text-align:left;cursor:pointer}
   .song-title{font-family:var(--display);font-weight:600;font-size:15px;line-height:1.2;direction:ltr}
   .song-meta{font-size:11.5px;color:var(--muted);margin-top:3px;direction:ltr}
   .cells{display:flex;gap:5px;margin-left:auto;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;max-width:170px}
@@ -304,7 +304,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.141';
+const VERSION='0.142';
 const CHANGELOG={
   '0.137':[
     'Practice Song mode — choose audio + visual and practice full-screen',
@@ -1581,7 +1581,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
 
   return (
     <div className={'song'+(selected?' song-sel':'')} ref={rowRef}>
-      <button className="song-head" onClick={toggle}>
+      <div className="song-head" onClick={toggle}>
         {num!=null && <span className={'songnum'+(s.encore?' enc':'')}>{num}</span>}
         <span onClick={e=>{if(open&&!compact){e.stopPropagation();setShowCover(v=>!v);}}}>
           <CoverThumb src={s.cover} size={46} radius={10}/>
@@ -1606,7 +1606,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           </button>
           {rehCount>0 && <span className="song-reh-count" title={rehCount+' rehearsal'+(rehCount>1?'s':'')}>{rehCount}×</span>}
         </div>
-      </button>
+      </div>
       <div className="song-prog"><div className="pf" style={{width:(r*100)+'%',background:meterColor(r)}}/></div>
       {open && !compact &&
         <div className="song-body">
