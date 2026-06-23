@@ -304,7 +304,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.140';
+const VERSION='0.141';
 const CHANGELOG={
   '0.137':[
     'Practice Song mode — choose audio + visual and practice full-screen',
@@ -437,7 +437,6 @@ function sendLink(email){
 }
 async function completeLinkIfPresent(){
   if(!auth.isSignInWithEmailLink(location.href)) return;
-  if(auth.currentUser){ history.replaceState(null,'',location.pathname); return; }
   let email=null; try{ email=localStorage.getItem('sc_email'); }catch(_){}
   if(!email) email=window.prompt('Confirm your email to finish signing in');
   if(!email){ history.replaceState(null,'',location.pathname); return; }
@@ -739,7 +738,7 @@ function App(){
     if(!configReady()){ setPhase('config'); return; }
     if(!initFirebase()){ setPhase('config'); return; }
     let unsubBoard=null;
-    completeLinkIfPresent().catch(e=>setAuthMsg(prettyErr(e)));
+    let linkHandled=false;
     function startBoard(id){
       if(unsubBoard){ unsubBoard(); unsubBoard=null; }
       inited.current=false; latestStamp=null;
@@ -757,7 +756,17 @@ function App(){
       );
     }
     startBoardFn.current=startBoard;
-    const unsubAuth=auth.onAuthStateChanged((u)=>{
+    const unsubAuth=auth.onAuthStateChanged(async(u)=>{
+      if(!linkHandled){
+        linkHandled=true;
+        if(!u && auth.isSignInWithEmailLink(location.href)){
+          try{ await completeLinkIfPresent(); }catch(e){ setAuthMsg(prettyErr(e)); }
+          return;
+        }
+        if(u && auth.isSignInWithEmailLink(location.href)){
+          history.replaceState(null,'',location.pathname);
+        }
+      }
       if(unsubBoard){ unsubBoard(); unsubBoard=null; }
       inited.current=false; latestStamp=null;
       setUser(u||null); setState(null); setBands(null);
