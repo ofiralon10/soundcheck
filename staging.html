@@ -304,7 +304,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.143';
+const VERSION='0.144';
 const CHANGELOG={
   '0.137':[
     'Practice Song mode — choose audio + visual and practice full-screen',
@@ -1587,8 +1587,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           <CoverThumb src={s.cover} size={46} radius={10}/>
         </span>
         <div style={{minWidth:0,flex:1}}>
-          <div style={{display:'flex',alignItems:'center',gap:7,minWidth:0}}>
-            <span className="song-title" style={{minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.title}</span>
+          <div style={{display:'flex',alignItems:'center',gap:7,minWidth:0,flexWrap:'wrap'}}>
+            <span className="song-title" style={{minWidth:0}}>{s.title}</span>
             {s.encore && <span className="enc-pill">★ Enc</span>}
           </div>
           <div className="song-meta">{meta.join(' · ')||'—'}</div>
