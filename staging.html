@@ -318,10 +318,11 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.150';
+const VERSION='0.151';
 const CHANGELOG={
   '0.137':[
     'Practice Song mode — choose audio + visual and practice full-screen',
@@ -501,6 +502,15 @@ async function uploadFileToStorage(id, file){
   return {url, path};
 }
 function deleteStoragePath(path){ try{ if(storage && path) storage.ref().child(path).delete().catch(()=>{}); }catch(_){} }
+function stemCatFromName(name){
+  const n=(name||'').toLowerCase();
+  if(/vocal/i.test(n)) return 'vocals';
+  if(/drum/i.test(n)) return 'drums';
+  if(/bass/i.test(n)) return 'bass';
+  if(/guitar/i.test(n)) return 'guitar';
+  if(/key|piano|keyboard/i.test(n)) return 'keys';
+  return 'original';
+}
 async function deleteBandDoc(){ if(boardRef) await boardRef.delete(); }
 
 /* ---------- state helpers ---------- */
@@ -1571,6 +1581,39 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     setLinkUrl('');setLinkName('');setLinkMode(false);
   };
   const openFile=(f)=>{ if(f.url) window.open(f.url,'_blank','noopener'); };
+  const uploadStemFile=(file,cat)=>{
+    if(file.size>FILE_CAP){ setFileMsg('File "'+file.name+'" is over 25 MB.'); return; }
+    setBusy('stems'); const id=uid();
+    uploadFileToStorage(id,file).then(({url,path})=>{
+      update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id,name:file.name,kind:'upload',url,path,size:file.size,type:'audio',cat,stem:true});return st;});
+    }).catch(err=>setFileMsg('Stem upload failed — '+prettyErr(err))).finally(()=>setBusy(''));
+  };
+  const onStemsFolder=(e)=>{
+    const files=e.target.files; e.target.value=''; if(!files||!files.length) return;
+    const audioFiles=Array.from(files).filter(f=>/\.(mp3|wav|ogg|m4a|aac|flac|webm)$/i.test(f.name));
+    if(!audioFiles.length){ setFileMsg('No audio files found in folder.'); return; }
+    audioFiles.forEach(f=>uploadStemFile(f,stemCatFromName(f.name)));
+    setFileMsg(audioFiles.length+' stem files uploading…');
+  };
+  const onStemsZip=async(e)=>{
+    const file=e.target.files&&e.target.files[0]; e.target.value=''; if(!file) return;
+    if(typeof JSZip==='undefined'){ setFileMsg('Zip support not loaded.'); return; }
+    setBusy('stems'); setFileMsg('Unzipping…');
+    try{
+      const zip=await JSZip.loadAsync(file);
+      const entries=[];
+      zip.forEach((path,entry)=>{ if(!entry.dir&&/\.(mp3|wav|ogg|m4a|aac|flac|webm)$/i.test(entry.name)) entries.push(entry); });
+      if(!entries.length){ setFileMsg('No audio files found in zip.'); setBusy(''); return; }
+      for(const entry of entries){
+        const blob=await entry.async('blob');
+        const name=entry.name.split('/').pop();
+        const f=new File([blob],name,{type:'audio/mpeg'});
+        uploadStemFile(f,stemCatFromName(name));
+      }
+      setFileMsg(entries.length+' stem files uploading…');
+    }catch(err){ setFileMsg('Zip extraction failed — '+prettyErr(err)); }
+    setBusy('');
+  };
   const [pendingPhoto,setPendingPhoto]=useState(null);
   const [photoPreview,setPhotoPreview]=useState(null);
   const onCamera=(e)=>{ const file=e.target.files&&e.target.files[0]; e.target.value=''; if(!file) return;
@@ -1827,6 +1870,19 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
                     </button>
                   ))}
                 </div>
+                <div style={{borderTop:'1px solid var(--line-2)',marginTop:12,paddingTop:10}}>
+                  <div style={{fontSize:12,color:'var(--muted)',marginBottom:8}}>Add stems (auto-sorted by instrument):</div>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+                    <label className="btn ghost sm" style={{borderColor:'var(--accent)',color:'var(--accent)',cursor:'pointer',display:'inline-flex',alignItems:'center',gap:5,opacity:busy==='stems'?.5:1}}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                      Folder<input type="file" hidden multiple webkitdirectory="" disabled={busy==='stems'} onChange={onStemsFolder}/>
+                    </label>
+                    <label className="btn ghost sm" style={{borderColor:'var(--accent)',color:'var(--accent)',cursor:'pointer',display:'inline-flex',alignItems:'center',gap:5,opacity:busy==='stems'?.5:1}}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      Zip<input type="file" accept=".zip" hidden disabled={busy==='stems'} onChange={onStemsZip}/>
+                    </label>
+                  </div>
+                </div>
               </div>}
           {fileMsg && <div className="filemsg">{fileMsg}</div>}
         </div>
@@ -1887,13 +1943,13 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           <button className="xbtn" onClick={closeStemPlayer}>×</button>
         </div>
         {stemCfg && <div className="stem-channels">
-          {stemChans.map(ch=>(
+          {stemChans.map(ch=>{
+            const instrId=ch.id==='original'?null:ch.id;
+            return (
             <div key={ch.id} className={'stem-ch'+(ch.loaded?' loaded':'')+(ch.muted?' muted':'')+(ch.soloed?' soloed':'')}>
               <div className="stem-ch-top">
-                <div className="stem-ch-name" style={{color:ch.color}}>{ch.label}<small>{ch.fileName||'no file'}</small></div>
-                <label style={{display:'flex',alignItems:'center',justifyContent:'center',width:30,height:26,border:'1px solid var(--line-2)',borderRadius:6,background:'var(--surface-2)',color:'var(--muted)',fontSize:13,cursor:'pointer',position:'relative',flexShrink:0}}>
-                  ＋<input type="file" accept="audio/*,.mp3" style={{position:'absolute',inset:0,opacity:0,width:30,height:26,cursor:'pointer'}} onChange={e=>{const f=e.target.files[0];if(f)stemLoadFile(ch.id,f);e.target.value='';}}/>
-                </label>
+                {instrId ? <InstrBadge id={instrId} size={22}/> : <span style={{width:29,height:29,borderRadius:'50%',background:'var(--surface-3)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:11,fontWeight:700,color:'var(--muted)'}}>+</span>}
+                <div className="stem-ch-name"><small>{ch.fileName||'no file'}</small></div>
                 <button className={'stem-ch-btn'+(ch.muted?' on-m':'')} onClick={()=>stemToggleMute(ch.id)}>M</button>
                 <button className={'stem-ch-btn'+(ch.soloed?' on-s':'')} onClick={()=>stemToggleSolo(ch.id)}>S</button>
               </div>
@@ -1901,8 +1957,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
                 <input type="range" min="0" max="100" value={ch.vol} onChange={e=>stemSetVol(ch.id,+e.target.value)}/>
                 <span className="stem-pct">{ch.vol}%</span>
               </div>
-            </div>
-          ))}
+            </div>);
+          })}
         </div>}
         <div className="stem-transport">
           <div className="stem-scrub">
