@@ -101,8 +101,8 @@
   .cell svg{display:block}
   .song-prog{height:5px;background:var(--surface-3)}
   .song-prog .pf{height:100%;transition:width .5s}
-  .songnum{font-family:var(--mono);font-size:12.5px;font-weight:700;color:var(--muted);min-width:22px;text-align:center;flex-shrink:0;font-variant-numeric:tabular-nums}
-  .songnum.enc{color:var(--guitar)}
+  .songnum{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--muted);min-width:22px;height:22px;text-align:center;flex-shrink:0;font-variant-numeric:tabular-nums;background:var(--surface-2);border-radius:6px;display:flex;align-items:center;justify-content:center;line-height:1}
+  .songnum.enc{color:var(--guitar);background:rgba(244,169,60,.12)}
   .enc-pill{display:inline-flex;align-items:center;font-family:var(--mono);font-size:8.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--guitar);border:1px solid rgba(244,169,60,.5);border-radius:5px;padding:2px 5px;flex-shrink:0}
   .setlist-ctrl{background:var(--surface);border:2px solid rgba(255,255,255,.18);border-radius:14px;padding:12px 14px;margin-bottom:10px}
   .setlist-tools{display:flex;align-items:center;gap:9px;margin:2px 0;flex-wrap:wrap}
@@ -239,21 +239,38 @@
   .song-icon-btn{position:relative;background:none;border:none;color:var(--muted);cursor:pointer;padding:8px;border-radius:8px;display:flex;align-items:center;justify-content:center;transition:color .15s;-webkit-tap-highlight-color:rgba(255,255,255,.1);touch-action:manipulation}
   .song-icon-btn:active{color:var(--text);background:var(--surface-3)}
   .song-icon-btn svg{pointer-events:none}
-  .song-icon-badge{position:absolute;top:-4px;right:-6px;background:var(--keys);color:#fff;font-size:9px;font-weight:700;min-width:14px;height:14px;border-radius:7px;display:flex;align-items:center;justify-content:center;padding:0 3px;line-height:1}
-  .practice-overlay{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column}
-  .practice-visual{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:8px;min-height:0}
-  .practice-visual img,.practice-visual iframe{max-width:100%;max-height:100%;object-fit:contain;border:none;border-radius:8px}
-  .practice-visual iframe{width:100%;height:100%}
-  .practice-audio{flex-shrink:0;background:var(--surface);border-top:1px solid var(--line-2);padding:10px 16px calc(10px + env(safe-area-inset-bottom))}
-  .practice-exit{position:absolute;top:12px;right:12px;z-index:61;width:36px;height:36px;border-radius:10px;background:var(--surface-2);border:1px solid var(--line-2);color:var(--text);display:flex;align-items:center;justify-content:center;font-size:18px;cursor:pointer}
-  .practice-title{position:absolute;top:12px;left:12px;z-index:61;font-family:var(--display);font-weight:600;font-size:14px;color:var(--muted);max-width:calc(100% - 70px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .prac-pick{margin-bottom:14px}
-  .prac-pick-h{font-family:var(--display);font-weight:600;font-size:13px;margin-bottom:8px;color:var(--muted)}
-  .prac-opt{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1.5px solid var(--line-2);border-radius:10px;margin-bottom:6px;cursor:pointer;transition:border-color .15s}
-  .prac-opt.sel{border-color:var(--keys);background:rgba(139,124,246,.08)}
-  .prac-opt.dis{opacity:.35;cursor:default}
-  .prac-opt-label{font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .prac-opt-na{font-size:11px;color:var(--muted-2);font-style:italic}
+  .song-icon-badge{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--text);pointer-events:none;line-height:1}
+  .stem-player{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:540px;z-index:60;background:var(--bg);border-top:2px solid var(--line-2);transition:transform .25s ease}
+  @media(min-width:900px){.stem-player{max-width:1200px}}
+  .stem-transport{padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:var(--surface)}
+  .stem-scrub{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .stem-scrub input[type=range]{flex:1;-webkit-appearance:none;height:4px;border-radius:2px;background:var(--line-2);outline:none}
+  .stem-scrub input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer}
+  .stem-time{font-family:var(--mono);font-size:11px;color:var(--muted);min-width:38px;text-align:center}
+  .stem-btns{display:flex;gap:8px}
+  .stem-btns button{flex:1;height:42px;border-radius:10px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);font-family:var(--display);font-size:12px;font-weight:700;letter-spacing:.06em;cursor:pointer}
+  .stem-btns button.stem-play{background:var(--accent);border-color:var(--accent);color:#1a1405}
+  .stem-btns button.stem-cfg-btn{background:none;color:var(--muted)}
+  .stem-btns button.stem-cfg-btn.open{color:var(--accent);border-color:var(--accent)}
+  .stem-channels{max-height:55vh;overflow-y:auto;padding:10px 14px 6px;background:var(--bg)}
+  .stem-ch{background:var(--surface);border:1px solid var(--line-2);border-radius:10px;padding:10px 12px 8px;margin-bottom:8px;position:relative;overflow:hidden}
+  .stem-ch::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--line-2);transition:background .15s}
+  .stem-ch.loaded::before{background:var(--accent)}
+  .stem-ch.muted::before{background:var(--drums)}
+  .stem-ch.soloed::before{background:var(--bass)}
+  .stem-ch-top{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .stem-ch-name{flex:1;font-family:var(--display);font-size:12px;font-weight:600;letter-spacing:.03em}
+  .stem-ch-name small{display:block;font-size:10px;color:var(--muted);font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;margin-top:1px}
+  .stem-ch-btn{border:1px solid var(--line-2);background:var(--surface-2);color:var(--muted);font-family:var(--mono);font-size:10px;font-weight:700;width:30px;height:26px;border-radius:6px;cursor:pointer;flex:none}
+  .stem-ch-btn.on-m{background:var(--drums);border-color:var(--drums);color:#fff}
+  .stem-ch-btn.on-s{background:var(--bass);border-color:var(--bass);color:#fff}
+  .stem-vol{display:flex;align-items:center;gap:8px}
+  .stem-vol input[type=range]{flex:1;-webkit-appearance:none;height:3px;border-radius:2px;background:var(--line-2);outline:none}
+  .stem-vol input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--text);border:3px solid var(--surface-2);cursor:pointer}
+  .stem-vol .stem-pct{font-family:var(--mono);font-size:10px;color:var(--muted);width:30px;text-align:right;flex:none}
+  .stem-title-bar{display:flex;align-items:center;justify-content:space-between;padding:6px 14px;background:var(--surface)}
+  .stem-title-bar .stitle{font-family:var(--display);font-size:13px;font-weight:600;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;direction:ltr}
+  .stem-title-bar .xbtn{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 8px}
   .reh-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
   .reh-date{font-family:var(--display);font-weight:600;font-size:15px}
   .reh-time{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:2px}
@@ -302,10 +319,11 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.148';
+const VERSION='0.154';
 const CHANGELOG={
   '0.137':[
     'Practice Song mode — choose audio + visual and practice full-screen',
@@ -485,6 +503,15 @@ async function uploadFileToStorage(id, file){
   return {url, path};
 }
 function deleteStoragePath(path){ try{ if(storage && path) storage.ref().child(path).delete().catch(()=>{}); }catch(_){} }
+function stemCatFromName(name){
+  const n=(name||'').toLowerCase();
+  if(/vocal/i.test(n)) return 'vocals';
+  if(/drum/i.test(n)) return 'drums';
+  if(/bass/i.test(n)) return 'bass';
+  if(/guitar/i.test(n)) return 'guitar';
+  if(/key|piano|keyboard/i.test(n)) return 'keys';
+  return 'other';
+}
 async function deleteBandDoc(){ if(boardRef) await boardRef.delete(); }
 
 /* ---------- state helpers ---------- */
@@ -577,7 +604,7 @@ function isRehLive(r){ if(!r||!r.date||r.done) return false; const start=new Dat
 function fmtDuration(d){ if(!d) return ''; const h=Math.floor(d); const m=Math.round((d-h)*60); return h+'h'+(m?(' '+m+'m'):''); }
 function fmtTimeRange(iso,dur){ if(!iso) return ''; const s=new Date(iso); const st=fmtTime(iso); if(!dur) return st; const e=new Date(s.getTime()+dur*3600000); const et=e.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); return st+'–'+et; }
 const KIND_COLOR={audio:'#EC6FA9',pdf:'#F2545B',slides:'#F4A93C',doc:'#5B9DF9',image:'#2DD4BF',sheet:'#3DD68C',file:'#948FA6',link:'#C9A6FF'};
-const FILE_CATS=[{id:'original',label:'Original',color:'#EC6FA9',icon:'note'},{id:'slide',label:'Slide',color:'#F4A93C',icon:'slide'},{id:'keys',label:'Keys',color:'#8B7CF6',instr:'keys'},{id:'drums',label:'Drums',color:'#F2545B',instr:'drums'},{id:'guitar',label:'Guitar',color:'#F4A93C',instr:'guitar'},{id:'bass',label:'Bass',color:'#2DD4BF',instr:'bass'},{id:'vocals',label:'Vocals',color:'#EC6FA9',instr:'vocals'}];
+const FILE_CATS=[{id:'slide',label:'Slide',color:'#F4A93C',icon:'slide'},{id:'vocals',label:'Vocals',color:'#EC6FA9',instr:'vocals'},{id:'drums',label:'Drums',color:'#F2545B',instr:'drums'},{id:'bass',label:'Bass',color:'#2DD4BF',instr:'bass'},{id:'guitar',label:'Guitar',color:'#F4A93C',instr:'guitar'},{id:'keys',label:'Keys',color:'#8B7CF6',instr:'keys'},{id:'other',label:'Other',color:'#948FA6',icon:'other'}];
 function fileKind(name){
   const e=((name||'').split('.').pop()||'').toLowerCase();
   if(['mp3','wav','m4a','aac','ogg','flac','aif','aiff'].includes(e)) return 'audio';
@@ -779,7 +806,7 @@ function App(){
         setBands(list);
         if(list.length===1){ startBoard(list[0].id); return; }
         let last=null; try{ last=localStorage.getItem('sc_board'); }catch(_){}
-        if(last && last!=='staging' && list.find(b=>b.id===last)){ startBoard(last); return; }
+        if(last!=='staging' && last && list.find(b=>b.id===last)){ startBoard(last); return; }
         setPhase('pickband');
       }).catch(()=>{ setBands([]); setPhase('pickband'); });
     });
@@ -1051,7 +1078,7 @@ function Cell({iid,text,color,status,fileDot,slideBadge}){
 }
 function songFileFlags(song){
   const files=(song.files||[]);
-  const hasSlide=files.some(f=>(f.cat||'original')==='slide');
+  const hasSlide=files.some(f=>(f.cat==='original'?'other':f.cat||'other')==='slide');
   const dots={};
   const instrIds=['keys','drums','guitar','bass','vocals'];
   const instrColors={keys:'#8B7CF6',drums:'#F2545B',guitar:'#F4A93C',bass:'#2DD4BF',vocals:'#EC6FA9'};
@@ -1384,16 +1411,93 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [filesOpen,setFilesOpen]=useState(false);
   const [pickCat,setPickCat]=useState(null);
   const [dropCat,setDropCat]=useState(null);
-  const [pracPick,setPracPick]=useState(false);
-  const [pracAudioChoice,setPracAudioChoice]=useState(null);
-  const [pracVisualChoice,setPracVisualChoice]=useState(null);
-  const [pracMode,setPracMode]=useState(null);
-  const [pracPlaying,setPracPlaying]=useState(false);
-  const [pracTime,setPracTime]=useState(0);
-  const [pracDur,setPracDur]=useState(0);
-  const [pracVol,setPracVol]=useState(1);
-  const pracAudioRef=useRef(null);
-  const pracTimerRef=useRef(null);
+  const STEM_CATS=[{id:'vocals',label:'Vocals',color:'var(--vocals)'},{id:'drums',label:'Drums',color:'var(--drums)'},{id:'bass',label:'Bass',color:'var(--bass)'},{id:'keys',label:'Keys',color:'var(--keys)'},{id:'guitar',label:'Guitar',color:'var(--guitar)'},{id:'other',label:'Other',color:'var(--muted)'}];
+  const [stemOpen,setStemOpen]=useState(false);
+  const [stemCfg,setStemCfg]=useState(false);
+  const [stemPlaying,setStemPlaying]=useState(false);
+  const [stemTime,setStemTime]=useState(0);
+  const [stemDur,setStemDur]=useState(0);
+  const [stemChans,setStemChans]=useState(()=>STEM_CATS.map(c=>({id:c.id,label:c.label,color:c.color,vol:80,muted:false,soloed:false,loaded:false,fileName:null})));
+  const stemAudiosRef=useRef({});
+  const stemRafRef=useRef(null);
+  const stemPlayingRef=useRef(false);
+  const stemGetMaxDur=()=>{let m=0;Object.values(stemAudiosRef.current).forEach(a=>{if(a&&isFinite(a.duration))m=Math.max(m,a.duration);});return m;};
+  const stemApplyMix=(chans)=>{
+    const cc=chans||stemChans;
+    const anySolo=cc.some(c=>c.soloed&&stemAudiosRef.current[c.id]);
+    cc.forEach(c=>{
+      const a=stemAudiosRef.current[c.id];if(!a)return;
+      let v=c.vol/100;
+      if(anySolo) v=c.soloed?c.vol/100:0;
+      else if(c.muted) v=0;
+      a.volume=v;
+    });
+  };
+  const stemTick=()=>{
+    const first=Object.values(stemAudiosRef.current).find(a=>a&&!a.paused);
+    if(first) setStemTime(first.currentTime);
+    if(stemPlayingRef.current) stemRafRef.current=requestAnimationFrame(stemTick);
+  };
+  const stemPlay=async()=>{
+    if(stemPlayingRef.current)return;
+    const md=stemGetMaxDur();if(!md)return;
+    const audios=Object.values(stemAudiosRef.current).filter(Boolean);
+    if(!audios.length)return;
+    audios.forEach(a=>{if(a.currentTime>=md) a.currentTime=0;});
+    await Promise.all(audios.map(a=>a.play().catch(()=>{})));
+    stemPlayingRef.current=true;setStemPlaying(true);setStemDur(md);
+    stemRafRef.current=requestAnimationFrame(stemTick);
+  };
+  const stemPause=()=>{
+    if(!stemPlayingRef.current)return;
+    Object.values(stemAudiosRef.current).forEach(a=>{if(a)a.pause();});
+    stemPlayingRef.current=false;setStemPlaying(false);cancelAnimationFrame(stemRafRef.current);
+  };
+  const stemStop=()=>{
+    Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.currentTime=0;}});
+    stemPlayingRef.current=false;setStemPlaying(false);setStemTime(0);cancelAnimationFrame(stemRafRef.current);
+  };
+  const stemSeek=(v)=>{
+    setStemTime(v);
+    Object.values(stemAudiosRef.current).forEach(a=>{if(a)a.currentTime=v;});
+  };
+  const stemLoadUrl=(catId,url,name)=>{
+    setStemChans(prev=>prev.map(c=>c.id===catId?{...c,fileName:'loading…'}:c));
+    const a=new Audio();
+    a.preload='auto';
+    a.volume=0.8;
+    const onReady=()=>{
+      a.removeEventListener('canplaythrough',onReady);
+      stemAudiosRef.current[catId]=a;
+      setStemChans(prev=>prev.map(c=>c.id===catId?{...c,loaded:true,fileName:name||'loaded'}:c));
+      setStemDur(prev=>Math.max(prev,isFinite(a.duration)?a.duration:0));
+    };
+    a.addEventListener('canplaythrough',onReady);
+    a.onerror=()=>setStemChans(prev=>prev.map(c=>c.id===catId?{...c,loaded:false,fileName:'load failed'}:c));
+    a.src=url;
+  };
+  const openStemPlayer=()=>{
+    stemStop();
+    Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.src='';}});
+    stemAudiosRef.current={};
+    setStemChans(STEM_CATS.map(c=>({id:c.id,label:c.label,color:c.color,vol:80,muted:false,soloed:false,loaded:false,fileName:null})));
+    setStemDur(0);setStemTime(0);setStemCfg(false);setStemOpen(true);
+    const files=s.files||[];
+    STEM_CATS.forEach(cat=>{
+      const af=files.filter(f=>(f.cat==='original'?'other':f.cat||'other')===cat.id&&f.type==='audio');
+      if(af.length>0) stemLoadUrl(cat.id,af[0].url,af[0].name);
+    });
+  };
+  const closeStemPlayer=()=>{
+    stemStop();
+    Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.src='';}});
+    stemAudiosRef.current={};
+    setStemOpen(false);
+  };
+  const stemToggleMute=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,muted:!c.muted}:c);stemApplyMix(n);return n;});};
+  const stemToggleSolo=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,soloed:!c.soloed}:c);stemApplyMix(n);return n;});};
+  const stemSetVol=(id,v)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,vol:v}:c);stemApplyMix(n);return n;});};
+  useEffect(()=>{stemApplyMix();},[stemChans]);
   const rowRef=useRef(null);
   const recorderRef=useRef(null);
   const chunksRef=useRef([]);
@@ -1424,7 +1528,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       if(file.size>FILE_CAP){ setFileMsg('File "'+file.name+'" is over 25 MB.'); return; }
       setBusy('file'); const id=uid();
       uploadFileToStorage(id,file).then(({url,path})=>{
-        update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id,name:file.name,kind:'upload',url,path,size:file.size,type:fileKind(file.name),cat:cat||'original'});logAct(st,'uploaded "'+file.name+'" to "'+so.title+'"');return st;});
+        update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id,name:file.name,kind:'upload',url,path,size:file.size,type:fileKind(file.name),cat:cat||'other'});logAct(st,'uploaded "'+file.name+'" to "'+so.title+'"');return st;});
       }).catch(err=>setFileMsg('Upload failed — '+prettyErr(err))).finally(()=>setBusy(''));
     });
   };
@@ -1432,15 +1536,48 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     if(file.size>FILE_CAP){ setFileMsg('That file is over 25 MB — add it as a link instead.'); return; }
     setBusy('file'); const id=uid();
     uploadFileToStorage(id,file).then(({url,path})=>{
-      update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id,name:file.name,kind:'upload',url,path,size:file.size,type:fileKind(file.name),cat:cat||'original'});logAct(st,'uploaded "'+file.name+'" to "'+so.title+'"');return st;});
+      update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id,name:file.name,kind:'upload',url,path,size:file.size,type:fileKind(file.name),cat:cat||'other'});logAct(st,'uploaded "'+file.name+'" to "'+so.title+'"');return st;});
     }).catch(err=>setFileMsg('Upload failed — '+prettyErr(err))).finally(()=>setBusy(''));
   };
   const saveLink=(cat)=>{ const u=linkUrl.trim(); if(!u) return;
     const name=linkName.trim() || u.replace(/^https?:\/\//,'').replace(/\/$/,'').slice(0,42);
-    update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id:uid(),name,kind:'link',url:u,type:fileKind(name),cat:cat||'original'});logAct(st,'added link "'+name+'" to "'+so.title+'"');return st;});
+    update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id:uid(),name,kind:'link',url:u,type:fileKind(name),cat:cat||'other'});logAct(st,'added link "'+name+'" to "'+so.title+'"');return st;});
     setLinkUrl('');setLinkName('');setLinkMode(false);
   };
   const openFile=(f)=>{ if(f.url) window.open(f.url,'_blank','noopener'); };
+  const uploadStemFile=(file,cat)=>{
+    if(file.size>FILE_CAP){ setFileMsg('File "'+file.name+'" is over 25 MB.'); return; }
+    setBusy('stems'); const id=uid();
+    uploadFileToStorage(id,file).then(({url,path})=>{
+      update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id,name:file.name,kind:'upload',url,path,size:file.size,type:'audio',cat,stem:true});return st;});
+    }).catch(err=>setFileMsg('Stem upload failed — '+prettyErr(err))).finally(()=>setBusy(''));
+  };
+  const onStemsFolder=(e)=>{
+    const files=e.target.files; e.target.value=''; if(!files||!files.length) return;
+    const audioFiles=Array.from(files).filter(f=>/\.(mp3|wav|ogg|m4a|aac|flac|webm)$/i.test(f.name));
+    if(!audioFiles.length){ setFileMsg('No audio files found in folder.'); return; }
+    audioFiles.forEach(f=>uploadStemFile(f,stemCatFromName(f.name)));
+    setFileMsg(audioFiles.length+' stem files uploading…');
+  };
+  const onStemsZip=async(e)=>{
+    const file=e.target.files&&e.target.files[0]; e.target.value=''; if(!file) return;
+    if(typeof JSZip==='undefined'){ setFileMsg('Zip support not loaded.'); return; }
+    setBusy('stems'); setFileMsg('Unzipping…');
+    try{
+      const zip=await JSZip.loadAsync(file);
+      const entries=[];
+      zip.forEach((path,entry)=>{ if(!entry.dir&&/\.(mp3|wav|ogg|m4a|aac|flac|webm)$/i.test(entry.name)) entries.push(entry); });
+      if(!entries.length){ setFileMsg('No audio files found in zip.'); setBusy(''); return; }
+      for(const entry of entries){
+        const blob=await entry.async('blob');
+        const name=entry.name.split('/').pop();
+        const f=new File([blob],name,{type:'audio/mpeg'});
+        uploadStemFile(f,stemCatFromName(name));
+      }
+      setFileMsg(entries.length+' stem files uploading…');
+    }catch(err){ setFileMsg('Zip extraction failed — '+prettyErr(err)); }
+    setBusy('');
+  };
   const [pendingPhoto,setPendingPhoto]=useState(null);
   const [photoPreview,setPhotoPreview]=useState(null);
   const onCamera=(e)=>{ const file=e.target.files&&e.target.files[0]; e.target.value=''; if(!file) return;
@@ -1545,36 +1682,6 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const closePlayer=()=>{ if(audioRef.current){ audioRef.current.pause(); audioRef.current=null; } clearInterval(playerTimerRef.current); setPlayerFile(null); setPlayerPlaying(false); setPlayerTime(0); };
 
   const myInstr=MY_INSTR||'keys';
-  const filesArr=s.files||[];
-  const pracOrigAudio=filesArr.filter(f=>(f.cat||'original')==='original'&&(f.type==='audio'||f.kind==='link'));
-  const pracInstrAudio=filesArr.filter(f=>f.cat===myInstr&&(f.type==='audio'||f.kind==='link'));
-  const pracSlideFiles=filesArr.filter(f=>f.cat==='slide');
-  const pracPartFiles=filesArr.filter(f=>f.cat===myInstr&&f.type!=='audio');
-  const openPracPick=()=>{ setPracAudioChoice(null); setPracVisualChoice(null); setPracPick(true); };
-  const startPractice=()=>{
-    if(!pracAudioChoice&&!pracVisualChoice) return;
-    setPracPick(false);
-    const audioId=pracAudioChoice?pracAudioChoice.split('__')[0]:null;
-    const af=audioId? filesArr.find(f=>f.id===audioId):null;
-    const vf=pracVisualChoice? filesArr.find(f=>f.id===pracVisualChoice):null;
-    if(af){
-      const a=new Audio(af.url); a.volume=pracVol;
-      a.onloadedmetadata=()=>setPracDur(a.duration||0);
-      a.onended=()=>{ setPracPlaying(false); clearInterval(pracTimerRef.current); };
-      pracAudioRef.current=a;
-      clearInterval(pracTimerRef.current);
-      setPracPlaying(false); setPracTime(0); setPracDur(0);
-    }
-    setPracMode({audio:af,visual:vf});
-  };
-  const pracToggle=()=>{
-    if(!pracAudioRef.current) return;
-    if(pracAudioRef.current.paused){ pracAudioRef.current.play(); setPracPlaying(true); pracTimerRef.current=setInterval(()=>setPracTime(pracAudioRef.current.currentTime),250); }
-    else{ pracAudioRef.current.pause(); setPracPlaying(false); clearInterval(pracTimerRef.current); }
-  };
-  const pracSeek=(v)=>{ if(pracAudioRef.current){ pracAudioRef.current.currentTime=v; setPracTime(v); } };
-  const pracSetVol=(v)=>{ setPracVol(v); if(pracAudioRef.current) pracAudioRef.current.volume=v; };
-  const exitPractice=()=>{ if(pracAudioRef.current){ pracAudioRef.current.pause(); pracAudioRef.current=null; } clearInterval(pracTimerRef.current); setPracMode(null); setPracPlaying(false); setPracTime(0); };
 
   const fileCount=s.files?s.files.length:0;
   const rehCount=rehearsals?songRehCount(s.id,rehearsals):0;
@@ -1586,7 +1693,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         {num!=null && <span className={'songnum'+(s.encore?' enc':'')}>{num}</span>}
         <span style={{position:'relative'}} onClick={e=>{if(open&&!compact){e.stopPropagation();setShowCover(v=>!v);}}}>
           <CoverThumb src={s.cover} size={46} radius={10}/>
-          <span className="song-reh-count" style={{position:'absolute',bottom:-2,left:-2,fontSize:8,padding:'1px 4px',opacity:rehCount===0?.3:1,color:'#fff',background:'rgba(0,0,0,.55)'}} title={rehCount+' rehearsal'+(rehCount>1?'s':'')}>{rehCount}×</span>
+          <span style={{position:'absolute',bottom:-3,left:-3,fontSize:10,fontWeight:700,color:'var(--text)',background:'var(--surface-2)',borderRadius:6,minWidth:16,height:16,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 3px',lineHeight:1,opacity:rehCount===0?.3:1}} title={rehCount+' rehearsal'+(rehCount>1?'s':'')}>{rehCount}</span>
         </span>
         <div style={{minWidth:0,flex:1}}>
           <div style={{display:'flex',alignItems:'center',gap:7,minWidth:0,flexWrap:'wrap'}}>
@@ -1600,7 +1707,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
             {fileCount>0 && <span className="song-icon-badge">{fileCount}</span>}
           </button>
-          <button className="song-icon-btn" onClick={e=>{e.stopPropagation();openPracPick();}} title="Practice">
+          <button className="song-icon-btn" onClick={e=>{e.stopPropagation();openStemPlayer();}} title="Practice">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
           </button>
           <button className="song-icon-btn" onClick={e=>{e.stopPropagation();startRec();}} title="Record" style={{color:'var(--drums)'}}>
@@ -1657,15 +1764,15 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             <button className="xbtn" onClick={()=>{setFilesOpen(false);setPickCat(null);setLinkMode(false);}}>×</button>
           </div>
           {FILE_CATS.map(cat=>{
-            const catFiles=(s.files||[]).filter(f=>(f.cat||'original')===cat.id);
+            const catFiles=(s.files||[]).filter(f=>(f.cat==='original'?'other':f.cat||'other')===cat.id);
             return (
               <div className={'files-cat'+(dropCat===cat.id?' drop-over':'')} key={cat.id}
                 onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';setDropCat(cat.id);}}
                 onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget)) setDropCat(null);}}
                 onDrop={e=>{e.preventDefault();setDropCat(null);onDropFiles(e.dataTransfer.files,cat.id);}}>
                 <div className="files-cat-h">
-                  {cat.icon==='note' && <svg width="16" height="16" viewBox="0 0 24 24" fill={cat.color} stroke="none"><path d="M12 3v12.26A4.5 4.5 0 1 0 14 19V7h4V3h-6z"/></svg>}
                   {cat.icon==='slide' && <span style={{fontFamily:'var(--mono)',fontWeight:700,fontSize:14,color:cat.color}}>S</span>}
+                  {cat.icon==='other' && <span style={{fontFamily:'var(--mono)',fontWeight:700,fontSize:14,color:cat.color}}>+</span>}
                   {cat.instr && <InstrBadge id={cat.instr} size={20}/>}
                   {cat.label}
                 </div>
@@ -1727,6 +1834,19 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
                     </button>
                   ))}
                 </div>
+                <div style={{borderTop:'1px solid var(--line-2)',marginTop:12,paddingTop:10}}>
+                  <div style={{fontSize:12,color:'var(--muted)',marginBottom:8}}>Add stems (auto-sorted by instrument):</div>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+                    <label className="btn ghost sm" style={{borderColor:'var(--accent)',color:'var(--accent)',cursor:'pointer',display:'inline-flex',alignItems:'center',gap:5,opacity:busy==='stems'?.5:1}}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                      Folder<input type="file" hidden multiple webkitdirectory="" disabled={busy==='stems'} onChange={onStemsFolder}/>
+                    </label>
+                    <label className="btn ghost sm" style={{borderColor:'var(--accent)',color:'var(--accent)',cursor:'pointer',display:'inline-flex',alignItems:'center',gap:5,opacity:busy==='stems'?.5:1}}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                      Zip<input type="file" accept=".zip" hidden disabled={busy==='stems'} onChange={onStemsZip}/>
+                    </label>
+                  </div>
+                </div>
               </div>}
           {fileMsg && <div className="filemsg">{fileMsg}</div>}
         </div>
@@ -1781,57 +1901,41 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           </div>
         </div>
       </div>}
-      {pracPick && <div className="files-modal" onClick={e=>{if(e.target===e.currentTarget) setPracPick(false);}}>
-        <div className="files-panel" style={{maxWidth:380}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
-            <div className="modaltitle" style={{margin:0}}>Practice — {s.title}</div>
-            <button className="xbtn" onClick={()=>setPracPick(false)}>×</button>
-          </div>
-          <div className="prac-pick">
-            <div className="prac-pick-h">Audio source</div>
-            {[{id:'original',label:'Original',files:pracOrigAudio},{id:'isolated',label:'Isolated ('+((FILE_CATS.find(c=>c.id===myInstr)||{}).label||myInstr)+')',files:pracInstrAudio},{id:'minus',label:'Minus ('+((FILE_CATS.find(c=>c.id===myInstr)||{}).label||myInstr)+')',files:pracInstrAudio}].map(opt=>{
-              const audioFiles=opt.files.filter(f=>f.type==='audio'||(f.kind==='link'&&f.url));
-              const avail=audioFiles.length>0;
-              return <div key={opt.id} className={'prac-opt'+(pracAudioChoice&&pracAudioChoice===((audioFiles[0]||{}).id+'__'+opt.id)?' sel':'')+(avail?'':' dis')} onClick={()=>{if(avail) setPracAudioChoice(audioFiles[0].id+'__'+opt.id);}}>
-                <div className="prac-opt-label">{opt.label}</div>
-                {!avail && <div className="prac-opt-na">no file</div>}
-              </div>;
-            })}
-          </div>
-          <div className="prac-pick">
-            <div className="prac-pick-h">Visual</div>
-            {[{id:'slide',label:'Slide',files:pracSlideFiles},{id:'part',label:'Part ('+((FILE_CATS.find(c=>c.id===myInstr)||{}).label||myInstr)+')',files:pracPartFiles}].map(opt=>{
-              const vizFiles=opt.files.filter(f=>f.type!=='audio');
-              const avail=vizFiles.length>0;
-              return <div key={opt.id} className={'prac-opt'+(pracVisualChoice===((vizFiles[0]||{}).id)?' sel':'')+(avail?'':' dis')} onClick={()=>{if(avail) setPracVisualChoice(vizFiles[0].id);}}>
-                <div className="prac-opt-label">{opt.label}</div>
-                {!avail && <div className="prac-opt-na">no file</div>}
-              </div>;
-            })}
-          </div>
-          <div className="btnrow" style={{justifyContent:'center',gap:10,marginTop:8}}>
-            <button className="btn ghost sm" onClick={()=>setPracPick(false)}>Cancel</button>
-            <button className="btn sm" disabled={!pracAudioChoice&&!pracVisualChoice} onClick={startPractice}>Start Practice</button>
-          </div>
+      {stemOpen && <div className="stem-player">
+        <div className="stem-title-bar">
+          <span className="stitle">{s.title}</span>
+          <button className="xbtn" onClick={closeStemPlayer}>×</button>
         </div>
-      </div>}
-      {pracMode && <div className="practice-overlay">
-        <div className="practice-title">{s.title}{pracMode.visual?' — '+(pracMode.visual.name||''):''}
-        </div>
-        <button className="practice-exit" onClick={exitPractice}>×</button>
-        <div className="practice-visual">
-          {pracMode.visual && (pracMode.visual.type==='pdf'||fileKind(pracMode.visual.name)==='pdf'
-            ? <iframe src={pracMode.visual.url+'#toolbar=0'} title="Part"/>
-            : <img src={pracMode.visual.url} alt={pracMode.visual.name||'Visual'}/>)}
-          {!pracMode.visual && <div style={{color:'var(--muted)',fontStyle:'italic'}}>No visual selected</div>}
-        </div>
-        {pracMode.audio && <div className="practice-audio">
-          <div style={{display:'flex',alignItems:'center',gap:10}}>
-            <button style={{background:'none',border:'none',color:'var(--text)',fontSize:22,cursor:'pointer',padding:0,lineHeight:1}} onClick={pracToggle}>{pracPlaying?'❚❚':'▶'}</button>
-            <input type="range" style={{flex:1}} min="0" max={pracDur||1} step="0.1" value={pracTime} onChange={e=>pracSeek(+e.target.value)}/>
-            <span style={{fontSize:11,color:'var(--muted)',minWidth:70,textAlign:'right'}}>{fmtSecs(Math.floor(pracTime))}/{pracDur?fmtSecs(Math.floor(pracDur)):'-:--'}</span>
-          </div>
+        {stemCfg && <div className="stem-channels">
+          {stemChans.map(ch=>{
+            const instrId=ch.id==='other'?null:ch.id;
+            return (
+            <div key={ch.id} className={'stem-ch'+(ch.loaded?' loaded':'')+(ch.muted?' muted':'')+(ch.soloed?' soloed':'')}>
+              <div className="stem-ch-top">
+                {instrId ? <InstrBadge id={instrId} size={22}/> : <span style={{width:29,height:29,borderRadius:'50%',background:'var(--surface-3)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:11,fontWeight:700,color:'var(--muted)'}}>+</span>}
+                <div className="stem-ch-name"><small>{ch.fileName||'no file'}</small></div>
+                <button className={'stem-ch-btn'+(ch.muted?' on-m':'')} onClick={()=>stemToggleMute(ch.id)}>M</button>
+                <button className={'stem-ch-btn'+(ch.soloed?' on-s':'')} onClick={()=>stemToggleSolo(ch.id)}>S</button>
+              </div>
+              <div className="stem-vol">
+                <input type="range" min="0" max="100" value={ch.vol} onChange={e=>stemSetVol(ch.id,+e.target.value)}/>
+                <span className="stem-pct">{ch.vol}%</span>
+              </div>
+            </div>);
+          })}
         </div>}
+        <div className="stem-transport">
+          <div className="stem-scrub">
+            <span className="stem-time">{fmtSecs(Math.floor(stemTime))}</span>
+            <input type="range" min="0" max="1000" value={stemDur?(stemTime/stemDur*1000):0} step="1" onChange={e=>stemSeek(+e.target.value/1000*stemDur)} disabled={!stemDur}/>
+            <span className="stem-time">{stemDur?fmtSecs(Math.floor(stemDur)):'-:--'}</span>
+          </div>
+          <div className="stem-btns">
+            <button className="stem-play" onClick={()=>stemPlaying?stemPause():stemPlay()} disabled={!stemDur}>{stemPlaying?'PAUSE':'PLAY'}</button>
+            <button onClick={stemStop} disabled={!stemDur}>STOP</button>
+            <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>{stemCfg?'CLOSE':'CONFIG'}</button>
+          </div>
+        </div>
       </div>}
       {cropSrc && <CropModal src={cropSrc} onCancel={()=>setCropSrc(null)} onDone={onCropDone}/>}
     </div>
