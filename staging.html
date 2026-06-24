@@ -323,7 +323,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.153';
+const VERSION='0.154';
 const CHANGELOG={
   '0.137':[
     'Practice Song mode — choose audio + visual and practice full-screen',
@@ -510,7 +510,7 @@ function stemCatFromName(name){
   if(/bass/i.test(n)) return 'bass';
   if(/guitar/i.test(n)) return 'guitar';
   if(/key|piano|keyboard/i.test(n)) return 'keys';
-  return 'original';
+  return 'other';
 }
 async function deleteBandDoc(){ if(boardRef) await boardRef.delete(); }
 
@@ -604,7 +604,7 @@ function isRehLive(r){ if(!r||!r.date||r.done) return false; const start=new Dat
 function fmtDuration(d){ if(!d) return ''; const h=Math.floor(d); const m=Math.round((d-h)*60); return h+'h'+(m?(' '+m+'m'):''); }
 function fmtTimeRange(iso,dur){ if(!iso) return ''; const s=new Date(iso); const st=fmtTime(iso); if(!dur) return st; const e=new Date(s.getTime()+dur*3600000); const et=e.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); return st+'–'+et; }
 const KIND_COLOR={audio:'#EC6FA9',pdf:'#F2545B',slides:'#F4A93C',doc:'#5B9DF9',image:'#2DD4BF',sheet:'#3DD68C',file:'#948FA6',link:'#C9A6FF'};
-const FILE_CATS=[{id:'original',label:'Original',color:'#EC6FA9',icon:'note'},{id:'slide',label:'Slide',color:'#F4A93C',icon:'slide'},{id:'keys',label:'Keys',color:'#8B7CF6',instr:'keys'},{id:'drums',label:'Drums',color:'#F2545B',instr:'drums'},{id:'guitar',label:'Guitar',color:'#F4A93C',instr:'guitar'},{id:'bass',label:'Bass',color:'#2DD4BF',instr:'bass'},{id:'vocals',label:'Vocals',color:'#EC6FA9',instr:'vocals'}];
+const FILE_CATS=[{id:'slide',label:'Slide',color:'#F4A93C',icon:'slide'},{id:'vocals',label:'Vocals',color:'#EC6FA9',instr:'vocals'},{id:'drums',label:'Drums',color:'#F2545B',instr:'drums'},{id:'bass',label:'Bass',color:'#2DD4BF',instr:'bass'},{id:'guitar',label:'Guitar',color:'#F4A93C',instr:'guitar'},{id:'keys',label:'Keys',color:'#8B7CF6',instr:'keys'},{id:'other',label:'Other',color:'#948FA6',icon:'other'}];
 function fileKind(name){
   const e=((name||'').split('.').pop()||'').toLowerCase();
   if(['mp3','wav','m4a','aac','ogg','flac','aif','aiff'].includes(e)) return 'audio';
@@ -1078,7 +1078,7 @@ function Cell({iid,text,color,status,fileDot,slideBadge}){
 }
 function songFileFlags(song){
   const files=(song.files||[]);
-  const hasSlide=files.some(f=>(f.cat||'original')==='slide');
+  const hasSlide=files.some(f=>(f.cat==='original'?'other':f.cat||'other')==='slide');
   const dots={};
   const instrIds=['keys','drums','guitar','bass','vocals'];
   const instrColors={keys:'#8B7CF6',drums:'#F2545B',guitar:'#F4A93C',bass:'#2DD4BF',vocals:'#EC6FA9'};
@@ -1411,7 +1411,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [filesOpen,setFilesOpen]=useState(false);
   const [pickCat,setPickCat]=useState(null);
   const [dropCat,setDropCat]=useState(null);
-  const STEM_CATS=[{id:'vocals',label:'Vocals',color:'var(--vocals)'},{id:'drums',label:'Drums',color:'var(--drums)'},{id:'bass',label:'Bass',color:'var(--bass)'},{id:'keys',label:'Keys',color:'var(--keys)'},{id:'guitar',label:'Guitar',color:'var(--guitar)'},{id:'original',label:'Other',color:'var(--muted)'}];
+  const STEM_CATS=[{id:'vocals',label:'Vocals',color:'var(--vocals)'},{id:'drums',label:'Drums',color:'var(--drums)'},{id:'bass',label:'Bass',color:'var(--bass)'},{id:'keys',label:'Keys',color:'var(--keys)'},{id:'guitar',label:'Guitar',color:'var(--guitar)'},{id:'other',label:'Other',color:'var(--muted)'}];
   const [stemOpen,setStemOpen]=useState(false);
   const [stemCfg,setStemCfg]=useState(false);
   const [stemPlaying,setStemPlaying]=useState(false);
@@ -1484,7 +1484,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     setStemDur(0);setStemTime(0);setStemCfg(false);setStemOpen(true);
     const files=s.files||[];
     STEM_CATS.forEach(cat=>{
-      const af=files.filter(f=>(f.cat||'original')===cat.id&&f.type==='audio');
+      const af=files.filter(f=>(f.cat==='original'?'other':f.cat||'other')===cat.id&&f.type==='audio');
       if(af.length>0) stemLoadUrl(cat.id,af[0].url,af[0].name);
     });
   };
@@ -1528,7 +1528,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       if(file.size>FILE_CAP){ setFileMsg('File "'+file.name+'" is over 25 MB.'); return; }
       setBusy('file'); const id=uid();
       uploadFileToStorage(id,file).then(({url,path})=>{
-        update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id,name:file.name,kind:'upload',url,path,size:file.size,type:fileKind(file.name),cat:cat||'original'});logAct(st,'uploaded "'+file.name+'" to "'+so.title+'"');return st;});
+        update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id,name:file.name,kind:'upload',url,path,size:file.size,type:fileKind(file.name),cat:cat||'other'});logAct(st,'uploaded "'+file.name+'" to "'+so.title+'"');return st;});
       }).catch(err=>setFileMsg('Upload failed — '+prettyErr(err))).finally(()=>setBusy(''));
     });
   };
@@ -1536,12 +1536,12 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     if(file.size>FILE_CAP){ setFileMsg('That file is over 25 MB — add it as a link instead.'); return; }
     setBusy('file'); const id=uid();
     uploadFileToStorage(id,file).then(({url,path})=>{
-      update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id,name:file.name,kind:'upload',url,path,size:file.size,type:fileKind(file.name),cat:cat||'original'});logAct(st,'uploaded "'+file.name+'" to "'+so.title+'"');return st;});
+      update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id,name:file.name,kind:'upload',url,path,size:file.size,type:fileKind(file.name),cat:cat||'other'});logAct(st,'uploaded "'+file.name+'" to "'+so.title+'"');return st;});
     }).catch(err=>setFileMsg('Upload failed — '+prettyErr(err))).finally(()=>setBusy(''));
   };
   const saveLink=(cat)=>{ const u=linkUrl.trim(); if(!u) return;
     const name=linkName.trim() || u.replace(/^https?:\/\//,'').replace(/\/$/,'').slice(0,42);
-    update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id:uid(),name,kind:'link',url:u,type:fileKind(name),cat:cat||'original'});logAct(st,'added link "'+name+'" to "'+so.title+'"');return st;});
+    update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id:uid(),name,kind:'link',url:u,type:fileKind(name),cat:cat||'other'});logAct(st,'added link "'+name+'" to "'+so.title+'"');return st;});
     setLinkUrl('');setLinkName('');setLinkMode(false);
   };
   const openFile=(f)=>{ if(f.url) window.open(f.url,'_blank','noopener'); };
@@ -1764,15 +1764,15 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             <button className="xbtn" onClick={()=>{setFilesOpen(false);setPickCat(null);setLinkMode(false);}}>×</button>
           </div>
           {FILE_CATS.map(cat=>{
-            const catFiles=(s.files||[]).filter(f=>(f.cat||'original')===cat.id);
+            const catFiles=(s.files||[]).filter(f=>(f.cat==='original'?'other':f.cat||'other')===cat.id);
             return (
               <div className={'files-cat'+(dropCat===cat.id?' drop-over':'')} key={cat.id}
                 onDragOver={e=>{e.preventDefault();e.dataTransfer.dropEffect='copy';setDropCat(cat.id);}}
                 onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget)) setDropCat(null);}}
                 onDrop={e=>{e.preventDefault();setDropCat(null);onDropFiles(e.dataTransfer.files,cat.id);}}>
                 <div className="files-cat-h">
-                  {cat.icon==='note' && <svg width="16" height="16" viewBox="0 0 24 24" fill={cat.color} stroke="none"><path d="M12 3v12.26A4.5 4.5 0 1 0 14 19V7h4V3h-6z"/></svg>}
                   {cat.icon==='slide' && <span style={{fontFamily:'var(--mono)',fontWeight:700,fontSize:14,color:cat.color}}>S</span>}
+                  {cat.icon==='other' && <span style={{fontFamily:'var(--mono)',fontWeight:700,fontSize:14,color:cat.color}}>+</span>}
                   {cat.instr && <InstrBadge id={cat.instr} size={20}/>}
                   {cat.label}
                 </div>
@@ -1908,7 +1908,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         </div>
         {stemCfg && <div className="stem-channels">
           {stemChans.map(ch=>{
-            const instrId=ch.id==='original'?null:ch.id;
+            const instrId=ch.id==='other'?null:ch.id;
             return (
             <div key={ch.id} className={'stem-ch'+(ch.loaded?' loaded':'')+(ch.muted?' muted':'')+(ch.soloed?' soloed':'')}>
               <div className="stem-ch-top">
