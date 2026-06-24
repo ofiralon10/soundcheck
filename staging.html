@@ -101,8 +101,8 @@
   .cell svg{display:block}
   .song-prog{height:5px;background:var(--surface-3)}
   .song-prog .pf{height:100%;transition:width .5s}
-  .songnum{font-family:var(--mono);font-size:12.5px;font-weight:700;color:var(--muted);min-width:22px;text-align:center;flex-shrink:0;font-variant-numeric:tabular-nums}
-  .songnum.enc{color:var(--guitar)}
+  .songnum{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--muted);min-width:22px;height:22px;text-align:center;flex-shrink:0;font-variant-numeric:tabular-nums;background:var(--surface-2);border-radius:6px;display:flex;align-items:center;justify-content:center;line-height:1}
+  .songnum.enc{color:var(--guitar);background:rgba(244,169,60,.12)}
   .enc-pill{display:inline-flex;align-items:center;font-family:var(--mono);font-size:8.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--guitar);border:1px solid rgba(244,169,60,.5);border-radius:5px;padding:2px 5px;flex-shrink:0}
   .setlist-ctrl{background:var(--surface);border:2px solid rgba(255,255,255,.18);border-radius:14px;padding:12px 14px;margin-bottom:10px}
   .setlist-tools{display:flex;align-items:center;gap:9px;margin:2px 0;flex-wrap:wrap}
@@ -239,7 +239,7 @@
   .song-icon-btn{position:relative;background:none;border:none;color:var(--muted);cursor:pointer;padding:8px;border-radius:8px;display:flex;align-items:center;justify-content:center;transition:color .15s;-webkit-tap-highlight-color:rgba(255,255,255,.1);touch-action:manipulation}
   .song-icon-btn:active{color:var(--text);background:var(--surface-3)}
   .song-icon-btn svg{pointer-events:none}
-  .song-icon-badge{position:absolute;top:-4px;right:-6px;background:var(--keys);color:#fff;font-size:9px;font-weight:700;min-width:14px;height:14px;border-radius:7px;display:flex;align-items:center;justify-content:center;padding:0 3px;line-height:1}
+  .song-icon-badge{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--text);pointer-events:none;line-height:1}
   .practice-overlay{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column}
   .practice-visual{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;padding:8px;min-height:0}
   .practice-visual img,.practice-visual iframe{max-width:100%;max-height:100%;object-fit:contain;border:none;border-radius:8px}
@@ -305,7 +305,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.148';
+const VERSION='0.149';
 const CHANGELOG={
   '0.137':[
     'Practice Song mode — choose audio + visual and practice full-screen',
@@ -1586,7 +1586,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         {num!=null && <span className={'songnum'+(s.encore?' enc':'')}>{num}</span>}
         <span style={{position:'relative'}} onClick={e=>{if(open&&!compact){e.stopPropagation();setShowCover(v=>!v);}}}>
           <CoverThumb src={s.cover} size={46} radius={10}/>
-          <span className="song-reh-count" style={{position:'absolute',bottom:-2,left:-2,fontSize:8,padding:'1px 4px',opacity:rehCount===0?.3:1,color:'#fff',background:'rgba(0,0,0,.55)'}} title={rehCount+' rehearsal'+(rehCount>1?'s':'')}>{rehCount}×</span>
+          <span style={{position:'absolute',bottom:-3,left:-3,fontSize:10,fontWeight:700,color:'var(--text)',background:'var(--surface-2)',borderRadius:6,minWidth:16,height:16,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 3px',lineHeight:1,opacity:rehCount===0?.3:1}} title={rehCount+' rehearsal'+(rehCount>1?'s':'')}>{rehCount}</span>
         </span>
         <div style={{minWidth:0,flex:1}}>
           <div style={{display:'flex',alignItems:'center',gap:7,minWidth:0,flexWrap:'wrap'}}>
