@@ -322,7 +322,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.151';
+const VERSION='0.152';
 const CHANGELOG={
   '0.137':[
     'Practice Song mode — choose audio + visual and practice full-screen',
@@ -1417,110 +1417,101 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [stemTime,setStemTime]=useState(0);
   const [stemDur,setStemDur]=useState(0);
   const [stemChans,setStemChans]=useState(()=>STEM_CATS.map(c=>({id:c.id,label:c.label,color:c.color,vol:80,muted:false,soloed:false,loaded:false,fileName:null})));
+  const stemAudiosRef=useRef({});
   const stemCtxRef=useRef(null);
   const stemMasterRef=useRef(null);
-  const stemBuffersRef=useRef({});
   const stemGainsRef=useRef({});
-  const stemSourcesRef=useRef({});
-  const stemStartRef=useRef(0);
-  const stemOffsetRef=useRef(0);
+  const stemNodesRef=useRef({});
   const stemRafRef=useRef(null);
-  const stemScrubRef=useRef(false);
+  const stemPlayingRef=useRef(false);
   const ensureStemCtx=()=>{
     if(!stemCtxRef.current){
       const c=new (window.AudioContext||window.webkitAudioContext)();
       stemCtxRef.current=c;
       const mg=c.createGain();mg.connect(c.destination);stemMasterRef.current=mg;
-      Object.keys(stemGainsRef.current).forEach(k=>{stemGainsRef.current[k].connect(mg);});
     }
     return stemCtxRef.current;
   };
-  const stemMaxDur=()=>{let m=0;Object.values(stemBuffersRef.current).forEach(b=>{if(b)m=Math.max(m,b.duration);});return m;};
+  const stemGetMaxDur=()=>{let m=0;Object.values(stemAudiosRef.current).forEach(a=>{if(a&&isFinite(a.duration))m=Math.max(m,a.duration);});return m;};
   const stemApplyMix=()=>{
-    const ctx=stemCtxRef.current;if(!ctx) return;
-    const anySolo=stemChans.some(c=>c.soloed&&stemBuffersRef.current[c.id]);
+    const anySolo=stemChans.some(c=>c.soloed&&stemAudiosRef.current[c.id]);
     stemChans.forEach(c=>{
       const g=stemGainsRef.current[c.id];if(!g)return;
       let v=c.vol/100;
       if(anySolo) v=c.soloed?c.vol/100:0;
       else if(c.muted) v=0;
-      g.gain.setTargetAtTime(v,ctx.currentTime,0.01);
+      if(stemCtxRef.current) g.gain.setTargetAtTime(v,stemCtxRef.current.currentTime,0.01);
+      else g.gain.value=v;
     });
   };
-  const stemStartSources=(at)=>{
-    const ctx=stemCtxRef.current;
-    stemStartRef.current=ctx.currentTime+0.06;
-    stemOffsetRef.current=at;
-    STEM_CATS.forEach(cat=>{
-      const buf=stemBuffersRef.current[cat.id];if(!buf)return;
-      const src=ctx.createBufferSource();src.buffer=buf;
-      src.connect(stemGainsRef.current[cat.id]);
-      src.start(stemStartRef.current,Math.min(at,buf.duration));
-      src.onended=()=>{if(stemPlaying&&stemPos()>=stemMaxDur()-0.05) stemStop();};
-      stemSourcesRef.current[cat.id]=src;
-    });
-  };
-  const stemStopSources=()=>{Object.keys(stemSourcesRef.current).forEach(k=>{const s=stemSourcesRef.current[k];if(s){try{s.stop();}catch(_){}s.disconnect();}});stemSourcesRef.current={};};
-  const stemPos=()=>{if(!stemPlaying)return stemOffsetRef.current;return stemOffsetRef.current+(stemCtxRef.current.currentTime-stemStartRef.current);};
   const stemTick=()=>{
-    const p=stemPos();setStemTime(p);
-    if(stemPlaying) stemRafRef.current=requestAnimationFrame(stemTick);
+    const first=Object.values(stemAudiosRef.current).find(a=>a&&!a.paused);
+    if(first) setStemTime(first.currentTime);
+    if(stemPlayingRef.current) stemRafRef.current=requestAnimationFrame(stemTick);
   };
   const stemPlay=async()=>{
     const ctx=ensureStemCtx();await ctx.resume();
-    if(stemPlaying)return;
-    const md=stemMaxDur();if(!md)return;
-    stemStartSources(stemOffsetRef.current>=md?0:stemOffsetRef.current);
-    setStemPlaying(true);setStemDur(md);
+    if(stemPlayingRef.current)return;
+    const md=stemGetMaxDur();if(!md)return;
+    const audios=Object.values(stemAudiosRef.current).filter(Boolean);
+    if(!audios.length)return;
+    audios.forEach(a=>{if(a.currentTime>=md) a.currentTime=0;});
+    const playPromises=audios.map(a=>a.play().catch(()=>{}));
+    await Promise.all(playPromises);
+    stemPlayingRef.current=true;setStemPlaying(true);setStemDur(md);
     stemRafRef.current=requestAnimationFrame(stemTick);
   };
   const stemPause=()=>{
-    if(!stemPlaying)return;
-    stemOffsetRef.current=stemPos();stemStopSources();
-    setStemPlaying(false);cancelAnimationFrame(stemRafRef.current);
+    if(!stemPlayingRef.current)return;
+    Object.values(stemAudiosRef.current).forEach(a=>{if(a)a.pause();});
+    stemPlayingRef.current=false;setStemPlaying(false);cancelAnimationFrame(stemRafRef.current);
   };
   const stemStop=()=>{
-    stemStopSources();setStemPlaying(false);stemOffsetRef.current=0;setStemTime(0);
-    cancelAnimationFrame(stemRafRef.current);
+    Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.currentTime=0;}});
+    stemPlayingRef.current=false;setStemPlaying(false);setStemTime(0);cancelAnimationFrame(stemRafRef.current);
   };
   const stemSeek=(v)=>{
-    stemScrubRef.current=true;setStemTime(v);
-    const wasPlaying=stemPlaying;
-    if(wasPlaying)stemStopSources();
-    stemOffsetRef.current=v;
-    if(wasPlaying)stemStartSources(v);
-    stemScrubRef.current=false;
+    setStemTime(v);
+    Object.values(stemAudiosRef.current).forEach(a=>{if(a)a.currentTime=v;});
   };
-  const stemLoadFile=async(catId,file)=>{
+  const stemConnectAudio=(catId,audioEl)=>{
     const ctx=ensureStemCtx();
-    try{
-      const buf=await file.arrayBuffer();
-      const ab=await ctx.decodeAudioData(buf);
-      stemBuffersRef.current[catId]=ab;
-      if(!stemGainsRef.current[catId]){const g=ctx.createGain();g.gain.value=0.8;g.connect(stemMasterRef.current);stemGainsRef.current[catId]=g;}
-      setStemChans(prev=>prev.map(c=>c.id===catId?{...c,loaded:true,fileName:file.name}:c));
-      setStemDur(stemMaxDur());
-    }catch(_){
-      setStemChans(prev=>prev.map(c=>c.id===catId?{...c,loaded:false,fileName:'decode failed'}:c));
+    if(!stemNodesRef.current[catId]){
+      const src=ctx.createMediaElementSource(audioEl);
+      const g=ctx.createGain();g.gain.value=0.8;
+      src.connect(g);g.connect(stemMasterRef.current);
+      stemGainsRef.current[catId]=g;stemNodesRef.current[catId]=src;
     }
   };
-  const stemLoadUrl=async(catId,url,name)=>{
-    const ctx=ensureStemCtx();
+  const stemLoadUrl=(catId,url,name)=>{
     setStemChans(prev=>prev.map(c=>c.id===catId?{...c,fileName:'loading…'}:c));
-    try{
-      const resp=await fetch(url);const buf=await resp.arrayBuffer();
-      const ab=await ctx.decodeAudioData(buf);
-      stemBuffersRef.current[catId]=ab;
-      if(!stemGainsRef.current[catId]){const g=ctx.createGain();g.gain.value=0.8;g.connect(stemMasterRef.current);stemGainsRef.current[catId]=g;}
+    const a=new Audio();
+    a.crossOrigin='anonymous';
+    a.preload='auto';
+    a.oncanplaythrough=()=>{
+      stemAudiosRef.current[catId]=a;
+      stemConnectAudio(catId,a);
       setStemChans(prev=>prev.map(c=>c.id===catId?{...c,loaded:true,fileName:name||'loaded'}:c));
-      setStemDur(stemMaxDur());
-    }catch(_){
-      setStemChans(prev=>prev.map(c=>c.id===catId?{...c,loaded:false,fileName:'load failed'}:c));
-    }
+      setStemDur(stemGetMaxDur());
+    };
+    a.onerror=()=>{
+      const fallback=new Audio(url);
+      fallback.preload='auto';
+      fallback.oncanplaythrough=()=>{
+        stemAudiosRef.current[catId]=fallback;
+        setStemChans(prev=>prev.map(c=>c.id===catId?{...c,loaded:true,fileName:name||'loaded'}:c));
+        setStemDur(stemGetMaxDur());
+      };
+      fallback.onerror=()=>setStemChans(prev=>prev.map(c=>c.id===catId?{...c,loaded:false,fileName:'load failed'}:c));
+      fallback.src=url;
+    };
+    a.src=url;
   };
   const openStemPlayer=()=>{
     stemStop();
-    stemBuffersRef.current={};stemGainsRef.current={};stemSourcesRef.current={};
+    Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.src='';}});
+    stemAudiosRef.current={};stemGainsRef.current={};stemNodesRef.current={};
+    if(stemCtxRef.current){stemCtxRef.current.close().catch(()=>{});stemCtxRef.current=null;stemMasterRef.current=null;}
     setStemChans(STEM_CATS.map(c=>({id:c.id,label:c.label,color:c.color,vol:80,muted:false,soloed:false,loaded:false,fileName:null})));
     setStemDur(0);setStemTime(0);setStemCfg(false);setStemOpen(true);
     const files=s.files||[];
@@ -1529,9 +1520,15 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       if(af.length>0) stemLoadUrl(cat.id,af[0].url,af[0].name);
     });
   };
-  const closeStemPlayer=()=>{stemStop();stemStopSources();if(stemCtxRef.current){stemCtxRef.current.close().catch(()=>{});stemCtxRef.current=null;stemMasterRef.current=null;}setStemOpen(false);};
-  const stemToggleMute=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,muted:!c.muted}:c);return n;});};
-  const stemToggleSolo=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,soloed:!c.soloed}:c);return n;});};
+  const closeStemPlayer=()=>{
+    stemStop();
+    Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.src='';}});
+    stemAudiosRef.current={};stemGainsRef.current={};stemNodesRef.current={};
+    if(stemCtxRef.current){stemCtxRef.current.close().catch(()=>{});stemCtxRef.current=null;stemMasterRef.current=null;}
+    setStemOpen(false);
+  };
+  const stemToggleMute=(id)=>{setStemChans(prev=>prev.map(c=>c.id===id?{...c,muted:!c.muted}:c));};
+  const stemToggleSolo=(id)=>{setStemChans(prev=>prev.map(c=>c.id===id?{...c,soloed:!c.soloed}:c));};
   const stemSetVol=(id,v)=>{setStemChans(prev=>prev.map(c=>c.id===id?{...c,vol:v}:c));};
   useEffect(()=>{stemApplyMix();},[stemChans]);
   const rowRef=useRef(null);
