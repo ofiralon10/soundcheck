@@ -240,7 +240,8 @@
   .song-icon-btn:active{color:var(--text);background:var(--surface-3)}
   .song-icon-btn svg{pointer-events:none}
   .song-icon-badge{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--text);pointer-events:none;line-height:1}
-  .stem-player{position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--bg);border-top:2px solid var(--line-2);transition:transform .25s ease}
+  .stem-player{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:540px;z-index:60;background:var(--bg);border-top:2px solid var(--line-2);transition:transform .25s ease}
+  @media(min-width:900px){.stem-player{max-width:1200px}}
   .stem-transport{padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:var(--surface)}
   .stem-scrub{display:flex;align-items:center;gap:8px;margin-bottom:8px}
   .stem-scrub input[type=range]{flex:1;-webkit-appearance:none;height:4px;border-radius:2px;background:var(--line-2);outline:none}
@@ -322,7 +323,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.152';
+const VERSION='0.153';
 const CHANGELOG={
   '0.137':[
     'Practice Song mode — choose audio + visual and practice full-screen',
@@ -1418,30 +1419,18 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [stemDur,setStemDur]=useState(0);
   const [stemChans,setStemChans]=useState(()=>STEM_CATS.map(c=>({id:c.id,label:c.label,color:c.color,vol:80,muted:false,soloed:false,loaded:false,fileName:null})));
   const stemAudiosRef=useRef({});
-  const stemCtxRef=useRef(null);
-  const stemMasterRef=useRef(null);
-  const stemGainsRef=useRef({});
-  const stemNodesRef=useRef({});
   const stemRafRef=useRef(null);
   const stemPlayingRef=useRef(false);
-  const ensureStemCtx=()=>{
-    if(!stemCtxRef.current){
-      const c=new (window.AudioContext||window.webkitAudioContext)();
-      stemCtxRef.current=c;
-      const mg=c.createGain();mg.connect(c.destination);stemMasterRef.current=mg;
-    }
-    return stemCtxRef.current;
-  };
   const stemGetMaxDur=()=>{let m=0;Object.values(stemAudiosRef.current).forEach(a=>{if(a&&isFinite(a.duration))m=Math.max(m,a.duration);});return m;};
-  const stemApplyMix=()=>{
-    const anySolo=stemChans.some(c=>c.soloed&&stemAudiosRef.current[c.id]);
-    stemChans.forEach(c=>{
-      const g=stemGainsRef.current[c.id];if(!g)return;
+  const stemApplyMix=(chans)=>{
+    const cc=chans||stemChans;
+    const anySolo=cc.some(c=>c.soloed&&stemAudiosRef.current[c.id]);
+    cc.forEach(c=>{
+      const a=stemAudiosRef.current[c.id];if(!a)return;
       let v=c.vol/100;
       if(anySolo) v=c.soloed?c.vol/100:0;
       else if(c.muted) v=0;
-      if(stemCtxRef.current) g.gain.setTargetAtTime(v,stemCtxRef.current.currentTime,0.01);
-      else g.gain.value=v;
+      a.volume=v;
     });
   };
   const stemTick=()=>{
@@ -1450,14 +1439,12 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     if(stemPlayingRef.current) stemRafRef.current=requestAnimationFrame(stemTick);
   };
   const stemPlay=async()=>{
-    const ctx=ensureStemCtx();await ctx.resume();
     if(stemPlayingRef.current)return;
     const md=stemGetMaxDur();if(!md)return;
     const audios=Object.values(stemAudiosRef.current).filter(Boolean);
     if(!audios.length)return;
     audios.forEach(a=>{if(a.currentTime>=md) a.currentTime=0;});
-    const playPromises=audios.map(a=>a.play().catch(()=>{}));
-    await Promise.all(playPromises);
+    await Promise.all(audios.map(a=>a.play().catch(()=>{})));
     stemPlayingRef.current=true;setStemPlaying(true);setStemDur(md);
     stemRafRef.current=requestAnimationFrame(stemTick);
   };
@@ -1474,44 +1461,25 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     setStemTime(v);
     Object.values(stemAudiosRef.current).forEach(a=>{if(a)a.currentTime=v;});
   };
-  const stemConnectAudio=(catId,audioEl)=>{
-    const ctx=ensureStemCtx();
-    if(!stemNodesRef.current[catId]){
-      const src=ctx.createMediaElementSource(audioEl);
-      const g=ctx.createGain();g.gain.value=0.8;
-      src.connect(g);g.connect(stemMasterRef.current);
-      stemGainsRef.current[catId]=g;stemNodesRef.current[catId]=src;
-    }
-  };
   const stemLoadUrl=(catId,url,name)=>{
     setStemChans(prev=>prev.map(c=>c.id===catId?{...c,fileName:'loading…'}:c));
     const a=new Audio();
-    a.crossOrigin='anonymous';
     a.preload='auto';
-    a.oncanplaythrough=()=>{
+    a.volume=0.8;
+    const onReady=()=>{
+      a.removeEventListener('canplaythrough',onReady);
       stemAudiosRef.current[catId]=a;
-      stemConnectAudio(catId,a);
       setStemChans(prev=>prev.map(c=>c.id===catId?{...c,loaded:true,fileName:name||'loaded'}:c));
-      setStemDur(stemGetMaxDur());
+      setStemDur(prev=>Math.max(prev,isFinite(a.duration)?a.duration:0));
     };
-    a.onerror=()=>{
-      const fallback=new Audio(url);
-      fallback.preload='auto';
-      fallback.oncanplaythrough=()=>{
-        stemAudiosRef.current[catId]=fallback;
-        setStemChans(prev=>prev.map(c=>c.id===catId?{...c,loaded:true,fileName:name||'loaded'}:c));
-        setStemDur(stemGetMaxDur());
-      };
-      fallback.onerror=()=>setStemChans(prev=>prev.map(c=>c.id===catId?{...c,loaded:false,fileName:'load failed'}:c));
-      fallback.src=url;
-    };
+    a.addEventListener('canplaythrough',onReady);
+    a.onerror=()=>setStemChans(prev=>prev.map(c=>c.id===catId?{...c,loaded:false,fileName:'load failed'}:c));
     a.src=url;
   };
   const openStemPlayer=()=>{
     stemStop();
     Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.src='';}});
-    stemAudiosRef.current={};stemGainsRef.current={};stemNodesRef.current={};
-    if(stemCtxRef.current){stemCtxRef.current.close().catch(()=>{});stemCtxRef.current=null;stemMasterRef.current=null;}
+    stemAudiosRef.current={};
     setStemChans(STEM_CATS.map(c=>({id:c.id,label:c.label,color:c.color,vol:80,muted:false,soloed:false,loaded:false,fileName:null})));
     setStemDur(0);setStemTime(0);setStemCfg(false);setStemOpen(true);
     const files=s.files||[];
@@ -1523,13 +1491,12 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const closeStemPlayer=()=>{
     stemStop();
     Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.src='';}});
-    stemAudiosRef.current={};stemGainsRef.current={};stemNodesRef.current={};
-    if(stemCtxRef.current){stemCtxRef.current.close().catch(()=>{});stemCtxRef.current=null;stemMasterRef.current=null;}
+    stemAudiosRef.current={};
     setStemOpen(false);
   };
-  const stemToggleMute=(id)=>{setStemChans(prev=>prev.map(c=>c.id===id?{...c,muted:!c.muted}:c));};
-  const stemToggleSolo=(id)=>{setStemChans(prev=>prev.map(c=>c.id===id?{...c,soloed:!c.soloed}:c));};
-  const stemSetVol=(id,v)=>{setStemChans(prev=>prev.map(c=>c.id===id?{...c,vol:v}:c));};
+  const stemToggleMute=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,muted:!c.muted}:c);stemApplyMix(n);return n;});};
+  const stemToggleSolo=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,soloed:!c.soloed}:c);stemApplyMix(n);return n;});};
+  const stemSetVol=(id,v)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,vol:v}:c);stemApplyMix(n);return n;});};
   useEffect(()=>{stemApplyMix();},[stemChans]);
   const rowRef=useRef(null);
   const recorderRef=useRef(null);
