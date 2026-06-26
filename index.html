@@ -340,7 +340,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.173';
+const VERSION='0.174';
 const CHANGELOG={
   '0.168':[
     'Metronome — separate stem channel, muted by default, auto-detected from filename',
@@ -578,7 +578,7 @@ function migrate(s){
     song.guests = song.guests.slice(0,MAX_GUESTS).map(g=>({ id:g.id||uid(), name:g.name||'', status:VALID(g.status)?g.status:'todo' }));
     if(!Array.isArray(song.files)) song.files=[];
     song.files.forEach(f=>{if(f.cat==='other'&&f.stem&&/metronome|click|tick/i.test(f.name||'')) f.cat='metronome';});
-    {const seen={};song.files=song.files.filter(f=>{if(!f.stem) return true;const k=f.cat||'other';if(seen[k]) return false;seen[k]=true;return true;});}
+    song.files=(function(ff){var seen={};return ff.filter(function(f){if(!f.stem)return true;var k=f.cat||'other';if(seen[k])return false;seen[k]=true;return true;});})(song.files);
     if(typeof song.excluded!=='boolean') song.excluded=false;
     if(typeof song.encore!=='boolean') song.encore=false;
     if(song.excluded) song.encore=false;
