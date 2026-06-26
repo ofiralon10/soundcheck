@@ -328,7 +328,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.155';
+const VERSION='0.156';
 const CHANGELOG={
   '0.137':[
     'Practice Song mode — choose audio + visual and practice full-screen',
@@ -1567,12 +1567,12 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   };
   const onGetStems=async(e)=>{
     const files=e.target.files; e.target.value=''; if(!files||!files.length) return;
-    const file=files[0];
-    if(/\.zip$/i.test(file.name)){
+    const first=files[0];
+    if(files.length===1&&/\.zip$/i.test(first.name)){
       if(typeof JSZip==='undefined'){ setFileMsg('Zip support not loaded.'); return; }
       setBusy('stems'); setFileMsg('Unzipping…');
       try{
-        const zip=await JSZip.loadAsync(file);
+        const zip=await JSZip.loadAsync(first);
         const entries=[];
         zip.forEach((p,entry)=>{ if(!entry.dir&&/\.(mp3|wav|ogg|m4a|aac|flac|webm)$/i.test(entry.name)) entries.push(entry); });
         if(!entries.length){ setFileMsg('No audio files found in zip.'); setBusy(''); return; }
