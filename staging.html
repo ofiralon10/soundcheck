@@ -328,19 +328,40 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.168';
+const VERSION='0.169';
 const CHANGELOG={
+  '0.168':[
+    'Metronome — separate stem channel, muted by default, auto-detected from filename',
+    '"Other" instrument option with treble clef icon',
+    'Stem config remembered per song across sessions',
+    'Reset button in stem player config',
+    'Files window filtered to your instrument',
+  ],
+  '0.165':[
+    'Pause/Stop button — tap to pause/resume, double-tap to stop',
+    'Stem upload progress visible on song row when Files closed',
+  ],
+  '0.163':[
+    'Bigger scrub thumb for easier dragging',
+    'Practice buttons colored by stem availability (red/yellow/green)',
+    'Get Stems: progress bar and success/failure message',
+  ],
+  '0.155':[
+    'Get Stems — upload stems from zip or multiple files, auto-categorized by name',
+    'Recordings section in Files window',
+    'Slide shown during Practice mode',
+    'Per-section Add buttons in Files',
+  ],
+  '0.150':[
+    'Multi-stem Practice player with per-channel volume, mute, and solo',
+    'Slide category replaces Original in Files',
+  ],
   '0.137':[
     'Practice Song mode — choose audio + visual and practice full-screen',
     'Instrument icon now shows in your instrument color',
     'Status updates locked to your own instrument',
     'Download and rename files in the Files panel',
     'Smarter auto-naming for recordings and photos',
-  ],
-  '0.136':[
-    'Practice Song mode — choose audio + visual and practice full-screen',
-    'Instrument icon colored per instrument',
-    'Status updates restricted to your own instrument',
   ],
 };
 function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
