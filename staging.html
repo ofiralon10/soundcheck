@@ -340,7 +340,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.170';
+const VERSION='0.171';
 const CHANGELOG={
   '0.168':[
     'Metronome — separate stem channel, muted by default, auto-detected from filename',
@@ -416,14 +416,14 @@ const ICON = {
   guitar:(<g><rect x="9.25" y="4" width="5.5" height="16" rx="2.6"/><path d="M9.25 7.5 H6 M9.25 12 H6 M9.25 16.5 H6 M14.75 7.5 H18 M14.75 12 H18 M14.75 16.5 H18"/><g fill="currentColor" stroke="none"><circle cx="4.9" cy="7.5" r="1.15"/><circle cx="4.9" cy="12" r="1.15"/><circle cx="4.9" cy="16.5" r="1.15"/><circle cx="19.1" cy="7.5" r="1.15"/><circle cx="19.1" cy="12" r="1.15"/><circle cx="19.1" cy="16.5" r="1.15"/></g></g>),
   bass:(<g><rect x="9.25" y="4" width="5.5" height="16" rx="2.6"/><path d="M9.25 9 H5.8 M9.25 15 H5.8 M14.75 9 H18.2 M14.75 15 H18.2"/><g fill="currentColor" stroke="none"><circle cx="4.6" cy="9" r="1.35"/><circle cx="4.6" cy="15" r="1.35"/><circle cx="19.4" cy="9" r="1.35"/><circle cx="19.4" cy="15" r="1.35"/></g></g>),
   vocals:(<g><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.8 11 A6.2 6.2 0 0 0 18.2 11"/><path d="M12 17.2 V21 M8.5 21 H15.5"/></g>),
-  other:(<g><path d="M12 21 C12 21 12 18 12 16 C12 13 15 12 15 9.5 C15 7.5 13.5 6 12 6 C10.5 6 9 7 9 9 C9 11 11 12 12 14 C13 16 12 18 12 21 Z" fill="none"/><path d="M12 3 V6" /><circle cx="12" cy="2.2" r="0.8" fill="currentColor" stroke="none"/></g>),
+  other:(<g><path d="M12 22 C12 22 12.5 18 12.5 16 C12.5 14 14 13 15.5 11 C17 9 16.5 6.5 15 5 C13.5 3.5 11 3.5 10 5 C9 6.5 9.5 8.5 11 10 C12.5 11.5 12.5 13 12 15" fill="none"/><circle cx="10.5" cy="19.5" r="2.2" fill="currentColor" stroke="none"/><path d="M12.5 2 V5"/></g>),
 };
 function InstrIcon({id,size=15}){
   const S=Math.round(size*1.3);
   return <svg width={S} height={S} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">{ICON[id]}</svg>;
 }
 function InstrBadge({id,size=28}){
-  const it=INSTR.find(x=>x.id===id); const c=it?it.color:'#948FA6'; const S=Math.round(size*1.3);
+  const it=INSTR.find(x=>x.id===id); const c=it?it.color:id==='other'?'#5BC0EB':'#948FA6'; const S=Math.round(size*1.3);
   return (
     <svg width={S} height={S} viewBox="0 0 24 24" style={{flexShrink:0,display:'block'}}>
       <circle cx="12" cy="12" r="11.3" fill={c}/>
@@ -645,7 +645,7 @@ function isRehLive(r){ if(!r||!r.date||r.done) return false; const start=new Dat
 function fmtDuration(d){ if(!d) return ''; const h=Math.floor(d); const m=Math.round((d-h)*60); return h+'h'+(m?(' '+m+'m'):''); }
 function fmtTimeRange(iso,dur){ if(!iso) return ''; const s=new Date(iso); const st=fmtTime(iso); if(!dur) return st; const e=new Date(s.getTime()+dur*3600000); const et=e.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); return st+'–'+et; }
 const KIND_COLOR={audio:'#EC6FA9',pdf:'#F2545B',slides:'#F4A93C',doc:'#5B9DF9',image:'#2DD4BF',sheet:'#3DD68C',file:'#948FA6',link:'#C9A6FF'};
-const FILE_CATS=[{id:'slide',label:'Slide',color:'#F4A93C',icon:'slide'},{id:'vocals',label:'Vocals',color:'#EC6FA9',instr:'vocals'},{id:'drums',label:'Drums',color:'#F2545B',instr:'drums'},{id:'bass',label:'Bass',color:'#2DD4BF',instr:'bass'},{id:'guitar',label:'Guitar',color:'#F4A93C',instr:'guitar'},{id:'keys',label:'Keys',color:'#8B7CF6',instr:'keys'},{id:'other',label:'Other',color:'#948FA6',icon:'other'}];
+const FILE_CATS=[{id:'slide',label:'Slide',color:'#F4A93C',icon:'slide'},{id:'vocals',label:'Vocals',color:'#EC6FA9',instr:'vocals'},{id:'drums',label:'Drums',color:'#F2545B',instr:'drums'},{id:'bass',label:'Bass',color:'#2DD4BF',instr:'bass'},{id:'guitar',label:'Guitar',color:'#F4A93C',instr:'guitar'},{id:'keys',label:'Keys',color:'#8B7CF6',instr:'keys'},{id:'other',label:'Other',color:'#5BC0EB',icon:'other'}];
 function fileKind(name){
   const e=((name||'').split('.').pop()||'').toLowerCase();
   if(['mp3','wav','m4a','aac','ogg','flac','aif','aiff'].includes(e)) return 'audio';
@@ -1460,7 +1460,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [filesOpen,setFilesOpen]=useState(false);
   const [pickCat,setPickCat]=useState(null);
   const [dropCat,setDropCat]=useState(null);
-  const STEM_CATS=[{id:'vocals',label:'Vocals',color:'var(--vocals)'},{id:'drums',label:'Drums',color:'var(--drums)'},{id:'bass',label:'Bass',color:'var(--bass)'},{id:'keys',label:'Keys',color:'var(--keys)'},{id:'guitar',label:'Guitar',color:'var(--guitar)'},{id:'other',label:'Other',color:'var(--muted)'},{id:'metronome',label:'Metronome',color:'var(--warn)'}];
+  const STEM_CATS=[{id:'vocals',label:'Vocals',color:'var(--vocals)'},{id:'drums',label:'Drums',color:'var(--drums)'},{id:'bass',label:'Bass',color:'var(--bass)'},{id:'keys',label:'Keys',color:'var(--keys)'},{id:'guitar',label:'Guitar',color:'var(--guitar)'},{id:'other',label:'Other',color:'#5BC0EB'},{id:'metronome',label:'Metronome',color:'#948FA6'}];
   const [stemOpen,setStemOpen]=useState(false);
   const wide=useWide();
   const [stemCfg,setStemCfg]=useState(wide);
@@ -1869,7 +1869,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
                 <div className="files-cat-h" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
                   <div style={{display:'flex',alignItems:'center',gap:6}}>
                     {cat.icon==='slide' && <span style={{fontFamily:'var(--mono)',fontWeight:700,fontSize:14,color:cat.color}}>S</span>}
-                    {cat.icon==='other' && <span style={{fontFamily:'var(--mono)',fontWeight:700,fontSize:14,color:cat.color}}>+</span>}
+                    {cat.icon==='other' && <InstrIcon id="other" size={14}/>}
                     {cat.instr && <InstrBadge id={cat.instr} size={20}/>}
                     {cat.label}
                   </div>
@@ -2025,7 +2025,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             return (
             <div key={ch.id} className={'stem-ch'+(ch.loaded?' loaded':'')+(ch.muted?' muted':'')+(ch.soloed?' soloed':'')} style={isMetNoFile?{opacity:.4}:null}>
               <div className="stem-ch-top">
-                {ch.id==='metronome' ? <span style={{width:29,height:29,borderRadius:'50%',background:'var(--warn)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:14,fontWeight:700,color:'#fff'}}>♩</span> : instrId ? <InstrBadge id={instrId} size={22}/> : <span style={{width:29,height:29,borderRadius:'50%',background:'var(--surface-3)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:11,fontWeight:700,color:'var(--muted)'}}>+</span>}
+                {ch.id==='metronome' ? <span style={{width:29,height:29,borderRadius:'50%',background:'#948FA6',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:14,fontWeight:700,color:'#fff'}}>♩</span> : instrId ? <InstrBadge id={instrId} size={22}/> : ch.id==='other' ? <InstrBadge id="other" size={22}/> : <span style={{width:29,height:29,borderRadius:'50%',background:'var(--surface-3)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:11,fontWeight:700,color:'var(--muted)'}}>+</span>}
                 <div className="stem-ch-name"><small>{ch.fileName||'no file'}</small></div>
                 <div className="stem-ch-btns-row">
                   <button className={'stem-ch-btn'+(ch.muted?' on-m':'')} onClick={()=>stemToggleMute(ch.id)}>M</button>
