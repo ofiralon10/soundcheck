@@ -328,7 +328,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.163';
+const VERSION='0.164';
 const CHANGELOG={
   '0.137':[
     'Practice Song mode — choose audio + visual and practice full-screen',
@@ -1423,7 +1423,12 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [stemPlaying,setStemPlaying]=useState(false);
   const [stemTime,setStemTime]=useState(0);
   const [stemDur,setStemDur]=useState(0);
-  const [stemChans,setStemChans]=useState(()=>STEM_CATS.map(c=>({id:c.id,label:c.label,color:c.color,vol:80,muted:false,soloed:false,loaded:false,fileName:null})));
+  const stemDefaultChans=()=>STEM_CATS.map(c=>({id:c.id,label:c.label,color:c.color,vol:80,muted:false,soloed:false,loaded:false,fileName:null}));
+  const stemStorageKey='sc_stem_'+s.id;
+  const [stemChans,setStemChans]=useState(()=>{
+    try{const saved=JSON.parse(localStorage.getItem(stemStorageKey));if(saved&&saved.length)return stemDefaultChans().map(d=>{const sv=saved.find(x=>x.id===d.id);return sv?{...d,vol:sv.vol,muted:sv.muted,soloed:sv.soloed}:d;});}catch(_){}
+    return stemDefaultChans();
+  });
   const stemAudiosRef=useRef({});
   const stemRafRef=useRef(null);
   const stemPlayingRef=useRef(false);
@@ -1493,7 +1498,10 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     stemStop();
     Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.src='';}});
     stemAudiosRef.current={};
-    setStemChans(STEM_CATS.map(c=>({id:c.id,label:c.label,color:c.color,vol:80,muted:false,soloed:false,loaded:false,fileName:null})));
+    setStemChans(prev=>{
+      try{const saved=JSON.parse(localStorage.getItem(stemStorageKey));if(saved&&saved.length)return stemDefaultChans().map(d=>{const sv=saved.find(x=>x.id===d.id);return sv?{...d,vol:sv.vol,muted:sv.muted,soloed:sv.soloed}:d;});}catch(_){}
+      return stemDefaultChans();
+    });
     setStemDur(0);setStemTime(0);setStemCfg(false);setStemOpen(true);
     const files=s.files||[];
     STEM_CATS.forEach(cat=>{
@@ -1510,7 +1518,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const stemToggleMute=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,muted:!c.muted}:c);stemApplyMix(n);return n;});};
   const stemToggleSolo=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,soloed:!c.soloed}:c);stemApplyMix(n);return n;});};
   const stemSetVol=(id,v)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,vol:v}:c);stemApplyMix(n);return n;});};
-  useEffect(()=>{stemApplyMix();},[stemChans]);
+  useEffect(()=>{stemApplyMix();try{localStorage.setItem(stemStorageKey,JSON.stringify(stemChans.map(c=>({id:c.id,vol:c.vol,muted:c.muted,soloed:c.soloed}))));}catch(_){}},[stemChans]);
   const rowRef=useRef(null);
   const recorderRef=useRef(null);
   const chunksRef=useRef([]);
@@ -1800,7 +1808,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
               <button className="xbtn" onClick={()=>{setFilesOpen(false);setPickCat(null);setLinkMode(false);}}>×</button>
             </div>
           </div>
-          {FILE_CATS.map(cat=>{
+          {FILE_CATS.filter(cat=>cat.id==='slide'||(MY_INSTR&&cat.instr===MY_INSTR)||(!MY_INSTR&&cat.instr)||cat.id==='other').map(cat=>{
             const catFiles=(s.files||[]).filter(f=>!f.stem&&(f.cat==='original'?'other':f.cat||'other')===cat.id);
             const recFiles=cat.id==='slide'?(s.files||[]).filter(f=>f.name&&/recording/i.test(f.name)):null;
             return (<React.Fragment key={cat.id}>
@@ -1957,6 +1965,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       {stemOpen && <div className="stem-player">
         <div className="stem-title-bar">
           <span className="stitle">{s.title}</span>
+          <button className="btn ghost sm" style={{fontSize:10,padding:'2px 8px',marginLeft:8}} onClick={()=>{const d=stemDefaultChans();setStemChans(prev=>prev.map((c,i)=>({...c,vol:d[i].vol,muted:d[i].muted,soloed:d[i].soloed})));stemApplyMix(d);}}>Reset</button>
           <button className="xbtn" onClick={closeStemPlayer}>×</button>
         </div>
         {stemCfg && <div className="stem-channels">
@@ -1985,7 +1994,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           </div>
           <div className="stem-btns">
             <button className="stem-play" onClick={stemPlay} disabled={!stemDur}>PLAY</button>
-            <button onClick={stemPauseOrStop} disabled={!stemDur}>{stemPlaying?'PAUSE':'PAUSE'}</button>
+            <button onClick={stemPauseOrStop} disabled={!stemDur}>PAUSE/STOP</button>
             <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>{stemCfg?'CLOSE':'CONFIG'}</button>
           </div>
         </div>
