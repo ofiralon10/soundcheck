@@ -328,7 +328,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.167';
+const VERSION='0.168';
 const CHANGELOG={
   '0.137':[
     'Practice Song mode — choose audio + visual and practice full-screen',
@@ -511,6 +511,7 @@ async function uploadFileToStorage(id, file){
 function deleteStoragePath(path){ try{ if(storage && path) storage.ref().child(path).delete().catch(()=>{}); }catch(_){} }
 function stemCatFromName(name){
   const n=(name||'').toLowerCase();
+  if(/metronome|click|tick/i.test(n)) return 'metronome';
   if(/vocal/i.test(n)) return 'vocals';
   if(/drum/i.test(n)) return 'drums';
   if(/bass/i.test(n)) return 'bass';
@@ -542,6 +543,7 @@ function migrate(s){
     if(!Array.isArray(song.guests)) song.guests=[];
     song.guests = song.guests.slice(0,MAX_GUESTS).map(g=>({ id:g.id||uid(), name:g.name||'', status:VALID(g.status)?g.status:'todo' }));
     if(!Array.isArray(song.files)) song.files=[];
+    song.files.forEach(f=>{if(f.cat==='other'&&f.stem&&/metronome|click|tick/i.test(f.name||'')) f.cat='metronome';});
     if(typeof song.excluded!=='boolean') song.excluded=false;
     if(typeof song.encore!=='boolean') song.encore=false;
     if(song.excluded) song.encore=false;
@@ -1425,13 +1427,13 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [filesOpen,setFilesOpen]=useState(false);
   const [pickCat,setPickCat]=useState(null);
   const [dropCat,setDropCat]=useState(null);
-  const STEM_CATS=[{id:'vocals',label:'Vocals',color:'var(--vocals)'},{id:'drums',label:'Drums',color:'var(--drums)'},{id:'bass',label:'Bass',color:'var(--bass)'},{id:'keys',label:'Keys',color:'var(--keys)'},{id:'guitar',label:'Guitar',color:'var(--guitar)'},{id:'other',label:'Other',color:'var(--muted)'}];
+  const STEM_CATS=[{id:'vocals',label:'Vocals',color:'var(--vocals)'},{id:'drums',label:'Drums',color:'var(--drums)'},{id:'bass',label:'Bass',color:'var(--bass)'},{id:'keys',label:'Keys',color:'var(--keys)'},{id:'guitar',label:'Guitar',color:'var(--guitar)'},{id:'other',label:'Other',color:'var(--muted)'},{id:'metronome',label:'Metronome',color:'var(--warn)'}];
   const [stemOpen,setStemOpen]=useState(false);
   const [stemCfg,setStemCfg]=useState(false);
   const [stemPlaying,setStemPlaying]=useState(false);
   const [stemTime,setStemTime]=useState(0);
   const [stemDur,setStemDur]=useState(0);
-  const stemDefaultChans=()=>STEM_CATS.map(c=>({id:c.id,label:c.label,color:c.color,vol:80,muted:false,soloed:false,loaded:false,fileName:null}));
+  const stemDefaultChans=()=>STEM_CATS.map(c=>({id:c.id,label:c.label,color:c.color,vol:80,muted:c.id==='metronome',soloed:false,loaded:false,fileName:null}));
   const stemStorageKey='sc_stem_'+s.id;
   const [stemChans,setStemChans]=useState(()=>{
     try{const saved=JSON.parse(localStorage.getItem(stemStorageKey));if(saved&&saved.length)return stemDefaultChans().map(d=>{const sv=saved.find(x=>x.id===d.id);return sv?{...d,vol:sv.vol,muted:sv.muted,soloed:sv.soloed}:d;});}catch(_){}
@@ -1984,11 +1986,12 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         </div>
         {stemCfg && <div className="stem-channels">
           {stemChans.map(ch=>{
-            const instrId=ch.id==='other'?null:ch.id;
+            const instrId=ch.id==='other'||ch.id==='metronome'?null:ch.id;
+            const isMetNoFile=ch.id==='metronome'&&!ch.loaded;
             return (
-            <div key={ch.id} className={'stem-ch'+(ch.loaded?' loaded':'')+(ch.muted?' muted':'')+(ch.soloed?' soloed':'')}>
+            <div key={ch.id} className={'stem-ch'+(ch.loaded?' loaded':'')+(ch.muted?' muted':'')+(ch.soloed?' soloed':'')} style={isMetNoFile?{opacity:.4}:null}>
               <div className="stem-ch-top">
-                {instrId ? <InstrBadge id={instrId} size={22}/> : <span style={{width:29,height:29,borderRadius:'50%',background:'var(--surface-3)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:11,fontWeight:700,color:'var(--muted)'}}>+</span>}
+                {ch.id==='metronome' ? <span style={{width:29,height:29,borderRadius:'50%',background:'var(--warn)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:14,fontWeight:700,color:'#fff'}}>♩</span> : instrId ? <InstrBadge id={instrId} size={22}/> : <span style={{width:29,height:29,borderRadius:'50%',background:'var(--surface-3)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:11,fontWeight:700,color:'var(--muted)'}}>+</span>}
                 <div className="stem-ch-name"><small>{ch.fileName||'no file'}</small></div>
                 <button className={'stem-ch-btn'+(ch.muted?' on-m':'')} onClick={()=>stemToggleMute(ch.id)}>M</button>
                 <button className={'stem-ch-btn'+(ch.soloed?' on-s':'')} onClick={()=>stemToggleSolo(ch.id)}>S</button>
