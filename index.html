@@ -340,7 +340,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.174';
+const VERSION='0.175';
 const CHANGELOG={
   '0.168':[
     'Metronome — separate stem channel, muted by default, auto-detected from filename',
@@ -1867,7 +1867,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
               <button className="xbtn" onClick={()=>{setFilesOpen(false);setPickCat(null);setLinkMode(false);}}>×</button>
             </div>
           </div>
-          {FILE_CATS.filter(cat=>cat.id==='slide'||(MY_INSTR&&cat.instr===MY_INSTR)||(!MY_INSTR&&cat.instr)||cat.id==='other').map(cat=>{
+          {FILE_CATS.filter(cat=>cat.id==='slide'||(MY_INSTR&&cat.instr===MY_INSTR)||(!MY_INSTR&&cat.instr)||(cat.id==='other'&&MY_INSTR==='other')||(!MY_INSTR&&cat.id==='other')).map(cat=>{
             const catFiles=(s.files||[]).filter(f=>!f.stem&&(f.cat==='original'?'other':f.cat||'other')===cat.id);
             const recFiles=cat.id==='slide'?(s.files||[]).filter(f=>f.name&&/recording/i.test(f.name)):null;
             return (<React.Fragment key={cat.id}>
