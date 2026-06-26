@@ -245,7 +245,7 @@
   .stem-transport{padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:var(--surface)}
   .stem-scrub{display:flex;align-items:center;gap:8px;margin-bottom:8px}
   .stem-scrub input[type=range]{flex:1;-webkit-appearance:none;height:4px;border-radius:2px;background:var(--line-2);outline:none}
-  .stem-scrub input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);cursor:pointer}
+  .stem-scrub input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--ok);cursor:pointer;box-shadow:0 0 4px rgba(0,0,0,.4)}
   .stem-time{font-family:var(--mono);font-size:11px;color:var(--muted);min-width:38px;text-align:center}
   .stem-btns{display:flex;gap:8px}
   .stem-btns button{flex:1;height:42px;border-radius:10px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);font-family:var(--display);font-size:12px;font-weight:700;letter-spacing:.06em;cursor:pointer}
@@ -328,7 +328,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.162';
+const VERSION='0.163';
 const CHANGELOG={
   '0.137':[
     'Practice Song mode — choose audio + visual and practice full-screen',
@@ -1462,9 +1462,9 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const lastPauseTapRef=useRef(0);
   const stemPauseOrStop=()=>{
     const now=Date.now();
-    if(!stemPlayingRef.current&&(now-lastPauseTapRef.current)<400){ stemStop(); lastPauseTapRef.current=0; return; }
+    if((now-lastPauseTapRef.current)<400){ stemStop(); lastPauseTapRef.current=0; return; }
     lastPauseTapRef.current=now;
-    if(stemPlayingRef.current) stemPause(); else stemPlay();
+    if(stemPlayingRef.current) stemPause();
   };
   const stemStop=()=>{
     Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.currentTime=0;}});
