@@ -340,7 +340,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.171';
+const VERSION='0.172';
 const CHANGELOG={
   '0.168':[
     'Metronome — separate stem channel, muted by default, auto-detected from filename',
@@ -417,6 +417,7 @@ const ICON = {
   bass:(<g><rect x="9.25" y="4" width="5.5" height="16" rx="2.6"/><path d="M9.25 9 H5.8 M9.25 15 H5.8 M14.75 9 H18.2 M14.75 15 H18.2"/><g fill="currentColor" stroke="none"><circle cx="4.6" cy="9" r="1.35"/><circle cx="4.6" cy="15" r="1.35"/><circle cx="19.4" cy="9" r="1.35"/><circle cx="19.4" cy="15" r="1.35"/></g></g>),
   vocals:(<g><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.8 11 A6.2 6.2 0 0 0 18.2 11"/><path d="M12 17.2 V21 M8.5 21 H15.5"/></g>),
   other:(<g><path d="M12 22 C12 22 12.5 18 12.5 16 C12.5 14 14 13 15.5 11 C17 9 16.5 6.5 15 5 C13.5 3.5 11 3.5 10 5 C9 6.5 9.5 8.5 11 10 C12.5 11.5 12.5 13 12 15" fill="none"/><circle cx="10.5" cy="19.5" r="2.2" fill="currentColor" stroke="none"/><path d="M12.5 2 V5"/></g>),
+  metronome:(<g><path d="M7 21 L9 4 H15 L17 21 Z" fill="none"/><path d="M7 21 H17"/><path d="M12 17 L16 6" strokeWidth="1.8"/><circle cx="16.5" cy="5.5" r="1.5" fill="currentColor" stroke="none"/><path d="M9.5 15 H14.5"/></g>),
 };
 function InstrIcon({id,size=15}){
   const S=Math.round(size*1.3);
@@ -2025,7 +2026,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             return (
             <div key={ch.id} className={'stem-ch'+(ch.loaded?' loaded':'')+(ch.muted?' muted':'')+(ch.soloed?' soloed':'')} style={isMetNoFile?{opacity:.4}:null}>
               <div className="stem-ch-top">
-                {ch.id==='metronome' ? <span style={{width:29,height:29,borderRadius:'50%',background:'#948FA6',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:14,fontWeight:700,color:'#fff'}}>♩</span> : instrId ? <InstrBadge id={instrId} size={22}/> : ch.id==='other' ? <InstrBadge id="other" size={22}/> : <span style={{width:29,height:29,borderRadius:'50%',background:'var(--surface-3)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:11,fontWeight:700,color:'var(--muted)'}}>+</span>}
+                {ch.id==='metronome' ? <InstrBadge id="metronome" size={22}/> : instrId ? <InstrBadge id={instrId} size={22}/> : ch.id==='other' ? <InstrBadge id="other" size={22}/> : <span style={{width:29,height:29,borderRadius:'50%',background:'var(--surface-3)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:11,fontWeight:700,color:'var(--muted)'}}>+</span>}
                 <div className="stem-ch-name"><small>{ch.fileName||'no file'}</small></div>
                 <div className="stem-ch-btns-row">
                   <button className={'stem-ch-btn'+(ch.muted?' on-m':'')} onClick={()=>stemToggleMute(ch.id)}>M</button>
