@@ -340,7 +340,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.172';
+const VERSION='0.173';
 const CHANGELOG={
   '0.168':[
     'Metronome — separate stem channel, muted by default, auto-detected from filename',
@@ -578,6 +578,7 @@ function migrate(s){
     song.guests = song.guests.slice(0,MAX_GUESTS).map(g=>({ id:g.id||uid(), name:g.name||'', status:VALID(g.status)?g.status:'todo' }));
     if(!Array.isArray(song.files)) song.files=[];
     song.files.forEach(f=>{if(f.cat==='other'&&f.stem&&/metronome|click|tick/i.test(f.name||'')) f.cat='metronome';});
+    {const seen={};song.files=song.files.filter(f=>{if(!f.stem) return true;const k=f.cat||'other';if(seen[k]) return false;seen[k]=true;return true;});}
     if(typeof song.excluded!=='boolean') song.excluded=false;
     if(typeof song.encore!=='boolean') song.encore=false;
     if(song.excluded) song.encore=false;
@@ -1623,7 +1624,14 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     const id=uid();
     const renamed=stemRename(file.name,cat);
     return uploadFileToStorage(id,file).then(({url,path})=>{
-      update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id,name:renamed,kind:'upload',url,path,size:file.size,type:'audio',cat,stem:true});return st;});
+      update(st=>{
+        const so=st.songs.find(x=>x.id===s.id);
+        const old=so.files.filter(f=>f.stem&&f.cat===cat);
+        old.forEach(f=>{if(f.path) deleteStoragePath(f.path);});
+        so.files=so.files.filter(f=>!(f.stem&&f.cat===cat));
+        so.files.push({id,name:renamed,kind:'upload',url,path,size:file.size,type:'audio',cat,stem:true});
+        return st;
+      });
     });
   };
   const onGetStems=async(e)=>{
