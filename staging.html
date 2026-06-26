@@ -328,7 +328,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.157';
+const VERSION='0.158';
 const CHANGELOG={
   '0.137':[
     'Practice Song mode — choose audio + visual and practice full-screen',
@@ -1586,8 +1586,9 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       }catch(err){ setFileMsg('Zip extraction failed — '+prettyErr(err)); }
       setBusy('');
     } else {
-      const audioFiles=Array.from(files).filter(f=>/\.(mp3|wav|ogg|m4a|aac|flac|webm)$/i.test(f.name));
-      if(!audioFiles.length){ setFileMsg('No audio files found.'); return; }
+      const isAudio=f=>/\.(mp3|wav|ogg|m4a|aac|flac|webm|wma|opus|mp4)$/i.test(f.name)||(f.type&&f.type.startsWith('audio/'));
+      const audioFiles=Array.from(files).filter(isAudio);
+      if(!audioFiles.length){ setFileMsg('No audio files found. Selected '+files.length+' file(s): '+Array.from(files).map(f=>f.name).join(', ')); return; }
       audioFiles.forEach(f=>uploadStemFile(f,stemCatFromName(f.name)));
       setFileMsg(audioFiles.length+' stem file'+(audioFiles.length>1?'s':'')+' uploading…');
     }
