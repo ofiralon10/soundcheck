@@ -39,13 +39,13 @@ You cannot run Firebase locally. To check a change before handing it off:
 - **Versioning.** There's a `const VERSION='x.yyy'` near the top of the script, rendered next
   to the SOUNDCHECK wordmark. **Every change bumps the right-hand number by 1** (0.103 → 0.104).
   Never change the left-hand number unless explicitly told. The owner uses the on-screen version
-  to confirm a deploy landed. Current version: **0.129**.
+  to confirm a deploy landed. Current version: **0.175**.
 - **Edit staging.html first.** Don't touch `index.html` until the owner asks to port a tested change.
 - **Porting to index.html:** `cp staging.html index.html`, then apply two fixes in index.html:
   1. Change `/staging/i.test(location.pathname)` → `/staging\.html/i.test(location.pathname)`
   2. Add `last!=='staging' &&` guard in the localStorage board restore line
   These prevent index.html from auto-selecting the staging board.
-- **Single big file** (~2050+ lines). When editing, keep `str_replace` targets unique; re-read a
+- **Single big file** (~2300+ lines). When editing, keep `str_replace` targets unique; re-read a
   region before editing it again.
 - **State doc shape** (`boards/{bandId}`): `band`, `bandArt`, `concert`, `members` (per instrument:
   keys/drums/guitar/bass/vocals), `songs[]`, `rehearsals[]`, `activity[]`, `album[]`, `readinessHistory[]`,
@@ -58,8 +58,10 @@ You cannot run Firebase locally. To check a change before handing it off:
 - **Hebrew/RTL text**: song titles, artist names, and reorder titles use `direction:ltr` CSS to force
   left-alignment. The Unicode bidi algorithm alone is not enough — `dir="auto"` still right-aligns
   Hebrew text in flex layouts. Use `direction:ltr` on the element's CSS class.
+- **Changelog**: update the `CHANGELOG` object with entries for each version that ships to production.
+  The "What's New" modal shows on first load when version changes.
 
-## Tabs & components (staging.html, v0.129)
+## Tabs & components (staging.html, v0.175)
 
 ### Stage tab
 - Show-readiness dashboard: overall %, tick visualization, song count, ready count, set length.
@@ -73,6 +75,7 @@ You cannot run Firebase locally. To check a change before handing it off:
   `readinessHistory[]` as `{d:'YYYY-MM-DD', v:0-100}`, one point per day, capped at 365.
   Seeded on first `migrate()` when history is empty and songs exist.
 - `RehearsalProposal` for proposing time changes with thumbs up/down voting.
+- **Band selection → Stage tab**: choosing a band navigates to the Stage tab automatically.
 
 ### Setlist tab
 - Song list with cover art thumbnails, readiness progress bars, per-instrument status cells.
@@ -88,21 +91,71 @@ You cannot run Firebase locally. To check a change before handing it off:
 - Songs and toolbar have `2px solid rgba(255,255,255,.18)` borders for visual separation.
 - Cover art: small thumbnail always visible; click it when song is open to toggle a larger edit view
   with replace/remove options.
+- **Song row badges**: file count centered on file icon, song order index in rounded square,
+  rehearsal count badge on cover art corner.
 - **Encore marking** with `★ Enc` pill.
-- **File management**: "Access Files" button opens a bottom-sheet modal with files organized in 4
-  categories: **Original**, **Slide**, **Music Sheets**, **Minus**. Each section shows N/A if empty.
-  Files have a `cat` field (`'original'|'slide'|'sheets'|'minus'`). Category is chosen before uploading.
-  Files can be played (audio player modal) or opened, and deleted with confirmation.
-- **Audio player modal**: play/pause, seekable progress bar, volume slider. Uses `Audio` API with
-  `timeupdate` polling.
-- **Audio recording**: MediaRecorder API with music-optimized settings (no echo cancellation, no noise
-  suppression, no auto gain, 48kHz sample rate, 256kbps). Full-screen red overlay during recording
-  with pause/resume/stop. Save/discard confirmation dialog.
-- **Camera capture**: `<input type="file" accept="image/*" capture="environment">`. After capture,
-  a dialog asks: save to this song, save to band album, or discard.
-- Action buttons order: Upload file, Camera, Add link, Record.
-- **File upload buttons**: Upload file, 📷 Camera, Add link, ● Record (red).
+- **Practice button**: per-song play icon colored by stem availability (red=none, yellow=partial,
+  green=all 6 core stems). Opens the stem player.
+- **Record button**: mic icon on song row, shows confirm/cancel dialog before starting recording.
 - Guests: up to `MAX_GUESTS` per song with name and status.
+
+### File management (Files modal)
+- Opened via "Access Files" button on each song.
+- **Filtered view**: shows only sections relevant to the user — **Slide**, **Recordings**, and the
+  section matching the user's chosen instrument (`MY_INSTR`). "Other" section only appears if
+  the user's instrument is set to "other" (or no instrument is set).
+- **File categories** (`FILE_CATS`): Slide, Vocals, Drums, Bass, Guitar, Keys, Other.
+  Files have `cat` field. Old files with `cat:'original'` map to `'other'`.
+- **Per-section Add button** for uploading files to a specific category.
+- **Recordings section**: appears right after Slide, shows files matching `/recording/i` in name.
+  Has inline Record button.
+- **Get Stems button**: accepts multiple audio files or a zip. Auto-categorizes by filename
+  using `stemCatFromName()` (detects vocals/drums/bass/guitar/keys/metronome/click/tick).
+  Files renamed to `[song title] [Instrument] stem.[ext]`.
+  - Re-uploading stems **replaces** existing files for the same category (old storage deleted).
+  - Progress bar shown during upload with count (e.g. "3 / 6 stems").
+  - Success/failure message on completion.
+  - Progress bar also visible on the song row when Files modal is closed (background upload).
+  - Button color: green (all 6 core stems), yellow (partial), red (none).
+- **Practice button** in Files modal header — jumps to stem player. Colored same as stem availability.
+- Files can be played (audio player modal), opened, downloaded, or deleted with confirmation.
+- **Known bug fixed (v0.159)**: `e.target.files` is a FileList reference — must copy to array
+  via `Array.from()` before clearing input with `e.target.value=''`, or the FileList empties.
+
+### Stem player (Practice mode)
+- **Multi-stem audio player** with per-channel controls for: Vocals, Drums, Bass, Keys, Guitar,
+  Other, Metronome (7 channels total).
+- Uses plain `Audio` elements with `.volume` for mixing — **NOT Web Audio API** due to Firebase
+  Storage CORS restrictions (`fetch()` and `crossOrigin='anonymous'` both fail on storage URLs).
+- **Per-channel controls**: volume slider (0–100%), Mute (M) button, Solo (S) button.
+- **Metronome channel**: separate from Other, detected from filename (metronome/click/tick).
+  Muted by default. Not counted toward stem availability (6 core stems = green).
+  Greyed out when no file loaded.
+- **Transport**: PLAY (green), PAUSE/STOP (tap=pause/resume, double-tap=reset to beginning),
+  CONFIG (toggle channel visibility).
+- **Scrub bar**: draggable green thumb (18px) with time display.
+- **Config persistence**: volume/mute/solo saved per song in `localStorage` key `sc_stem_[songId]`.
+  Reset button in header restores defaults.
+- **Slide overlay**: when Practice is opened, the song's slide file (if any) displays above the
+  stem player on the remaining screen space (z-index 59, player at 60).
+- **Wide-screen layout** (≥900px): channels display horizontally left-to-right instead of
+  vertically stacked. Config panel defaults to open on wide screens.
+- **CSS**: `.stem-player` fixed at bottom, centered with `max-width:540px` (mobile) / `1200px` (wide).
+- `stemLoadUrl(catId, url, name)` — loads audio into a channel.
+- `stemApplyMix(chans)` — applies mute/solo/volume to all Audio elements.
+
+### Instrument system
+- 5 core instruments: keys (#8B7CF6), drums (#F2545B), guitar (#F4A93C), bass (#2DD4BF),
+  vocals (#EC6FA9).
+- **"Other" instrument**: treble clef icon, light blue (#5BC0EB). Available in instrument picker
+  and prompt. When selected, Files modal shows the Other file section.
+- **Metronome**: metronome icon (triangular body with pendulum), grey (#948FA6).
+- `ICON` object holds SVG paths for each instrument (including `other` and `metronome`).
+- `InstrIcon({id, size})` — renders plain SVG icon.
+- `InstrBadge({id, size})` — renders icon in colored circle with inner ring.
+- `InstrPicker` — dropdown in header for choosing your instrument. Includes Other option.
+- `MY_INSTR` stored in `localStorage` key `sc_instr`. Set via `setMyInstr(id)`.
+- Instrument prompt appears on first use (after changelog dismiss) if no instrument set.
 
 ### Rehearsals tab
 - Upcoming/done split. Scheduling with date-time, duration, location, notes.
@@ -188,7 +241,7 @@ Currently logged events:
   `sc_board` can be set to `"staging"` from a previous staging.html visit and persist into index.html.
   Add `last!=='staging'` guard in the localStorage restore.
 - Don't introduce `localStorage`/`sessionStorage` assumptions that break first-load; existing keys are
-  `sc_name`, `sc_board`, `sc_seen_activity`.
+  `sc_name`, `sc_board`, `sc_seen_activity`, `sc_instr`, `sc_seen_ver`, `sc_stem_[songId]`.
 - Adding a new persisted field: update `defaultState()` AND `migrate()`.
 - **scrollIntoView with sticky header**: `scrollIntoView({block:'start'})` positions the element at
   the very top of the viewport, hidden behind the sticky `.topbar`. Use manual `window.scrollTo()`
@@ -201,10 +254,21 @@ Currently logged events:
 - **Rehearsal duration on old data**: rehearsals created before the duration feature (v0.118) have no
   `duration` field, so `fmtTimeRange` shows only the start time. Users must edit the rehearsal to add
   a duration for the range to display.
-- **File categories on old data**: files created before v0.121 have no `cat` field. The modal defaults
-  to showing them under "Original" via `(f.cat||'original')`.
+- **File categories on old data**: files created before v0.121 have no `cat` field. Mapped via
+  `(f.cat==='original'?'other':f.cat||'other')`.
 - **CSS class `.song` has `scroll-margin-top:70px`** as a fallback for non-JS scroll scenarios.
   The actual scroll uses JS-measured offset.
+- **Firebase Storage CORS**: `fetch(url)` and `crossOrigin='anonymous'` on Audio elements both fail
+  on Firebase Storage URLs. Use plain `Audio` elements with `.volume` property for mixing instead
+  of Web Audio API (`createMediaElementSource` / `GainNode`).
+- **FileList is a live reference**: setting `input.value=''` empties the FileList. Always copy to
+  array with `Array.from(e.target.files)` before clearing the input.
+- **Block-scoped `const` in migrate()**: Babel Standalone may handle block-scoped variables in
+  `migrate()` differently at runtime. Use IIFE pattern instead of bare `{ const x = ... }` blocks.
+- **Stem deduplication**: `migrate()` deduplicates stem files per category (keeps first, removes
+  extras). `uploadStemFile` replaces existing stem for same category on re-upload.
+- **Metronome migration**: `migrate()` moves files with metronome/click/tick in name from
+  `cat:'other'` to `cat:'metronome'`.
 
 ## Key helper functions
 
@@ -221,14 +285,18 @@ Currently logged events:
 - `logAct(state, text)` — appends to activity feed, capped at 40.
 - `useWide(bp)` — responsive hook using `matchMedia`, default breakpoint 900px.
 - `uid()` — short random ID generator.
+- `stemCatFromName(name)` — detects instrument from filename (vocals/drums/bass/guitar/keys/metronome/other).
+- `stemRename(origName, cat)` — renames stem file to `[song title] [Instrument] stem.[ext]`.
 
 ## CSS architecture
 
 - CSS variables defined in `:root` — colors, fonts. Instrument colors: keys=#8B7CF6, drums=#F2545B,
-  guitar=#F4A93C, bass=#2DD4BF, vocals=#EC6FA9.
+  guitar=#F4A93C, bass=#2DD4BF, vocals=#EC6FA9. Other=#5BC0EB. Metronome=#948FA6.
 - Font stack: Space Grotesk (display), Space Mono (mono), Inter (body), Heebo (Hebrew).
 - Modals/overlays use fixed positioning with backdrop blur/dim. Bottom-sheet pattern:
   `border-radius:18px 18px 0 0`, `max-height:82vh`, safe-area padding.
 - `.topbar` is `position:sticky;top:0;z-index:20` with gradient fade-out at bottom.
 - `.tabbar` is `position:fixed;bottom:0` with backdrop blur.
 - Tab icons use inline SVGs with `ICONS` path map.
+- `.stem-player` is `position:fixed;bottom:0` with z-index 60. Practice slide overlay at z-index 59.
+- Wide-screen stem channels use flexbox horizontal layout via `@media(min-width:900px)`.
