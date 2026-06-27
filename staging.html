@@ -350,7 +350,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.183';
+const VERSION='0.184';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -2689,8 +2689,10 @@ function Shows({state,update,pickShow,selectedShowId}){
   const [artTarget,setArtTarget]=useState(null);
   const [busy,setBusy]=useState('');
   const [artEditId,setArtEditId]=useState(null);
-  const startAdd=()=>{ setName(''); setDate(''); setVenue(''); setAdding(true); };
-  const saveNew=()=>{ const id=uid(); update(s=>{ s.shows.push({id,name:name.trim()||'Untitled show',date,venue,art:'',setlist:[],readinessHistory:[]}); logAct(s,'created show "'+(name.trim()||'Untitled show')+'"'); return s; }); pickShow(id); setAdding(false); };
+  const [cloneFrom,setCloneFrom]=useState(null);
+  const startAdd=()=>{ setCloneFrom(null); setName(''); setDate(''); setVenue(''); setAdding(true); };
+  const startClone=(sh)=>{ setCloneFrom(sh); setName(sh.name); setDate(''); setVenue(sh.venue); setAdding(true); };
+  const saveNew=()=>{ const id=uid(); const setlist=cloneFrom?(cloneFrom.setlist||[]).map(e=>({songId:e.songId,parts:freshParts(),guests:[],encore:e.encore,excluded:e.excluded})):[]; update(s=>{ s.shows.push({id,name:name.trim()||'Untitled show',date,venue,art:cloneFrom?cloneFrom.art:'',setlist,readinessHistory:[]}); logAct(s,'created show "'+(name.trim()||'Untitled show')+'"'); return s; }); pickShow(id); setAdding(false); setCloneFrom(null); };
   const startEdit=(sh)=>{ setEditId(sh.id); setName(sh.name); setDate(sh.date); setVenue(sh.venue); };
   const saveEdit=()=>{ update(s=>{ const sh=getShow(s,editId); if(sh){ sh.name=name.trim()||'Untitled show'; sh.date=date; sh.venue=venue; } return s; }); setEditId(null); };
   const delShow=(id)=>{ deleteStoragePath(showArtPath(id)); update(s=>{ s.shows=s.shows.filter(x=>x.id!==id); s.rehearsals=s.rehearsals.filter(r=>r.showId!==id); logAct(s,'deleted a show'); return s; }); setConfirmDel(null); if(selectedShowId===id && state.shows.length>1){ const next=state.shows.find(x=>x.id!==id); if(next) pickShow(next.id); } };
@@ -2757,6 +2759,7 @@ function Shows({state,update,pickShow,selectedShowId}){
               </div>
               <div style={{display:'flex',gap:8,marginTop:12,flexWrap:'wrap'}}>
                 <button className="btn ghost sm" onClick={()=>startEdit(sh)}>Edit</button>
+                <button className="btn ghost sm" onClick={()=>startClone(sh)}>Clone</button>
                 <button className="btn ghost sm" onClick={()=>setManageSongs(sh.id)}>Manage songs</button>
                 {confirmDel===sh.id
                   ? <React.Fragment><button className="btn danger sm" onClick={()=>delShow(sh.id)}>Confirm delete?</button><button className="btn ghost sm" onClick={()=>setConfirmDel(null)}>Cancel</button></React.Fragment>
@@ -2773,13 +2776,14 @@ function Shows({state,update,pickShow,selectedShowId}){
         );
       })}
       {adding ? <div className="card">
+        {cloneFrom && <div style={{fontSize:12,color:'var(--muted)',marginBottom:8}}>Cloning from <strong>{cloneFrom.name||'Untitled show'}</strong> · {(cloneFrom.setlist||[]).length} songs</div>}
         <label className="fl">Show name</label>
         <input className="inp" dir="auto" value={name} onChange={e=>setName(e.target.value)} placeholder="Summer showcase" autoFocus/>
         <div className="fieldgrid">
           <div className="full"><label className="fl">Date</label><input className="inp" type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
           <div className="full"><label className="fl">Venue</label><input className="inp" dir="auto" value={venue} onChange={e=>setVenue(e.target.value)} placeholder="The Basement"/></div>
         </div>
-        <div className="btnrow"><button className="btn ghost" onClick={()=>setAdding(false)}>Cancel</button><button className="btn" onClick={saveNew}>Create show</button></div>
+        <div className="btnrow"><button className="btn ghost" onClick={()=>{setAdding(false);setCloneFrom(null);}}>Cancel</button><button className="btn" onClick={saveNew}>{cloneFrom?'Clone show':'Create show'}</button></div>
       </div>
       : <div className="add-bar"><button className="btn ghost" onClick={startAdd}>+ New show</button></div>}
       {cropSrc && <CropModal src={cropSrc} onCancel={()=>{setCropSrc(null);setArtTarget(null);}} onDone={onCropDone}/>}
