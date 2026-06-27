@@ -350,7 +350,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.180';
+const VERSION='0.181';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -865,6 +865,7 @@ function App(){
   const [bands,setBands]=useState(null);
   const [showChangelog,setShowChangelog]=useState(()=>{try{const seen=localStorage.getItem('sc_seen_ver');return seen!==VERSION;}catch(_){return false;}});
   const [showInstrPrompt,setShowInstrPrompt]=useState(false);
+  const [promptInstrs,setPromptInstrs]=useState([]);
   const inited=useRef(false);
   const startBoardFn=useRef(null);
 
@@ -948,7 +949,6 @@ function App(){
   if(phase==='loading'|| !state) return <AuthShell><Loading label={user?'Loading board…':'Starting…'}/></AuthShell>;
 
   const dismissChangelog=()=>{try{localStorage.setItem('sc_seen_ver',VERSION);}catch(_){} setShowChangelog(false); if(!MY_INSTRS.length) setShowInstrPrompt(true);};
-  const [promptInstrs,setPromptInstrs]=useState([]);
   const togglePromptInstr=(id)=>setPromptInstrs(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]);
   const confirmInstrPrompt=()=>{setMyInstrs(promptInstrs); setShowInstrPrompt(false);};
   const curShowId = (state.shows||[]).find(x=>x.id===selectedShowId) ? selectedShowId : ((state.shows||[])[0]||{}).id||'';
