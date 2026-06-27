@@ -350,7 +350,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.177';
+const VERSION='0.178';
 const CHANGELOG={
   '0.176':[
     'Multiple shows per band — each with its own setlist, readiness tracking, and guests',
@@ -979,7 +979,7 @@ function App(){
       </div>}
       {tab==='stage'    && <Stage state={state} go={setTab} update={update} goSong={id=>{setTab('setlist');setGoSongId(id);}} showId={curShowId} pickShow={pickShow} />}
       {tab==='setlist'  && <Setlist state={state} update={update} goSongId={goSongId} clearGoSong={()=>setGoSongId(null)} showId={curShowId} pickShow={pickShow} />}
-      {tab==='rehearse' && <Rehearsals state={state} update={update} showId={curShowId} pickShow={pickShow} />}
+      {tab==='rehearse' && <Rehearsals state={state} update={update} />}
       {tab==='shows'    && <Shows state={state} update={update} pickShow={pickShow} selectedShowId={curShowId} />}
       {tab==='album'    && <Album state={state} update={update} />}
       {tab==='setup'    && <Setup state={state} update={update} user={user} onSignOut={signOut} onSwitch={switchBoard} />}
@@ -2300,22 +2300,18 @@ function FocusPicker({songs,learn,practice,onToggle,onSetOther}){
   );
 }
 
-function Rehearsals({state,update,showId,pickShow}){
+function Rehearsals({state,update}){
   const [adding,setAdding]=useState(false);
-  const show=getShow(state,showId);
-  const showEntries=show?(show.setlist||[]).filter(e=>!e.excluded):[];
-  const showSongs=showEntries.map(e=>state.songs.find(x=>x.id===e.songId)).filter(Boolean);
-  const list=[...state.rehearsals].filter(r=>r.showId===showId).sort((a,b)=>new Date(a.date||0)-new Date(b.date||0));
+  const list=[...state.rehearsals].sort((a,b)=>new Date(a.date||0)-new Date(b.date||0));
   const upcoming=list.filter(r=>!r.done);
   const past=list.filter(r=>r.done);
-  const add=(items)=>{ update(s=>{ (Array.isArray(items)?items:[items]).forEach(data=>{ s.rehearsals.push({id:uid(),done:false,attendance:{},focusLearn:[],focusPractice:[],proposal:null,showId:showId,...data}); logAct(s,'scheduled a rehearsal'+(data.date?' for '+fmtDate(data.date):'')); }); return s;}); setAdding(false); };
+  const add=(items)=>{ update(s=>{ (Array.isArray(items)?items:[items]).forEach(data=>{ s.rehearsals.push({id:uid(),done:false,attendance:{},focusLearn:[],focusPractice:[],proposal:null,...data}); logAct(s,'scheduled a rehearsal'+(data.date?' for '+fmtDate(data.date):'')); }); return s;}); setAdding(false); };
   const patch=(id,fn)=> update(s=>{ const r=s.rehearsals.find(x=>x.id===id); fn(r); return s;});
   const del=(id)=> update(s=>{ const r=s.rehearsals.find(x=>x.id===id); logAct(s,'removed the '+(r&&r.date?fmtDate(r.date)+' ':'')+'rehearsal'); s.rehearsals=s.rehearsals.filter(x=>x.id!==id); return s;});
   return (
     <div className="page">
-      <ShowSelector shows={state.shows} showId={showId} pickShow={pickShow}/>
       <div className="section-h">Upcoming · {upcoming.length}</div>
-      {adding && <RehForm songs={showSongs} members={state.members} guestList={allShowGuests(state.shows)} onSave={add} onCancel={()=>setAdding(false)}/>}
+      {adding && <RehForm shows={state.shows} songs={state.songs} members={state.members} guestList={allShowGuests(state.shows)} onSave={add} onCancel={()=>setAdding(false)}/>}
       {upcoming.length===0 && !adding &&
         <div className="empty"><div className="big">No rehearsals booked</div><div className="sm">Schedule a session and pick which songs to focus on.</div></div>}
       {upcoming.map(r=><RehCard key={r.id} r={r} state={state} patch={patch} del={del} update={update}/>)}
@@ -2339,8 +2335,9 @@ function RehCard({r,state,patch,del,update}){
   const [editDate,setEditDate]=useState('');
   const [editDur,setEditDur]=useState('');
   const [editLoc,setEditLoc]=useState('');
-  const openEdit=()=>{ setEditDate(r.date||''); setEditDur(r.duration||'2'); setEditLoc(r.location||''); setEditing(true); };
-  const saveEdit=()=>{ patch(r.id,x=>{x.date=editDate;x.duration=editDur;x.location=editLoc;}); setEditing(false); };
+  const [editShow,setEditShow]=useState('');
+  const openEdit=()=>{ setEditDate(r.date||''); setEditDur(r.duration||'2'); setEditLoc(r.location||''); setEditShow(r.showId||''); setEditing(true); };
+  const saveEdit=()=>{ patch(r.id,x=>{x.date=editDate;x.duration=editDur;x.location=editLoc;x.showId=editShow;}); setEditing(false); };
   const onToggle=(group,id)=>patch(r.id,x=>{ const res=toggleFocus(x.focusLearn||[],x.focusPractice||[],group,id); x.focusLearn=res.learn; x.focusPractice=res.practice; });
   const onSetOther=(group,text)=>patch(r.id,x=>{ const key=group==='practice'?'focusPractice':'focusLearn'; x[key]=setOtherInArr(x[key]||[],text); });
   const startMarkDone=()=>{ const focus=[...(r.focusPractice||[]),...(r.focusLearn||[])].filter(x=>!isOther(x)); setCovered([...focus]); setMarkingDone(true); };
@@ -2353,6 +2350,7 @@ function RehCard({r,state,patch,del,update}){
           <div className="reh-date">{r.date?fmtDate(r.date):'No date set'}</div>
           <div className="reh-time">{r.date?fmtTimeRange(r.date,r.duration):''}</div>
           {r.location && <div className="reh-loc" dir="auto">{r.location}</div>}
+          {rehShow && <div style={{fontSize:11,color:'var(--muted)',marginTop:2}} dir="auto">{rehShow.name||'Untitled show'}</div>}
           {live && <div className="reh-live-dot"><i></i>Rehearsal in progress</div>}
         </div>
         <div style={{display:'flex',gap:6}}>
@@ -2370,6 +2368,10 @@ function RehCard({r,state,patch,del,update}){
               {['0.5','1','1.5','2','2.5','3','3.5','4','5','6'].map(v=><option key={v} value={v}>{fmtDuration(v)}</option>)}
             </select></div>
           <div><label className="fl">Location</label><input className="inp" dir="auto" value={editLoc} onChange={e=>setEditLoc(e.target.value)} placeholder="Studio, garage…"/></div>
+          {state.shows.length>1 && <div className="full"><label className="fl">Show</label>
+            <select className="inp" value={editShow} onChange={e=>setEditShow(e.target.value)}>
+              {state.shows.map(sh=><option key={sh.id} value={sh.id}>{sh.name||'Untitled show'}</option>)}
+            </select></div>}
         </div>
         <div className="btnrow" style={{marginTop:8}}>
           <button className="btn ghost sm" onClick={()=>setEditing(false)}>Cancel</button>
@@ -2414,9 +2416,13 @@ function RehCard({r,state,patch,del,update}){
     </div>
   );
 }
-function RehForm({songs,members,guestList:guestListProp,onSave,onCancel}){
+function RehForm({shows,songs,members,guestList:guestListProp,onSave,onCancel}){
   const guestList=guestListProp||[];
-  const [f,setF]=useState({date:'',duration:'2',location:'',notes:'',learn:[],practice:[],repeat:'none',occurrences:4,attendance:Object.fromEntries(INSTR.map(i=>[i.id,true]))});
+  const defaultShow=((shows||[])[0]||{}).id||'';
+  const [f,setF]=useState({date:'',duration:'2',location:'',notes:'',learn:[],practice:[],repeat:'none',occurrences:4,showId:defaultShow,attendance:Object.fromEntries(INSTR.map(i=>[i.id,true]))});
+  const selShow=getShow({shows:shows||[]},f.showId);
+  const showEntries=selShow?(selShow.setlist||[]).filter(e=>!e.excluded):[];
+  const showSongs=showEntries.map(e=>(songs||[]).find(x=>x.id===e.songId)).filter(Boolean);
   const onToggleFocus=(group,id)=>setF(p=>{const res=toggleFocus(p.learn,p.practice,group,id);return {...p,learn:res.learn,practice:res.practice};});
   const onSetOther=(group,text)=>setF(p=>({...p,[group]:setOtherInArr(p[group],text)}));
   const toggleAtt=id=>setF(p=>({...p,attendance:{...p.attendance,[id]:!p.attendance[id]}}));
@@ -2424,9 +2430,15 @@ function RehForm({songs,members,guestList:guestListProp,onSave,onCancel}){
   const buildDates=()=>{ if(!f.date) return ['']; if(f.repeat==='none') return [f.date]; const step=f.repeat==='biweekly'?14:7; const out=[]; for(let k=0;k<occ;k++) out.push(addDaysLocal(f.date,step*k)); return out; };
   const dates=buildDates();
   const multi = f.repeat!=='none' && !!f.date;
-  const save=()=>{ const items=dates.map(dt=>({date:dt,duration:f.duration,location:f.location,notes:f.notes,focusLearn:[...f.learn],focusPractice:[...f.practice],attendance:{...f.attendance}})); onSave(items); };
+  const save=()=>{ const items=dates.map(dt=>({date:dt,duration:f.duration,location:f.location,notes:f.notes,showId:f.showId,focusLearn:[...f.learn],focusPractice:[...f.practice],attendance:{...f.attendance}})); onSave(items); };
   return (
     <div className="card" style={{marginTop:14,borderColor:'var(--line-2)'}}>
+      {(shows||[]).length>1 && <React.Fragment>
+        <label className="fl">Show</label>
+        <select className="inp" value={f.showId} onChange={e=>setF({...f,showId:e.target.value,learn:[],practice:[]})}>
+          {(shows||[]).map(sh=><option key={sh.id} value={sh.id}>{sh.name||'Untitled show'}</option>)}
+        </select>
+      </React.Fragment>}
       <div className="fieldgrid">
         <div className="full"><label className="fl">Date & time</label><input className="inp" type="datetime-local" value={f.date} onChange={e=>setF({...f,date:e.target.value})}/></div>
         <div><label className="fl">Duration</label>
@@ -2449,7 +2461,7 @@ function RehForm({songs,members,guestList:guestListProp,onSave,onCancel}){
         </div>}
       {f.repeat!=='none' && !f.date && <div className="filterhint">Pick a date & time above to schedule the series.</div>}
       {multi && <div className="filterhint">Creates {dates.length} rehearsals · {fmtDate(dates[0])} → {fmtDate(dates[dates.length-1])}</div>}
-      <FocusPicker songs={songs} learn={f.learn} practice={f.practice} onToggle={onToggleFocus} onSetOther={onSetOther}/>
+      <FocusPicker songs={showSongs} learn={f.learn} practice={f.practice} onToggle={onToggleFocus} onSetOther={onSetOther}/>
       <label className="fl" style={{marginTop:14}}>Who's coming</label>
       <div className="chip-pick">
         {INSTR.map(i=><button key={i.id} className={'chip'+(f.attendance[i.id]?' on':'')} style={f.attendance[i.id]?{background:i.color,borderColor:i.color,display:'inline-flex',alignItems:'center',gap:6}:{display:'inline-flex',alignItems:'center',gap:6}} onClick={()=>toggleAtt(i.id)}><InstrIcon id={i.id} size={14}/>{members[i.id].name}</button>)}
