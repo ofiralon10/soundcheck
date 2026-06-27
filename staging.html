@@ -350,8 +350,12 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.179';
+const VERSION='0.180';
 const CHANGELOG={
+  '0.180':[
+    'Show art: tap cover to reveal change/remove buttons (like songs)',
+    'Song cover art grid on each show card',
+  ],
   '0.179':[
     'Pick multiple instruments (e.g. Vocals + Keys) — files and controls shown for all',
   ],
@@ -453,9 +457,9 @@ function InstrBadge({id,size=28}){
   );
 }
 const DISC=(<g><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></g>);
-function CoverThumb({src,size=46,radius=10}){
-  if(src) return <img src={src} alt="" className="cover-thumb" style={{width:size,height:size,borderRadius:radius}}/>;
-  return <div className="cover-thumb ph" style={{width:size,height:size,borderRadius:radius}}>
+function CoverThumb({src,size=46,radius=10,title}){
+  if(src) return <img src={src} alt="" title={title||''} className="cover-thumb" style={{width:size,height:size,borderRadius:radius}}/>;
+  return <div className="cover-thumb ph" title={title||''} style={{width:size,height:size,borderRadius:radius}}>
     <svg width={Math.round(size*0.46)} height={Math.round(size*0.46)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">{DISC}</svg>
   </div>;
 }
@@ -2683,6 +2687,7 @@ function Shows({state,update,pickShow,selectedShowId}){
   const [cropSrc,setCropSrc]=useState(null);
   const [artTarget,setArtTarget]=useState(null);
   const [busy,setBusy]=useState('');
+  const [artEditId,setArtEditId]=useState(null);
   const startAdd=()=>{ setName(''); setDate(''); setVenue(''); setAdding(true); };
   const saveNew=()=>{ const id=uid(); update(s=>{ s.shows.push({id,name:name.trim()||'Untitled show',date,venue,art:'',setlist:[],readinessHistory:[]}); logAct(s,'created show "'+(name.trim()||'Untitled show')+'"'); return s; }); pickShow(id); setAdding(false); };
   const startEdit=(sh)=>{ setEditId(sh.id); setName(sh.name); setDate(sh.date); setVenue(sh.venue); };
@@ -2724,7 +2729,7 @@ function Shows({state,update,pickShow,selectedShowId}){
             </React.Fragment> : <React.Fragment>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10}}>
                 <div style={{display:'flex',gap:12,alignItems:'flex-start',minWidth:0,flex:1}}>
-                  <CoverThumb src={sh.art} size={52} radius={12}/>
+                  <span style={{cursor:'pointer'}} onClick={()=>setArtEditId(v=>v===sh.id?null:sh.id)}><CoverThumb src={sh.art} size={52} radius={12}/></span>
                   <div style={{minWidth:0,flex:1}}>
                     <div style={{fontFamily:'var(--display)',fontWeight:700,fontSize:16,lineHeight:1.2}} dir="auto">{sh.name||'Untitled show'}</div>
                     <div style={{fontSize:12,color:'var(--muted)',marginTop:3}}>{[sh.venue,sh.date?fmtDateY(sh.date):null].filter(Boolean).join(' · ')||'No date or venue set'}</div>
@@ -2735,6 +2740,13 @@ function Shows({state,update,pickShow,selectedShowId}){
                   <div className="lbl">{d>1?'days':d===1?'day':d===0?'today':'past'}</div>
                 </div>}
               </div>
+              {artEditId===sh.id && <div className="cover-edit">
+                <CoverThumb src={sh.art} size={88} radius={12}/>
+                <div className="cover-btns">
+                  <label className="btn ghost sm" style={{cursor:'pointer',opacity:busy===sh.id?0.5:1}}><input type="file" accept="image/*" hidden disabled={busy===sh.id} onChange={e=>onArtPick(e,sh.id)}/>{busy===sh.id?'Uploading…':(sh.art?'Change art':'Add art')}</label>
+                  {sh.art && busy!==sh.id && <button className="btn danger sm" onClick={()=>clearArt(sh.id)}>Remove art</button>}
+                </div>
+              </div>}
               <div style={{display:'flex',alignItems:'center',gap:12,marginTop:10}}>
                 <div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:700,color:meterColor(overall)}}>{Math.round(overall*100)}%</div>
                 <div style={{flex:1,height:6,borderRadius:4,background:'var(--surface-3)',overflow:'hidden'}}>
@@ -2744,13 +2756,17 @@ function Shows({state,update,pickShow,selectedShowId}){
               </div>
               <div style={{display:'flex',gap:8,marginTop:12,flexWrap:'wrap'}}>
                 <button className="btn ghost sm" onClick={()=>startEdit(sh)}>Edit</button>
-                <label className="btn ghost sm" style={{cursor:'pointer',opacity:busy===sh.id?0.5:1}}><input type="file" accept="image/*" hidden disabled={busy===sh.id} onChange={e=>onArtPick(e,sh.id)}/>{busy===sh.id?'Uploading…':(sh.art?'Change art':'Add art')}</label>
-                {sh.art && busy!==sh.id && <button className="btn ghost sm" onClick={()=>clearArt(sh.id)}>Remove art</button>}
                 <button className="btn ghost sm" onClick={()=>setManageSongs(sh.id)}>Manage songs</button>
                 {confirmDel===sh.id
-                  ? <React.Fragment><button className="btn danger sm" onClick={()=>delShow(sh.id)}>Confirm</button><button className="btn ghost sm" onClick={()=>setConfirmDel(null)}>Cancel</button></React.Fragment>
-                  : <button className="btn danger sm" onClick={()=>setConfirmDel(sh.id)}>Delete</button>}
+                  ? <React.Fragment><button className="btn danger sm" onClick={()=>delShow(sh.id)}>Confirm delete?</button><button className="btn ghost sm" onClick={()=>setConfirmDel(null)}>Cancel</button></React.Fragment>
+                  : <button className="btn ghost sm" style={{color:'var(--drums)'}} onClick={()=>setConfirmDel(sh.id)}>Delete</button>}
               </div>
+              {activeEntries.length>0 && (()=>{
+                const songCovers=activeEntries.map(e=>{const song=state.songs.find(x=>x.id===e.songId); return song?{id:e.songId,cover:song.cover,title:song.title}:null;}).filter(Boolean);
+                return songCovers.length>0 && <div style={{display:'flex',gap:4,marginTop:12,flexWrap:'wrap'}}>
+                  {songCovers.map(sc=><CoverThumb key={sc.id} src={sc.cover} size={36} radius={6} title={sc.title}/>)}
+                </div>;
+              })()}
             </React.Fragment>}
           </div>
         );
