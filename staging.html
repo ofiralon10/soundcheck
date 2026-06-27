@@ -350,8 +350,11 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.178';
+const VERSION='0.179';
 const CHANGELOG={
+  '0.179':[
+    'Pick multiple instruments (e.g. Vocals + Keys) — files and controls shown for all',
+  ],
   '0.176':[
     'Multiple shows per band — each with its own setlist, readiness tracking, and guests',
     'New Shows tab to create, edit, and manage shows',
@@ -674,8 +677,9 @@ function timeAgo(iso){ if(!iso) return ''; const s=Math.floor((Date.now()-new Da
   if(m<60) return m+'m ago'; const h=Math.floor(m/60); if(h<24) return h+'h ago'; return Math.floor(h/24)+'d ago'; }
 let MY_NAME=''; try{ MY_NAME=localStorage.getItem('sc_name')||''; }catch(_){}
 function setMyName(n){ MY_NAME=(n||'').trim(); try{ localStorage.setItem('sc_name',MY_NAME); }catch(_){} }
-let MY_INSTR=''; try{ MY_INSTR=localStorage.getItem('sc_instr')||''; }catch(_){}
-function setMyInstr(id){ MY_INSTR=id||''; try{ localStorage.setItem('sc_instr',MY_INSTR); }catch(_){} }
+let MY_INSTRS=[]; try{ const raw=localStorage.getItem('sc_instr')||''; MY_INSTRS=raw?raw.split(',').filter(Boolean):[]; }catch(_){}
+function setMyInstrs(ids){ MY_INSTRS=Array.isArray(ids)?ids.filter(Boolean):[]; try{ localStorage.setItem('sc_instr',MY_INSTRS.join(',')); }catch(_){} }
+function isMyInstr(id){ return MY_INSTRS.length===0||MY_INSTRS.includes(id); }
 function getSavedShow(){ try{ return localStorage.getItem('sc_show')||''; }catch(_){ return ''; } }
 function setSavedShow(id){ try{ localStorage.setItem('sc_show',id||''); }catch(_){} }
 function actorName(){ return MY_NAME || 'Someone'; }
@@ -939,8 +943,10 @@ function App(){
   if(phase==='pickband') return <AuthShell><BandPicker bands={bands} onPick={pickBoard} user={user} onSignOut={signOut}/></AuthShell>;
   if(phase==='loading'|| !state) return <AuthShell><Loading label={user?'Loading board…':'Starting…'}/></AuthShell>;
 
-  const dismissChangelog=()=>{try{localStorage.setItem('sc_seen_ver',VERSION);}catch(_){} setShowChangelog(false); if(!MY_INSTR) setShowInstrPrompt(true);};
-  const pickInstrPrompt=(id)=>{setMyInstr(id); setShowInstrPrompt(false);};
+  const dismissChangelog=()=>{try{localStorage.setItem('sc_seen_ver',VERSION);}catch(_){} setShowChangelog(false); if(!MY_INSTRS.length) setShowInstrPrompt(true);};
+  const [promptInstrs,setPromptInstrs]=useState([]);
+  const togglePromptInstr=(id)=>setPromptInstrs(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]);
+  const confirmInstrPrompt=()=>{setMyInstrs(promptInstrs); setShowInstrPrompt(false);};
   const curShowId = (state.shows||[]).find(x=>x.id===selectedShowId) ? selectedShowId : ((state.shows||[])[0]||{}).id||'';
   if(curShowId && curShowId!==selectedShowId){ pickShow(curShowId); }
 
@@ -962,19 +968,20 @@ function App(){
       {showInstrPrompt && <div className="files-modal" onClick={e=>{if(e.target===e.currentTarget) setShowInstrPrompt(false);}}>
         <div className="files-panel" style={{maxWidth:340,textAlign:'center'}}>
           <div className="modaltitle" style={{margin:'0 0 6px'}}>What do you play?</div>
-          <div style={{fontSize:13,color:'var(--muted)',marginBottom:16}}>Pick your instrument so we can personalize your view.</div>
+          <div style={{fontSize:13,color:'var(--muted)',marginBottom:16}}>Pick one or more instruments to personalize your view.</div>
           <div style={{display:'flex',justifyContent:'center',gap:8,flexWrap:'wrap'}}>
             {INSTR.map(i=>(
-              <button key={i.id} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,padding:'10px 12px',borderRadius:12,border:'1.5px solid var(--line-2)',background:'transparent',cursor:'pointer',minWidth:56}} onClick={()=>pickInstrPrompt(i.id)}>
+              <button key={i.id} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,padding:'10px 12px',borderRadius:12,border:'1.5px solid '+(promptInstrs.includes(i.id)?i.color:'var(--line-2)'),background:promptInstrs.includes(i.id)?i.color+'22':'transparent',cursor:'pointer',minWidth:56}} onClick={()=>togglePromptInstr(i.id)}>
                 <InstrBadge id={i.id} size={32}/>
                 <span style={{fontSize:11,color:'var(--text)'}}>{i.label}</span>
               </button>
             ))}
-            <button style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,padding:'10px 12px',borderRadius:12,border:'1.5px solid var(--line-2)',background:'transparent',cursor:'pointer',minWidth:56}} onClick={()=>pickInstrPrompt('other')}>
+            <button style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,padding:'10px 12px',borderRadius:12,border:'1.5px solid '+(promptInstrs.includes('other')?'#5BC0EB':'var(--line-2)'),background:promptInstrs.includes('other')?'#5BC0EB22':'transparent',cursor:'pointer',minWidth:56}} onClick={()=>togglePromptInstr('other')}>
               <InstrBadge id="other" size={32}/>
               <span style={{fontSize:11,color:'var(--text)'}}>Other</span>
             </button>
           </div>
+          <button className="btn" style={{marginTop:16}} disabled={!promptInstrs.length} onClick={confirmInstrPrompt}>Done</button>
         </div>
       </div>}
       {tab==='stage'    && <Stage state={state} go={setTab} update={update} goSong={id=>{setTab('setlist');setGoSongId(id);}} showId={curShowId} pickShow={pickShow} />}
@@ -1119,21 +1126,22 @@ function RehearsalProposal({r,update}){
 }
 
 function InstrPicker(){
-  const [myI,setMyI]=useState(MY_INSTR);
+  const [myI,setMyI]=useState(MY_INSTRS);
   const [open,setOpen]=useState(false);
-  const pick=(id)=>{ setMyInstr(id); setMyI(id); setOpen(false); };
+  const toggle=(id)=>{ const next=myI.includes(id)?myI.filter(x=>x!==id):[...myI,id]; setMyInstrs(next); setMyI(next); };
+  const firstColor=myI.length?(INSTR.find(x=>x.id===myI[0])||{}).color||'#948FA6':null;
   return (
     <div style={{position:'relative'}}>
-      <button className="bell" onClick={()=>setOpen(v=>!v)} aria-label="My instrument" title="My instrument" style={myI?{color:(INSTR.find(x=>x.id===myI)||{}).color||'#948FA6'}:null}>
-        {myI ? <InstrIcon id={myI} size={18}/> : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/></svg>}
+      <button className="bell" onClick={()=>setOpen(v=>!v)} aria-label="My instruments" title="My instruments" style={firstColor?{color:firstColor}:null}>
+        {myI.length ? <span style={{display:'flex',gap:2}}>{myI.slice(0,2).map(id=><InstrIcon key={id} id={id} size={18}/>)}{myI.length>2&&<span style={{fontSize:10,fontWeight:700}}>+{myI.length-2}</span>}</span> : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/></svg>}
       </button>
       {open && <div style={{position:'absolute',top:'100%',right:0,marginTop:6,background:'var(--surface)',border:'1px solid var(--line-2)',borderRadius:12,padding:6,display:'flex',gap:4,zIndex:30,boxShadow:'0 8px 24px rgba(0,0,0,.4)'}}>
         {INSTR.map(i=>(
-          <button key={i.id} style={{padding:4,borderRadius:8,border:'none',background:myI===i.id?'var(--surface-3)':'transparent',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>pick(i.id)} title={i.label}>
+          <button key={i.id} style={{padding:4,borderRadius:8,border:'none',background:myI.includes(i.id)?'var(--surface-3)':'transparent',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>toggle(i.id)} title={i.label}>
             <InstrBadge id={i.id} size={28}/>
           </button>
         ))}
-        <button style={{padding:4,borderRadius:8,border:'none',background:myI==='other'?'var(--surface-3)':'transparent',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>pick('other')} title="Other">
+        <button style={{padding:4,borderRadius:8,border:'none',background:myI.includes('other')?'var(--surface-3)':'transparent',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>toggle('other')} title="Other">
           <InstrBadge id="other" size={28}/>
         </button>
       </div>}
@@ -1301,7 +1309,7 @@ function Stage({state,go,update,goSong,showId,pickShow}){
         <div className="section-h">Player readiness</div>
         <div className="card">
           {perMember.map(m=>(
-            <div className="strip" key={m.id} style={{cursor:(!MY_INSTR||m.id===MY_INSTR)?'pointer':'default',opacity:MY_INSTR&&m.id!==MY_INSTR?.5:1}} onClick={()=>{if(!MY_INSTR||m.id===MY_INSTR) setBulkInstr(m.id);}}>
+            <div className="strip" key={m.id} style={{cursor:isMyInstr(m.id)?'pointer':'default',opacity:!isMyInstr(m.id)?.5:1}} onClick={()=>{if(isMyInstr(m.id)) setBulkInstr(m.id);}}>
               <InstrBadge id={m.id} size={30}/>
               <div className="track"><div className="fill" style={{width:(m.pct*100)+'%',background:m.color}}/></div>
               <div className="val">{Math.round(m.pct*100)}%</div>
@@ -1923,8 +1931,6 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const setVol=(v)=>{ setPlayerVol(v); if(audioRef.current) audioRef.current.volume=v; };
   const closePlayer=()=>{ if(audioRef.current){ audioRef.current.pause(); audioRef.current=null; } clearInterval(playerTimerRef.current); setPlayerFile(null); setPlayerPlaying(false); setPlayerTime(0); };
 
-  const myInstr=MY_INSTR||'keys';
-
   const fileCount=s.files?s.files.length:0;
   const rehCount=rehearsals?songRehCount(s.id,rehearsals):0;
   const meta=[s.artist, s.songKey&&('Key '+s.songKey), s.tempo&&(s.tempo+' bpm'), s.duration&&(s.duration+'m')].filter(Boolean);
@@ -1974,9 +1980,9 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             </div>
           </div>}
           {INSTR.map(i=>(
-            <div className="editrow" key={i.id} style={MY_INSTR&&i.id!==MY_INSTR?{opacity:.5}:null}>
+            <div className="editrow" key={i.id} style={!isMyInstr(i.id)?{opacity:.5}:null}>
               <InstrBadge id={i.id} size={26}/>
-              <StatusPills value={s.parts[i.id]} color={i.color} onPick={(!MY_INSTR||i.id===MY_INSTR)?v=>setRole(i.id,v):null}/>
+              <StatusPills value={s.parts[i.id]} color={i.color} onPick={isMyInstr(i.id)?v=>setRole(i.id,v):null}/>
             </div>
           ))}
           <label className="fl" style={{marginTop:15}}>Guests ({s.guests.length}/{MAX_GUESTS})</label>
@@ -2014,7 +2020,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
               <button className="xbtn" onClick={()=>{setFilesOpen(false);setPickCat(null);setLinkMode(false);}}>×</button>
             </div>
           </div>
-          {FILE_CATS.filter(cat=>cat.id==='slide'||(MY_INSTR&&cat.instr===MY_INSTR)||(!MY_INSTR&&cat.instr)||(cat.id==='other'&&MY_INSTR==='other')||(!MY_INSTR&&cat.id==='other')).map(cat=>{
+          {FILE_CATS.filter(cat=>cat.id==='slide'||(MY_INSTRS.length>0&&cat.instr&&MY_INSTRS.includes(cat.instr))||(MY_INSTRS.length===0&&cat.instr)||(cat.id==='other'&&MY_INSTRS.includes('other'))||(MY_INSTRS.length===0&&cat.id==='other')).map(cat=>{
             const catFiles=(s.files||[]).filter(f=>!f.stem&&(f.cat==='original'?'other':f.cat||'other')===cat.id);
             const recFiles=cat.id==='slide'?(s.files||[]).filter(f=>f.name&&/recording/i.test(f.name)):null;
             return (<React.Fragment key={cat.id}>
