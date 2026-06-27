@@ -104,6 +104,16 @@
   .songnum{font-family:var(--mono);font-size:11px;font-weight:700;color:var(--muted);min-width:22px;height:22px;text-align:center;flex-shrink:0;font-variant-numeric:tabular-nums;background:var(--surface-2);border-radius:6px;display:flex;align-items:center;justify-content:center;line-height:1}
   .songnum.enc{color:var(--guitar);background:rgba(244,169,60,.12)}
   .enc-pill{display:inline-flex;align-items:center;font-family:var(--mono);font-size:8.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--guitar);border:1px solid rgba(244,169,60,.5);border-radius:5px;padding:2px 5px;flex-shrink:0}
+  .show-sel-bar{position:relative;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+  .show-sel-btn{display:flex;align-items:center;gap:8px;width:100%;padding:10px 14px;background:var(--surface);border:2px solid rgba(255,255,255,.18);border-radius:12px;cursor:pointer;text-align:left;color:var(--text)}
+  .show-sel-name{font-family:var(--display);font-weight:600;font-size:14px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .show-sel-date{font-family:var(--mono);font-size:11px;color:var(--muted);flex-shrink:0}
+  .show-sel-arrow{font-size:10px;color:var(--muted);flex-shrink:0}
+  .show-sel-empty{font-size:13px;color:var(--muted);padding:8px 0}
+  .show-sel-drop{position:absolute;top:100%;left:0;right:0;margin-top:4px;background:var(--surface);border:1px solid var(--line-2);border-radius:12px;padding:4px;z-index:25;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+  .show-sel-item{display:flex;align-items:center;gap:8px;width:100%;padding:10px 12px;border-radius:8px;cursor:pointer;text-align:left;font-family:var(--display);font-weight:600;font-size:13px;color:var(--text);background:none;border:none}
+  .show-sel-item:hover{background:var(--surface-2)}
+  .show-sel-item.on{background:var(--surface-3)}
   .setlist-ctrl{background:var(--surface);border:2px solid rgba(255,255,255,.18);border-radius:14px;padding:12px 14px;margin-bottom:10px}
   .setlist-tools{display:flex;align-items:center;gap:9px;margin:2px 0;flex-wrap:wrap}
   .reorder-btn{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:var(--surface-2);border:1px solid var(--line-2);border-radius:8px;padding:8px 12px;display:inline-flex;align-items:center;gap:6px}
@@ -340,8 +350,14 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.175';
+const VERSION='0.176';
 const CHANGELOG={
+  '0.176':[
+    'Multiple shows per band — each with its own setlist, readiness tracking, and guests',
+    'New Shows tab to create, edit, and manage shows',
+    'Show selector in Stage, Setlist, and Rehearsals tabs',
+    'Rehearsals tagged to a specific show',
+  ],
   '0.168':[
     'Metronome — separate stem channel, muted by default, auto-detected from filename',
     '"Other" instrument option with treble clef icon',
@@ -505,16 +521,18 @@ async function completeLinkIfPresent(){
 }
 let latestStamp=null, saveT=null, pendingDoc=null;
 function saveState(s){
-  const activeSongs=s.songs.filter(x=>!x.excluded);
-  if(activeSongs.length>0){
-    const overall=activeSongs.reduce((a,x)=>a+songReadiness(x),0)/activeSongs.length;
-    const today=new Date().toISOString().slice(0,10);
-    if(!Array.isArray(s.readinessHistory)) s.readinessHistory=[];
-    const last=s.readinessHistory[s.readinessHistory.length-1];
-    if(!last||last.d!==today) s.readinessHistory.push({d:today,v:Math.round(overall*100)});
-    else last.v=Math.round(overall*100);
-    if(s.readinessHistory.length>365) s.readinessHistory=s.readinessHistory.slice(-365);
-  }
+  const today=new Date().toISOString().slice(0,10);
+  (s.shows||[]).forEach(show=>{
+    const active=(show.setlist||[]).filter(e=>!e.excluded);
+    if(active.length>0){
+      const overall=active.reduce((a,e)=>a+entryReadiness(e),0)/active.length;
+      if(!Array.isArray(show.readinessHistory)) show.readinessHistory=[];
+      const last=show.readinessHistory[show.readinessHistory.length-1];
+      if(!last||last.d!==today) show.readinessHistory.push({d:today,v:Math.round(overall*100)});
+      else last.v=Math.round(overall*100);
+      if(show.readinessHistory.length>365) show.readinessHistory=show.readinessHistory.slice(-365);
+    }
+  });
   pendingDoc=s;
   clearTimeout(saveT);
   saveT=setTimeout(()=>{ if(pendingDoc && boardRef){ try{ boardRef.set(JSON.parse(JSON.stringify(pendingDoc))); }catch(e){} } }, 400);
@@ -558,7 +576,7 @@ async function deleteBandDoc(){ if(boardRef) await boardRef.delete(); }
 /* ---------- state helpers ---------- */
 function defaultState(){
   const members={}; INSTR.forEach(i=>members[i.id]={name:i.label});
-  return {band:'', bandArt:'', concert:{name:'',date:'',venue:''}, members, songs:[], rehearsals:[], activity:[], access:{}, memberEmails:[], readinessHistory:[], album:[], _rev:0, _updatedAt:null};
+  return {band:'', bandArt:'', shows:[], members, songs:[], rehearsals:[], activity:[], access:{}, memberEmails:[], album:[], _rev:0, _updatedAt:null};
 }
 function freshParts(){ const p={}; INSTR.forEach(i=>p[i.id]='todo'); return p; }
 function deriveFromStatus(st){ return st==='ready'?'ready' : (st==='practicing')?'practicing' : (st==='rehearsing'||st==='learning')?'learning' : 'todo'; }
@@ -566,26 +584,57 @@ function migrate(s){
   if(typeof s._rev!=='number') s._rev=0;
   if(s.band===undefined) s.band='';
   if(s.bandArt===undefined) s.bandArt='';
-  if(!s.concert) s.concert={name:'',date:'',venue:''};
   if(!s.members){ s.members={}; INSTR.forEach(i=>s.members[i.id]={name:i.label}); }
   if(!Array.isArray(s.songs)) s.songs=[];
   s.songs.forEach(song=>{
-    if(!song.parts || typeof song.parts!=='object') song.parts={};
-    INSTR.forEach(i=>{ if(!VALID(song.parts[i.id])) song.parts[i.id]=deriveFromStatus(song.status); });
-    delete song.status;
     if(song.cover===undefined) song.cover='';
-    if(!Array.isArray(song.guests)) song.guests=[];
-    song.guests = song.guests.slice(0,MAX_GUESTS).map(g=>({ id:g.id||uid(), name:g.name||'', status:VALID(g.status)?g.status:'todo' }));
     if(!Array.isArray(song.files)) song.files=[];
     song.files.forEach(f=>{if(f.cat==='other'&&f.stem&&/metronome|click|tick/i.test(f.name||'')) f.cat='metronome';});
     song.files=(function(ff){var seen={};return ff.filter(function(f){if(!f.stem)return true;var k=f.cat||'other';if(seen[k])return false;seen[k]=true;return true;});})(song.files);
-    if(typeof song.excluded!=='boolean') song.excluded=false;
-    if(typeof song.encore!=='boolean') song.encore=false;
-    if(song.excluded) song.encore=false;
   });
-  { const act=s.songs.filter(x=>!x.excluded), exc=s.songs.filter(x=>x.excluded); s.songs=[...act,...exc]; }
+  if(!Array.isArray(s.shows)) s.shows=[];
+  /* migrate from old single-concert model */
+  if(s.concert || (s.songs.length>0 && s.shows.length===0 && s.songs.some(function(x){return x.parts;}))) {
+    (function(){
+      var migratedId=uid();
+      var c=s.concert||{name:'',date:'',venue:''};
+      var setlist=[];
+      var act=s.songs.filter(function(x){return !x.excluded;});
+      var exc=s.songs.filter(function(x){return x.excluded;});
+      act.concat(exc).forEach(function(song){
+        var parts=song.parts||{}; INSTR.forEach(function(i){if(!VALID(parts[i.id])) parts[i.id]=deriveFromStatus(song.status);});
+        var guests=Array.isArray(song.guests)?song.guests.slice(0,MAX_GUESTS).map(function(g){return{id:g.id||uid(),name:g.name||'',status:VALID(g.status)?g.status:'todo'};}):[];
+        setlist.push({songId:song.id,parts:parts,guests:guests,encore:!!song.encore,excluded:!!song.excluded});
+      });
+      var rh=Array.isArray(s.readinessHistory)?s.readinessHistory:[];
+      s.shows.push({id:migratedId,name:c.name||'',date:c.date||'',venue:c.venue||'',setlist:setlist,readinessHistory:rh});
+      s.rehearsals.forEach(function(r){if(!r.showId) r.showId=migratedId;});
+      s.songs.forEach(function(song){delete song.parts;delete song.guests;delete song.encore;delete song.excluded;delete song.status;});
+    })();
+    delete s.concert;
+    delete s.readinessHistory;
+  }
+  s.shows.forEach(function(show){
+    if(!show.id) show.id=uid();
+    if(show.name===undefined) show.name='';
+    if(show.date===undefined) show.date='';
+    if(show.venue===undefined) show.venue='';
+    if(!Array.isArray(show.setlist)) show.setlist=[];
+    show.setlist.forEach(function(entry){
+      if(!entry.parts||typeof entry.parts!=='object') entry.parts={};
+      INSTR.forEach(function(i){if(!VALID(entry.parts[i.id])) entry.parts[i.id]='todo';});
+      if(!Array.isArray(entry.guests)) entry.guests=[];
+      entry.guests=entry.guests.slice(0,MAX_GUESTS).map(function(g){return{id:g.id||uid(),name:g.name||'',status:VALID(g.status)?g.status:'todo'};});
+      if(typeof entry.encore!=='boolean') entry.encore=false;
+      if(typeof entry.excluded!=='boolean') entry.excluded=false;
+      if(entry.excluded) entry.encore=false;
+    });
+    show.setlist=(function(sl){var act=sl.filter(function(e){return !e.excluded;}),exc=sl.filter(function(e){return e.excluded;});return act.concat(exc);})( show.setlist);
+    if(!Array.isArray(show.readinessHistory)) show.readinessHistory=[];
+  });
   if(!Array.isArray(s.rehearsals)) s.rehearsals=[];
   s.rehearsals.forEach(r=>{
+    if(!r.showId) r.showId=s.shows.length>0?s.shows[0].id:'';
     if(!Array.isArray(r.focusLearn)) r.focusLearn=[];
     if(!Array.isArray(r.focusPractice)) r.focusPractice = Array.isArray(r.focus)? r.focus.slice() : [];
     delete r.focus;
@@ -596,11 +645,6 @@ function migrate(s){
     if(r.duration===undefined) r.duration='';
   });
   if(!Array.isArray(s.activity)) s.activity=[];
-  if(!Array.isArray(s.readinessHistory)) s.readinessHistory=[];
-  if(s.readinessHistory.length===0 && s.songs.length>0){
-    const act=s.songs.filter(x=>!x.excluded);
-    if(act.length>0){ const v=Math.round(act.reduce((a,x)=>a+songReadiness(x),0)/act.length*100); s.readinessHistory.push({d:new Date().toISOString().slice(0,10),v}); }
-  }
   if(!Array.isArray(s.album)) s.album=[];
   if(!s.access||typeof s.access!=='object') s.access={};
   if(!Array.isArray(s.memberEmails)) s.memberEmails=[];
@@ -628,6 +672,8 @@ let MY_NAME=''; try{ MY_NAME=localStorage.getItem('sc_name')||''; }catch(_){}
 function setMyName(n){ MY_NAME=(n||'').trim(); try{ localStorage.setItem('sc_name',MY_NAME); }catch(_){} }
 let MY_INSTR=''; try{ MY_INSTR=localStorage.getItem('sc_instr')||''; }catch(_){}
 function setMyInstr(id){ MY_INSTR=id||''; try{ localStorage.setItem('sc_instr',MY_INSTR); }catch(_){} }
+function getSavedShow(){ try{ return localStorage.getItem('sc_show')||''; }catch(_){ return ''; } }
+function setSavedShow(id){ try{ localStorage.setItem('sc_show',id||''); }catch(_){} }
 function actorName(){ return MY_NAME || 'Someone'; }
 function logAct(s,text){
   if(!Array.isArray(s.activity)) s.activity=[];
@@ -639,10 +685,13 @@ function addDaysLocal(localStr, days){
   const p=n=>String(n).padStart(2,'0');
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
-function performers(song){ return [ ...INSTR.map(i=>({status:song.parts[i.id]})), ...song.guests.map(g=>({status:g.status})) ]; }
-const songReadiness = song => { const p=performers(song); return p.length? p.reduce((a,x)=>a+score(x.status),0)/p.length : 0; };
-function allGuests(songs){ const seen=[]; songs.forEach(s=>s.guests.forEach(g=>{ const n=(g.name||'').trim(); if(n && !seen.includes(n)) seen.push(n); })); return seen; }
-function songRehCount(songId,rehearsals){ return rehearsals.filter(r=>r.done && r.coveredSongs && r.coveredSongs.includes(songId)).length; }
+function entryPerformers(entry){ return [ ...INSTR.map(i=>({status:(entry.parts||{})[i.id]||'todo'})), ...(entry.guests||[]).map(g=>({status:g.status})) ]; }
+const entryReadiness = entry => { const p=entryPerformers(entry); return p.length? p.reduce((a,x)=>a+score(x.status),0)/p.length : 0; };
+function allShowGuests(shows){ const seen=[]; (shows||[]).forEach(sh=>(sh.setlist||[]).forEach(e=>(e.guests||[]).forEach(g=>{ const n=(g.name||'').trim(); if(n && !seen.includes(n)) seen.push(n); }))); return seen; }
+function songRehCount(songId,rehearsals,showId){ return rehearsals.filter(r=>r.done && r.coveredSongs && r.coveredSongs.includes(songId) && (!showId || r.showId===showId)).length; }
+function getShow(state,showId){ return (state.shows||[]).find(x=>x.id===showId)||null; }
+function getEntry(show,songId){ return show?(show.setlist||[]).find(e=>e.songId===songId):null; }
+function mergeSongEntry(song,entry){ return song&&entry?Object.assign({},song,{parts:entry.parts,guests:entry.guests,encore:entry.encore,excluded:entry.excluded}):song; }
 function isRehLive(r){ if(!r||!r.date||r.done) return false; const start=new Date(r.date).getTime(); const dur=parseFloat(r.duration)||2; const end=start+dur*3600000; const now=Date.now(); return now>=start && now<=end; }
 function fmtDuration(d){ if(!d) return ''; const h=Math.floor(d); const m=Math.round((d-h)*60); return h+'h'+(m?(' '+m+'m'):''); }
 function fmtTimeRange(iso,dur){ if(!iso) return ''; const s=new Date(iso); const st=fmtTime(iso); if(!dur) return st; const e=new Date(s.getTime()+dur*3600000); const et=e.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); return st+'–'+et; }
@@ -795,6 +844,8 @@ function App(){
   const [user,setUser]=useState(null);
   const [state,setState]=useState(null);
   const [tab,setTab]=useState('stage');
+  const [selectedShowId,setSelectedShowId]=useState(getSavedShow);
+  const pickShow=(id)=>{ setSelectedShowId(id); setSavedShow(id); };
   const [goSongId,setGoSongId]=useState(null);
   const [authMsg,setAuthMsg]=useState('');
   const [sending,setSending]=useState(false);
@@ -886,10 +937,12 @@ function App(){
 
   const dismissChangelog=()=>{try{localStorage.setItem('sc_seen_ver',VERSION);}catch(_){} setShowChangelog(false); if(!MY_INSTR) setShowInstrPrompt(true);};
   const pickInstrPrompt=(id)=>{setMyInstr(id); setShowInstrPrompt(false);};
+  const curShowId = (state.shows||[]).find(x=>x.id===selectedShowId) ? selectedShowId : ((state.shows||[])[0]||{}).id||'';
+  if(curShowId && curShowId!==selectedShowId){ pickShow(curShowId); }
 
   return (
     <React.Fragment>
-      <Header state={state} update={update} onSwitch={switchBoard} />
+      <Header state={state} update={update} onSwitch={switchBoard} showId={curShowId} />
       {isStaging() && <div className="stagingbar">STAGING COPY · changes here don't touch the live board</div>}
       {showChangelog && <div className="files-modal" onClick={e=>{if(e.target===e.currentTarget) dismissChangelog();}}>
         <div className="files-panel" style={{maxWidth:380,textAlign:'center'}}>
@@ -920,9 +973,10 @@ function App(){
           </div>
         </div>
       </div>}
-      {tab==='stage'    && <Stage state={state} go={setTab} update={update} goSong={id=>{setTab('setlist');setGoSongId(id);}} />}
-      {tab==='setlist'  && <Setlist state={state} update={update} goSongId={goSongId} clearGoSong={()=>setGoSongId(null)} />}
-      {tab==='rehearse' && <Rehearsals state={state} update={update} />}
+      {tab==='stage'    && <Stage state={state} go={setTab} update={update} goSong={id=>{setTab('setlist');setGoSongId(id);}} showId={curShowId} pickShow={pickShow} />}
+      {tab==='setlist'  && <Setlist state={state} update={update} goSongId={goSongId} clearGoSong={()=>setGoSongId(null)} showId={curShowId} pickShow={pickShow} />}
+      {tab==='rehearse' && <Rehearsals state={state} update={update} showId={curShowId} pickShow={pickShow} />}
+      {tab==='shows'    && <Shows state={state} update={update} pickShow={pickShow} selectedShowId={curShowId} />}
       {tab==='album'    && <Album state={state} update={update} />}
       {tab==='setup'    && <Setup state={state} update={update} user={user} onSignOut={signOut} onSwitch={switchBoard} />}
       <TabBar tab={tab} setTab={setTab} />
@@ -1082,9 +1136,10 @@ function InstrPicker(){
     </div>
   );
 }
-function Header({state,update,onSwitch}){
-  const d = daysUntil(state.concert.date);
-  const sub = [state.concert.name, state.concert.venue, state.concert.date?fmtDate(state.concert.date):null].filter(Boolean).join(' · ') || 'Set up your show in Setup';
+function Header({state,update,onSwitch,showId}){
+  const show = getShow(state,showId);
+  const d = show ? daysUntil(show.date) : null;
+  const sub = show ? [show.name, show.venue, show.date?fmtDate(show.date):null].filter(Boolean).join(' · ') || 'Set up your show in Shows' : 'Create a show in the Shows tab';
   return (
     <div className="topbar">
       <div className="topline">
@@ -1112,6 +1167,30 @@ function Header({state,update,onSwitch}){
             <div className="lbl">{d>1?'days to go':d===1?'day to go':d===0?'show day':'past'}</div>
           </div>}
       </div>
+    </div>
+  );
+}
+
+function ShowSelector({shows,showId,pickShow}){
+  const [open,setOpen]=useState(false);
+  const cur=(shows||[]).find(x=>x.id===showId);
+  if(!shows||shows.length===0) return <div className="show-sel-bar"><span className="show-sel-empty">No shows yet — create one in the Shows tab</span></div>;
+  if(shows.length===1) return <div className="show-sel-bar"><span className="show-sel-name" dir="auto">{cur?cur.name||'Untitled show':'—'}</span>{cur&&cur.date?<span className="show-sel-date">{fmtDate(cur.date)}</span>:null}</div>;
+  return (
+    <div className="show-sel-bar">
+      <button className="show-sel-btn" onClick={()=>setOpen(v=>!v)}>
+        <span className="show-sel-name" dir="auto">{cur?cur.name||'Untitled show':'Select show'}</span>
+        {cur&&cur.date?<span className="show-sel-date">{fmtDate(cur.date)}</span>:null}
+        <span className="show-sel-arrow">{open?'▲':'▼'}</span>
+      </button>
+      {open && <div className="show-sel-drop">
+        {shows.map(sh=>(
+          <button key={sh.id} className={'show-sel-item'+(sh.id===showId?' on':'')} onClick={()=>{pickShow(sh.id);setOpen(false);}}>
+            <span dir="auto">{sh.name||'Untitled show'}</span>
+            {sh.date && <span className="show-sel-date">{fmtDate(sh.date)}</span>}
+          </button>
+        ))}
+      </div>}
     </div>
   );
 }
@@ -1157,18 +1236,29 @@ function StatusPills({value,color,onPick}){
   );
 }
 
-function Stage({state,go,update,goSong}){
-  const songs=state.songs.filter(x=>!x.excluded);
-  const overall = songs.length? songs.reduce((a,s)=>a+songReadiness(s),0)/songs.length : 0;
+function Stage({state,go,update,goSong,showId,pickShow}){
+  const show = getShow(state,showId);
+  const entries = show ? (show.setlist||[]).filter(e=>!e.excluded) : [];
+  const songs = entries.map(e=>{ const s=state.songs.find(x=>x.id===e.songId); return s?mergeSongEntry(s,e):null; }).filter(Boolean);
+  const overall = songs.length? songs.reduce((a,s)=>a+entryReadiness(getEntry(show,s.id)),0)/songs.length : 0;
   const totalMin = songs.reduce((a,s)=>a+(Number(s.duration)||0),0);
-  const readyCount = songs.filter(s=>songReadiness(s)===1).length;
+  const readyCount = songs.filter(s=>entryReadiness(getEntry(show,s.id))===1).length;
   const perMember = INSTR.map(i=>({...i, pct: songs.length? songs.reduce((a,s)=>a+score(s.parts[i.id]),0)/songs.length : 0 }));
   const [bulkInstr,setBulkInstr]=useState(null);
-  const bulkSet=(songId,iid,v)=>update(st=>{const so=st.songs.find(x=>x.id===songId);so.parts[iid]=v;return st;});
-  const next = [...state.rehearsals].filter(r=>!r.done && r.date).sort((a,b)=>new Date(a.date)-new Date(b.date))[0];
+  const bulkSet=(songId,iid,v)=>update(st=>{const sh=getShow(st,showId);const entry=getEntry(sh,songId);if(entry) entry.parts[iid]=v;return st;});
+  const showRehearsals = state.rehearsals.filter(r=>r.showId===showId);
+  const next = [...showRehearsals].filter(r=>!r.done && r.date).sort((a,b)=>new Date(a.date)-new Date(b.date))[0];
   const plannedCount = next ? ((next.focusPractice||[]).length + (next.focusLearn||[]).length) : 0;
+  if(!show){
+    return <div className="page">
+      <div className="empty"><div className="big">No shows yet</div>
+        <div className="sm">Create your first show in the Shows tab, then add songs to its setlist.</div></div>
+      <button className="btn" onClick={()=>go('shows')}>Go to Shows</button>
+    </div>;
+  }
   if(songs.length===0 && !next){
     return <div className="page">
+      <ShowSelector shows={state.shows} showId={showId} pickShow={pickShow}/>
       <div className="empty"><div className="big">Nothing on the board yet</div>
         <div className="sm">Add your songs, then mark off each part — keys, drums, guitar, bass, vocals — as the band learns them.</div></div>
       <button className="btn" onClick={()=>go('setlist')}>Build the setlist</button>
@@ -1177,6 +1267,7 @@ function Stage({state,go,update,goSong}){
   const ticks=Array.from({length:20});
   return (
     <div className="page">
+      <ShowSelector shows={state.shows} showId={showId} pickShow={pickShow}/>
       {songs.length>0 && <React.Fragment>
         <div className="master">
           <div className="row"><div className="pct" style={{color:meterColor(overall)}}>{Math.round(overall*100)}%</div><div className="cap">show-ready</div></div>
@@ -1236,9 +1327,9 @@ function Stage({state,go,update,goSong}){
           </div>;
         })()}
       </React.Fragment>}
-      {(state.readinessHistory||[]).length>=1 && <React.Fragment>
+      {show && (show.readinessHistory||[]).length>=1 && <React.Fragment>
         <div className="section-h">Readiness over time</div>
-        <ReadinessGraph history={state.readinessHistory}/>
+        <ReadinessGraph history={show.readinessHistory}/>
       </React.Fragment>}
     </div>
   );
@@ -1271,61 +1362,86 @@ function ReadinessGraph({history}){
   );
 }
 
-function Setlist({state,update,goSongId,clearGoSong}){
+function Setlist({state,update,goSongId,clearGoSong,showId,pickShow}){
   const wide=useWide();
   const [open,setOpen]=useState(null);
   const [adding,setAdding]=useState(false);
+  const [addExisting,setAddExisting]=useState(false);
   const [roleFilter,setRoleFilter]=useState(null);
   const [reorder,setReorder]=useState(false);
   const [dragId,setDragId]=useState(null);
   const [dropPos,setDropPos]=useState(null);
-  const songs=state.songs;
-  const active=songs.filter(x=>!x.excluded);
-  const excluded=songs.filter(x=>x.excluded);
+  const show = getShow(state,showId);
+  const allEntries = show ? (show.setlist||[]) : [];
+  const activeEntries = allEntries.filter(e=>!e.excluded);
+  const excludedEntries = allEntries.filter(e=>e.excluded);
+  const active = activeEntries.map(e=>{ const s=state.songs.find(x=>x.id===e.songId); return s?mergeSongEntry(s,e):null; }).filter(Boolean);
+  const excluded = excludedEntries.map(e=>{ const s=state.songs.find(x=>x.id===e.songId); return s?mergeSongEntry(s,e):null; }).filter(Boolean);
   const numberOf={}; active.forEach((s,i)=>{ numberOf[s.id]=i+1; });
+  const showRehearsals = state.rehearsals.filter(r=>r.showId===showId);
   useEffect(()=>{ if(goSongId){ setOpen(goSongId); if(clearGoSong) clearGoSong(); } },[goSongId]);
 
   const addSong=(data)=>{ update(s=>{
-    const song={id:uid(),parts:freshParts(),guests:[],files:[],cover:'',notes:'',excluded:false,encore:false,...data};
-    const act=s.songs.filter(x=>!x.excluded), exc=s.songs.filter(x=>x.excluded);
-    s.songs=[...act,song,...exc]; logAct(s,'added "'+(song.title||'a song')+'"'); return s; }); setAdding(false); };
+    const song={id:uid(),files:[],cover:'',notes:'',...data};
+    s.songs.push(song);
+    const sh=getShow(s,showId);
+    if(sh){ sh.setlist.push({songId:song.id,parts:freshParts(),guests:[],encore:false,excluded:false}); }
+    logAct(s,'added "'+(song.title||'a song')+'"'); return s; }); setAdding(false); };
+
+  const addExistingSong=(songId)=>update(s=>{
+    const sh=getShow(s,showId); if(!sh) return s;
+    if(sh.setlist.some(e=>e.songId===songId)) return s;
+    const song=s.songs.find(x=>x.id===songId);
+    sh.setlist.push({songId,parts:freshParts(),guests:[],encore:false,excluded:false});
+    if(song) logAct(s,'added "'+song.title+'" to '+sh.name);
+    return s;
+  });
 
   const moveActive=(id,dir)=>update(s=>{
-    const act=s.songs.filter(x=>!x.excluded), exc=s.songs.filter(x=>x.excluded);
-    const i=act.findIndex(x=>x.id===id), j=i+dir;
+    const sh=getShow(s,showId); if(!sh) return s;
+    const act=sh.setlist.filter(e=>!e.excluded), exc=sh.setlist.filter(e=>e.excluded);
+    const i=act.findIndex(e=>e.songId===id), j=i+dir;
     if(i<0||j<0||j>=act.length) return s;
     const t=act[i]; act[i]=act[j]; act[j]=t;
-    s.songs=[...act,...exc]; return s; });
+    sh.setlist=[...act,...exc]; return s; });
 
   const moveTo=(fromId,targetId,before)=>update(s=>{
-    const act=s.songs.filter(x=>!x.excluded), exc=s.songs.filter(x=>x.excluded);
-    const fi=act.findIndex(x=>x.id===fromId); if(fi<0) return s;
+    const sh=getShow(s,showId); if(!sh) return s;
+    const act=sh.setlist.filter(e=>!e.excluded), exc=sh.setlist.filter(e=>e.excluded);
+    const fi=act.findIndex(e=>e.songId===fromId); if(fi<0) return s;
     const [item]=act.splice(fi,1);
-    let ti=act.findIndex(x=>x.id===targetId); if(ti<0) return s;
+    let ti=act.findIndex(e=>e.songId===targetId); if(ti<0) return s;
     if(!before) ti++;
     act.splice(ti,0,item);
-    s.songs=[...act,...exc]; return s; });
+    sh.setlist=[...act,...exc]; return s; });
   const onDragStart=(e,id)=>{ e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain',id); setDragId(id); };
   const onDragOver=(e,id)=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; const r=e.currentTarget.getBoundingClientRect(); const half=(e.clientY-r.top)<r.height/2?'top':'bottom'; setDropPos({id,half}); };
   const onDrop=(e)=>{ e.preventDefault(); if(dragId&&dropPos&&dragId!==dropPos.id) moveTo(dragId,dropPos.id,dropPos.half==='top'); setDragId(null); setDropPos(null); };
   const onDragEnd=()=>{ setDragId(null); setDropPos(null); };
 
   const excludeSong=(id)=>update(s=>{
-    const so=s.songs.find(x=>x.id===id); if(so){ so.excluded=true; so.encore=false; logAct(s,'took "'+so.title+'" out of the set'); }
-    const act=s.songs.filter(x=>!x.excluded), exc=s.songs.filter(x=>x.excluded);
-    s.songs=[...act,...exc]; return s; });
+    const sh=getShow(s,showId); if(!sh) return s;
+    const entry=getEntry(sh,id); if(entry){ entry.excluded=true; entry.encore=false; const song=s.songs.find(x=>x.id===id); logAct(s,'took "'+(song?song.title:'a song')+'" out of the set'); }
+    sh.setlist=(function(sl){var act=sl.filter(function(e){return !e.excluded;}),exc=sl.filter(function(e){return e.excluded;});return act.concat(exc);})(sh.setlist);
+    return s; });
 
   const includeSong=(id)=>update(s=>{
-    const so=s.songs.find(x=>x.id===id); if(!so) return s; so.excluded=false; logAct(s,'put "'+so.title+'" back in the set');
-    const others=s.songs.filter(x=>x.id!==id);
-    const act=others.filter(x=>!x.excluded), exc=others.filter(x=>x.excluded);
-    s.songs=[...act,so,...exc]; return s; });
+    const sh=getShow(s,showId); if(!sh) return s;
+    const entry=getEntry(sh,id); if(!entry) return s; entry.excluded=false;
+    const song=s.songs.find(x=>x.id===id); logAct(s,'put "'+(song?song.title:'a song')+'" back in the set');
+    const others=sh.setlist.filter(e=>e.songId!==id);
+    var act=others.filter(function(e){return !e.excluded;}), exc=others.filter(function(e){return e.excluded;});
+    sh.setlist=[...act,entry,...exc]; return s; });
 
-  const toggleEncore=(id)=>update(s=>{ const so=s.songs.find(x=>x.id===id); if(so&&!so.excluded){ so.encore=!so.encore; logAct(s,(so.encore?'marked':'unmarked')+' "'+so.title+'" as encore'); } return s; });
+  const toggleEncore=(id)=>update(s=>{
+    const sh=getShow(s,showId); if(!sh) return s;
+    const entry=getEntry(sh,id); if(entry&&!entry.excluded){ entry.encore=!entry.encore; const song=s.songs.find(x=>x.id===id); logAct(s,(entry.encore?'marked':'unmarked')+' "'+(song?song.title:'a song')+'" as encore'); }
+    return s; });
 
   const shown = roleFilter ? active.filter(s=>s.parts[roleFilter]!=='ready') : active;
   const roleLabel = roleFilter ? state.members[roleFilter].name : null;
-  const selSong = open ? songs.find(x=>x.id===open) : null;
+  const selSong = open ? active.concat(excluded).find(x=>x.id===open) : null;
+  const poolSongsNotInShow = state.songs.filter(ps=>!allEntries.some(e=>e.songId===ps.id));
 
   const toolbar = (active.length>0 && !adding) ? (
     <div className="setlist-ctrl">
@@ -1385,11 +1501,17 @@ function Setlist({state,update,goSongId,clearGoSong}){
       ))}
     </React.Fragment>);
 
-  const addBar = (!reorder && !adding && <div className="add-bar"><button className="btn ghost" onClick={()=>{setAdding(true);window.scrollTo({top:0,behavior:'smooth'});}}>+ Add song</button></div>);
+  const addBar = (!reorder && !adding && show && <div className="add-bar" style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+    <button className="btn ghost" onClick={()=>{setAdding(true);window.scrollTo({top:0,behavior:'smooth'});}}>+ New song</button>
+    {poolSongsNotInShow.length>0 && <button className="btn ghost" onClick={()=>setAddExisting(true)}>+ Add existing</button>}
+  </div>);
+
+  if(!show) return <div className="page"><ShowSelector shows={state.shows} showId={showId} pickShow={pickShow}/><div className="empty"><div className="big">No show selected</div><div className="sm">Create a show in the Shows tab first.</div></div></div>;
 
   if(wide && !reorder){
     return (
       <div className="page">
+        <ShowSelector shows={state.shows} showId={showId} pickShow={pickShow}/>
         <div className="section-h">Setlist · {active.length}{excluded.length?(' · '+excluded.length+' out'):''}</div>
         {adding && <SongForm onSave={addSong} onCancel={()=>setAdding(false)}/>}
         {toolbar}
@@ -1397,7 +1519,7 @@ function Setlist({state,update,goSongId,clearGoSong}){
         <div className="md">
           <div className="md-list">
             {shown.map(s=>(
-              <SongRow key={s.id} s={s} num={numberOf[s.id]} members={state.members} rehearsals={state.rehearsals}
+              <SongRow key={s.id} s={s} num={numberOf[s.id]} members={state.members} rehearsals={showRehearsals} showId={showId}
                 open={false} compact selected={open===s.id}
                 toggle={()=>setOpen(s.id)} update={update}
                 onExclude={()=>excludeSong(s.id)} onToggleEncore={()=>toggleEncore(s.id)}/>
@@ -1407,18 +1529,29 @@ function Setlist({state,update,goSongId,clearGoSong}){
           </div>
           <div className="md-detail">
             {selSong
-              ? <SongRow key={'detail-'+selSong.id} s={selSong} num={numberOf[selSong.id]} members={state.members} rehearsals={state.rehearsals}
+              ? <SongRow key={'detail-'+selSong.id} s={selSong} num={numberOf[selSong.id]} members={state.members} rehearsals={showRehearsals} showId={showId}
                   open={true} toggle={()=>{}} update={update}
                   onExclude={()=>{excludeSong(selSong.id);setOpen(null);}} onToggleEncore={()=>toggleEncore(selSong.id)}/>
               : <div className="md-empty">Select a song to view details</div>}
           </div>
         </div>
+        {addExisting && <div className="modalwrap" onClick={()=>setAddExisting(false)}>
+          <div className="modalcard" onClick={e=>e.stopPropagation()}>
+            <div className="modaltitle">Add existing song</div>
+            {poolSongsNotInShow.length===0?<div style={{fontSize:13,color:'var(--muted)'}}>All songs are already in this show.</div>
+              :<div className="checklist">{poolSongsNotInShow.map(ps=>(
+                <button key={ps.id} className="checkrow" style={{cursor:'pointer',width:'100%',textAlign:'left',background:'none',border:'none',color:'var(--text)',padding:'8px 4px',borderBottom:'1px solid var(--line)'}} onClick={()=>{addExistingSong(ps.id);}} dir="auto">{ps.title}{ps.artist?' · '+ps.artist:''}</button>
+              ))}</div>}
+            <div className="btnrow"><button className="btn" onClick={()=>setAddExisting(false)}>Done</button></div>
+          </div>
+        </div>}
       </div>
     );
   }
 
   return (
     <div className="page">
+      <ShowSelector shows={state.shows} showId={showId} pickShow={pickShow}/>
       <div className="section-h">Setlist · {active.length}{excluded.length?(' · '+excluded.length+' out'):''}</div>
       {adding && <SongForm onSave={addSong} onCancel={()=>setAdding(false)}/>}
       {toolbar}
@@ -1427,13 +1560,23 @@ function Setlist({state,update,goSongId,clearGoSong}){
       {reorder
         ? reorderList
         : shown.map(s=>(
-            <SongRow key={s.id} s={s} num={numberOf[s.id]} members={state.members} rehearsals={state.rehearsals}
+            <SongRow key={s.id} s={s} num={numberOf[s.id]} members={state.members} rehearsals={showRehearsals} showId={showId}
               open={open===s.id} scrollInto={open===s.id} toggle={()=>setOpen(open===s.id?null:s.id)} update={update}
               onExclude={()=>excludeSong(s.id)} onToggleEncore={()=>toggleEncore(s.id)}/>
           ))}
 
       {excludedSection}
       {addBar}
+      {addExisting && <div className="modalwrap" onClick={()=>setAddExisting(false)}>
+        <div className="modalcard" onClick={e=>e.stopPropagation()}>
+          <div className="modaltitle">Add existing song</div>
+          {poolSongsNotInShow.length===0?<div style={{fontSize:13,color:'var(--muted)'}}>All songs are already in this show.</div>
+            :<div className="checklist">{poolSongsNotInShow.map(ps=>(
+              <button key={ps.id} className="checkrow" style={{cursor:'pointer',width:'100%',textAlign:'left',background:'none',border:'none',color:'var(--text)',padding:'8px 4px',borderBottom:'1px solid var(--line)'}} onClick={()=>{addExistingSong(ps.id);}} dir="auto">{ps.title}{ps.artist?' · '+ps.artist:''}</button>
+            ))}</div>}
+          <div className="btnrow"><button className="btn" onClick={()=>setAddExisting(false)}>Done</button></div>
+        </div>
+      </div>}
       {active.length>0 && !reorder &&
         <div className="legend">
           <span><i className="lg" style={{borderColor:'var(--line-2)'}}></i>to do</span>
@@ -1445,8 +1588,8 @@ function Setlist({state,update,goSongId,clearGoSong}){
   );
 }
 
-function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,compact,selected,scrollInto,rehearsals}){
-  const r=songReadiness(s);
+function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,compact,selected,scrollInto,rehearsals,showId}){
+  const r=entryReadiness(s);
   const [linkMode,setLinkMode]=useState(false);
   const [linkUrl,setLinkUrl]=useState('');
   const [linkName,setLinkName]=useState('');
@@ -1576,13 +1719,13 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     if(audioRef.current) audioRef.current.pause();
   },[]);
   useEffect(()=>{ if(scrollInto&&rowRef.current){ const tb=document.querySelector('.topbar'); const off=tb?tb.getBoundingClientRect().height+6:80; const y=rowRef.current.getBoundingClientRect().top+window.scrollY-off; window.scrollTo({top:y,behavior:'smooth'}); } },[scrollInto]);
-  const setField=(k,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);so[k]=v;return st;});
-  const setRole=(iid,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);so.parts[iid]=v;return st;});
-  const addGuest=()=>update(st=>{const so=st.songs.find(x=>x.id===s.id);if(so.guests.length<MAX_GUESTS)so.guests.push({id:uid(),name:'',status:'todo'});return st;});
-  const setGuestName=(gid,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);const g=so.guests.find(x=>x.id===gid);if(g)g.name=v;return st;});
-  const setGuestStatus=(gid,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);const g=so.guests.find(x=>x.id===gid);if(g)g.status=v;return st;});
-  const delGuest=(gid)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);so.guests=so.guests.filter(x=>x.id!==gid);return st;});
-  const del=()=>{ deleteStoragePath(coverPath(s.id)); (s.files||[]).forEach(f=>{ if(f.kind==='upload'&&f.path) deleteStoragePath(f.path); }); update(st=>{st.songs=st.songs.filter(x=>x.id!==s.id); logAct(st,'removed "'+s.title+'"'); return st;}); };
+  const setField=(k,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);if(so) so[k]=v;return st;});
+  const setRole=(iid,v)=>update(st=>{const sh=getShow(st,showId);const entry=getEntry(sh,s.id);if(entry) entry.parts[iid]=v;return st;});
+  const addGuest=()=>update(st=>{const sh=getShow(st,showId);const entry=getEntry(sh,s.id);if(entry&&entry.guests.length<MAX_GUESTS) entry.guests.push({id:uid(),name:'',status:'todo'});return st;});
+  const setGuestName=(gid,v)=>update(st=>{const sh=getShow(st,showId);const entry=getEntry(sh,s.id);if(entry){const g=entry.guests.find(x=>x.id===gid);if(g)g.name=v;}return st;});
+  const setGuestStatus=(gid,v)=>update(st=>{const sh=getShow(st,showId);const entry=getEntry(sh,s.id);if(entry){const g=entry.guests.find(x=>x.id===gid);if(g)g.status=v;}return st;});
+  const delGuest=(gid)=>update(st=>{const sh=getShow(st,showId);const entry=getEntry(sh,s.id);if(entry) entry.guests=entry.guests.filter(x=>x.id!==gid);return st;});
+  const del=()=>{ deleteStoragePath(coverPath(s.id)); (s.files||[]).forEach(f=>{ if(f.kind==='upload'&&f.path) deleteStoragePath(f.path); }); update(st=>{st.songs=st.songs.filter(x=>x.id!==s.id);st.shows.forEach(sh=>{sh.setlist=sh.setlist.filter(e=>e.songId!==s.id);}); logAct(st,'removed "'+s.title+'"'); return st;}); };
 
   const onCoverPick=(e)=>{ setFileMsg(''); const file=e.target.files&&e.target.files[0]; e.target.value=''; if(!file) return;
     const rd=new FileReader(); rd.onload=()=>setCropSrc(rd.result); rd.onerror=()=>setFileMsg('Couldn’t read that image.'); rd.readAsDataURL(file); };
@@ -2153,18 +2296,22 @@ function FocusPicker({songs,learn,practice,onToggle,onSetOther}){
   );
 }
 
-function Rehearsals({state,update}){
+function Rehearsals({state,update,showId,pickShow}){
   const [adding,setAdding]=useState(false);
-  const list=[...state.rehearsals].sort((a,b)=>new Date(a.date||0)-new Date(b.date||0));
+  const show=getShow(state,showId);
+  const showEntries=show?(show.setlist||[]).filter(e=>!e.excluded):[];
+  const showSongs=showEntries.map(e=>state.songs.find(x=>x.id===e.songId)).filter(Boolean);
+  const list=[...state.rehearsals].filter(r=>r.showId===showId).sort((a,b)=>new Date(a.date||0)-new Date(b.date||0));
   const upcoming=list.filter(r=>!r.done);
   const past=list.filter(r=>r.done);
-  const add=(items)=>{ update(s=>{ (Array.isArray(items)?items:[items]).forEach(data=>{ s.rehearsals.push({id:uid(),done:false,attendance:{},focusLearn:[],focusPractice:[],proposal:null,...data}); logAct(s,'scheduled a rehearsal'+(data.date?' for '+fmtDate(data.date):'')); }); return s;}); setAdding(false); };
+  const add=(items)=>{ update(s=>{ (Array.isArray(items)?items:[items]).forEach(data=>{ s.rehearsals.push({id:uid(),done:false,attendance:{},focusLearn:[],focusPractice:[],proposal:null,showId:showId,...data}); logAct(s,'scheduled a rehearsal'+(data.date?' for '+fmtDate(data.date):'')); }); return s;}); setAdding(false); };
   const patch=(id,fn)=> update(s=>{ const r=s.rehearsals.find(x=>x.id===id); fn(r); return s;});
   const del=(id)=> update(s=>{ const r=s.rehearsals.find(x=>x.id===id); logAct(s,'removed the '+(r&&r.date?fmtDate(r.date)+' ':'')+'rehearsal'); s.rehearsals=s.rehearsals.filter(x=>x.id!==id); return s;});
   return (
     <div className="page">
+      <ShowSelector shows={state.shows} showId={showId} pickShow={pickShow}/>
       <div className="section-h">Upcoming · {upcoming.length}</div>
-      {adding && <RehForm songs={state.songs} members={state.members} onSave={add} onCancel={()=>setAdding(false)}/>}
+      {adding && <RehForm songs={showSongs} members={state.members} guestList={allShowGuests(state.shows)} onSave={add} onCancel={()=>setAdding(false)}/>}
       {upcoming.length===0 && !adding &&
         <div className="empty"><div className="big">No rehearsals booked</div><div className="sm">Schedule a session and pick which songs to focus on.</div></div>}
       {upcoming.map(r=><RehCard key={r.id} r={r} state={state} patch={patch} del={del} update={update}/>)}
@@ -2177,8 +2324,10 @@ function Rehearsals({state,update}){
   );
 }
 function RehCard({r,state,patch,del,update}){
-  const songs=state.songs;
-  const guestList=allGuests(songs);
+  const rehShow=getShow(state,r.showId);
+  const showEntries=rehShow?(rehShow.setlist||[]).filter(e=>!e.excluded):[];
+  const songs=showEntries.map(e=>state.songs.find(x=>x.id===e.songId)).filter(Boolean);
+  const guestList=allShowGuests(state.shows);
   const [editFocus,setEditFocus]=useState(false);
   const [markingDone,setMarkingDone]=useState(false);
   const [covered,setCovered]=useState([]);
@@ -2261,8 +2410,8 @@ function RehCard({r,state,patch,del,update}){
     </div>
   );
 }
-function RehForm({songs,members,onSave,onCancel}){
-  const guestList=allGuests(songs);
+function RehForm({songs,members,guestList:guestListProp,onSave,onCancel}){
+  const guestList=guestListProp||[];
   const [f,setF]=useState({date:'',duration:'2',location:'',notes:'',learn:[],practice:[],repeat:'none',occurrences:4,attendance:Object.fromEntries(INSTR.map(i=>[i.id,true]))});
   const onToggleFocus=(group,id)=>setF(p=>{const res=toggleFocus(p.learn,p.practice,group,id);return {...p,learn:res.learn,practice:res.practice};});
   const onSetOther=(group,text)=>setF(p=>({...p,[group]:setOtherInArr(p[group],text)}));
@@ -2313,7 +2462,6 @@ function RehForm({songs,members,onSave,onCancel}){
 }
 
 function Setup({state,update,user,onSignOut,onSwitch}){
-  const c=state.concert;
   const [cloneMsg,setCloneMsg]=useState('');
   const [myNameLocal,setMyNameLocal]=useState(MY_NAME);
   const saveName=(v)=>{ setMyNameLocal(v); setMyName(v); };
@@ -2324,7 +2472,6 @@ function Setup({state,update,user,onSignOut,onSwitch}){
   const [confirmReset,setConfirmReset]=useState(false);
   const [confirmDelete,setConfirmDelete]=useState(false);
   const delBand=async()=>{ try{ await deleteBandDoc(); if(onSwitch) onSwitch(); }catch(e){ alert('Failed: '+prettyErr(e)); setConfirmDelete(false); } };
-  const setC=(k,v)=>update(s=>{s.concert[k]=v;return s;});
   const setBand=(v)=>update(s=>{s.band=v;return s;});
   const setMember=(id,v)=>update(s=>{s.members[id].name=v;return s;});
   const reset=()=>{ update(()=>defaultState()); setConfirmReset(false); };
@@ -2358,16 +2505,6 @@ function Setup({state,update,user,onSignOut,onSwitch}){
         <label className="fl">Band name</label>
         <input className="inp" dir="auto" value={state.band} onChange={e=>setBand(e.target.value)} placeholder="Your band"/>
         <div className="banner" style={{marginTop:12}}>Set the band artwork by tapping the square next to the band name at the top of the app.</div>
-      </div>
-
-      <div className="section-h">The show</div>
-      <div className="card">
-        <label className="fl">Concert name</label>
-        <input className="inp" dir="auto" value={c.name} onChange={e=>setC('name',e.target.value)} placeholder="Summer showcase"/>
-        <div className="fieldgrid">
-          <div className="full"><label className="fl">Date</label><input className="inp" type="date" value={c.date} onChange={e=>setC('date',e.target.value)}/></div>
-          <div className="full"><label className="fl">Venue</label><input className="inp" dir="auto" value={c.venue} onChange={e=>setC('venue',e.target.value)} placeholder="The Basement"/></div>
-        </div>
       </div>
 
       <div className="section-h">Lineup</div>
@@ -2513,15 +2650,116 @@ function Album({state,update}){
     </div>
   );
 }
+function Shows({state,update,pickShow,selectedShowId}){
+  const [adding,setAdding]=useState(false);
+  const [editId,setEditId]=useState(null);
+  const [name,setName]=useState('');
+  const [date,setDate]=useState('');
+  const [venue,setVenue]=useState('');
+  const [confirmDel,setConfirmDel]=useState(null);
+  const [manageSongs,setManageSongs]=useState(null);
+  const startAdd=()=>{ setName(''); setDate(''); setVenue(''); setAdding(true); };
+  const saveNew=()=>{ const id=uid(); update(s=>{ s.shows.push({id,name:name.trim()||'Untitled show',date,venue,setlist:[],readinessHistory:[]}); logAct(s,'created show "'+(name.trim()||'Untitled show')+'"'); return s; }); pickShow(id); setAdding(false); };
+  const startEdit=(sh)=>{ setEditId(sh.id); setName(sh.name); setDate(sh.date); setVenue(sh.venue); };
+  const saveEdit=()=>{ update(s=>{ const sh=getShow(s,editId); if(sh){ sh.name=name.trim()||'Untitled show'; sh.date=date; sh.venue=venue; } return s; }); setEditId(null); };
+  const delShow=(id)=>{ update(s=>{ s.shows=s.shows.filter(x=>x.id!==id); s.rehearsals=s.rehearsals.filter(r=>r.showId!==id); logAct(s,'deleted a show'); return s; }); setConfirmDel(null); if(selectedShowId===id && state.shows.length>1){ const next=state.shows.find(x=>x.id!==id); if(next) pickShow(next.id); } };
+  const toggleSongInShow=(showId,songId)=>update(s=>{
+    const sh=getShow(s,showId); if(!sh) return s;
+    const idx=sh.setlist.findIndex(e=>e.songId===songId);
+    if(idx>=0){ sh.setlist.splice(idx,1); }
+    else{ sh.setlist.push({songId,parts:freshParts(),guests:[],encore:false,excluded:false}); }
+    return s;
+  });
+  return (
+    <div className="page">
+      <div className="section-h">Shows · {state.shows.length}</div>
+      {state.shows.length===0 && !adding &&
+        <div className="empty"><div className="big">No shows yet</div><div className="sm">Create a show to start building a setlist and tracking readiness.</div></div>}
+      {state.shows.map(sh=>{
+        const activeEntries=(sh.setlist||[]).filter(e=>!e.excluded);
+        const overall=activeEntries.length?activeEntries.reduce((a,e)=>a+entryReadiness(e),0)/activeEntries.length:0;
+        const d=daysUntil(sh.date);
+        const isEditing=editId===sh.id;
+        return (
+          <div className="card" key={sh.id} style={sh.id===selectedShowId?{borderColor:'var(--keys)'}:null}>
+            {isEditing ? <React.Fragment>
+              <label className="fl">Show name</label>
+              <input className="inp" dir="auto" value={name} onChange={e=>setName(e.target.value)} placeholder="Summer showcase" autoFocus/>
+              <div className="fieldgrid">
+                <div className="full"><label className="fl">Date</label><input className="inp" type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
+                <div className="full"><label className="fl">Venue</label><input className="inp" dir="auto" value={venue} onChange={e=>setVenue(e.target.value)} placeholder="The Basement"/></div>
+              </div>
+              <div className="btnrow"><button className="btn ghost" onClick={()=>setEditId(null)}>Cancel</button><button className="btn" onClick={saveEdit}>Save</button></div>
+            </React.Fragment> : <React.Fragment>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10}}>
+                <div style={{minWidth:0,flex:1}}>
+                  <div style={{fontFamily:'var(--display)',fontWeight:700,fontSize:16,lineHeight:1.2}} dir="auto">{sh.name||'Untitled show'}</div>
+                  <div style={{fontSize:12,color:'var(--muted)',marginTop:3}}>{[sh.venue,sh.date?fmtDate(sh.date):null].filter(Boolean).join(' · ')||'No date or venue set'}</div>
+                </div>
+                {d!==null && <div className="countchip" style={{textAlign:'right'}}>
+                  <div className="num" style={{fontSize:18}}>{d>0?d:d===0?'0':'—'}</div>
+                  <div className="lbl">{d>1?'days':d===1?'day':d===0?'today':'past'}</div>
+                </div>}
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:12,marginTop:10}}>
+                <div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:700,color:meterColor(overall)}}>{Math.round(overall*100)}%</div>
+                <div style={{flex:1,height:6,borderRadius:4,background:'var(--surface-3)',overflow:'hidden'}}>
+                  <div style={{height:'100%',borderRadius:4,width:(overall*100)+'%',background:meterColor(overall),transition:'width .4s'}}/>
+                </div>
+                <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--muted)'}}>{activeEntries.length} songs</div>
+              </div>
+              <div style={{display:'flex',gap:8,marginTop:12,flexWrap:'wrap'}}>
+                <button className="btn ghost sm" onClick={()=>startEdit(sh)}>Edit</button>
+                <button className="btn ghost sm" onClick={()=>setManageSongs(sh.id)}>Manage songs</button>
+                {confirmDel===sh.id
+                  ? <React.Fragment><button className="btn danger sm" onClick={()=>delShow(sh.id)}>Confirm</button><button className="btn ghost sm" onClick={()=>setConfirmDel(null)}>Cancel</button></React.Fragment>
+                  : <button className="btn danger sm" onClick={()=>setConfirmDel(sh.id)}>Delete</button>}
+              </div>
+            </React.Fragment>}
+          </div>
+        );
+      })}
+      {adding ? <div className="card">
+        <label className="fl">Show name</label>
+        <input className="inp" dir="auto" value={name} onChange={e=>setName(e.target.value)} placeholder="Summer showcase" autoFocus/>
+        <div className="fieldgrid">
+          <div className="full"><label className="fl">Date</label><input className="inp" type="date" value={date} onChange={e=>setDate(e.target.value)}/></div>
+          <div className="full"><label className="fl">Venue</label><input className="inp" dir="auto" value={venue} onChange={e=>setVenue(e.target.value)} placeholder="The Basement"/></div>
+        </div>
+        <div className="btnrow"><button className="btn ghost" onClick={()=>setAdding(false)}>Cancel</button><button className="btn" onClick={saveNew}>Create show</button></div>
+      </div>
+      : <div className="add-bar"><button className="btn ghost" onClick={startAdd}>+ New show</button></div>}
+      {manageSongs && (()=>{
+        const sh=getShow(state,manageSongs);
+        if(!sh) return null;
+        const inShow=(songId)=>(sh.setlist||[]).some(e=>e.songId===songId);
+        return <div className="modalwrap" onClick={()=>setManageSongs(null)}>
+          <div className="modalcard" onClick={e=>e.stopPropagation()}>
+            <div className="modaltitle">Songs in {sh.name||'this show'}</div>
+            {state.songs.length===0?<div style={{fontSize:13,color:'var(--muted)'}}>No songs in your library yet. Add songs from the Setlist tab.</div>
+            :<div className="checklist">{state.songs.map(ps=>(
+              <label className="checkrow" key={ps.id}>
+                <input type="checkbox" checked={inShow(ps.id)} onChange={()=>toggleSongInShow(manageSongs,ps.id)}/>
+                <span dir="auto">{ps.title}{ps.artist?' · '+ps.artist:''}</span>
+              </label>
+            ))}</div>}
+            <div className="btnrow"><button className="btn" onClick={()=>setManageSongs(null)}>Done</button></div>
+          </div>
+        </div>;
+      })()}
+    </div>
+  );
+}
 const ICONS={
   stage:'M3 13h2l1.5-6 2.5 12 2-6h2l1.5 4 1.5-4h3',
   setlist:'M4 6h12M4 12h12M4 18h8 M19 5v9 M19 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z',
   rehearse:'M5 4h14v16l-7-4-7 4z',
+  shows:'M4 3h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z M7 18h10 M9 15v3 M15 15v3',
   album:'M4 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5z M9 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M4 16l4-4 3 3 4-4 5 5',
   setup:'M10 3h4l.5 3 2 1 3-1.5 2 3.5-2.5 2v2l2.5 2-2 3.5-3-1.5-2 1L14 21h-4l-.5-3-2-1-3 1.5-2-3.5 2.5-2v-2L0 9'
 };
 function TabBar({tab,setTab}){
-  const items=[['stage','Stage'],['setlist','Setlist'],['rehearse','Rehearsals'],['album','Gallery'],['setup','Setup']];
+  const items=[['stage','Stage'],['setlist','Setlist'],['rehearse','Rehearsals'],['shows','Shows'],['album','Gallery'],['setup','Setup']];
   return (
     <nav className="tabbar">
       {items.map(([id,label])=>(
