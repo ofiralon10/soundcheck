@@ -350,7 +350,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.181';
+const VERSION='0.182';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -1159,7 +1159,7 @@ function Header({state,update,onSwitch,showId}){
   return (
     <div className="topbar">
       <div className="topline">
-        <div className="wordmark"><span className="dot"></span><h1>SOUNDCHECK</h1><span className="ver">v{VERSION}</span></div>
+        <div className="wordmark"><span className="dot"></span><h1>SOUNDCHECK</h1></div>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           {MY_NAME && <span style={{fontFamily:'var(--display)',fontSize:12,color:'var(--muted)',fontWeight:600,whiteSpace:'nowrap'}}>{MY_NAME}</span>}
           <InstrPicker/>
@@ -1169,6 +1169,7 @@ function Header({state,update,onSwitch,showId}){
           <ActivityBell state={state}/>
         </div>
       </div>
+      <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--muted)',marginTop:-2,marginBottom:2,letterSpacing:1}}>v{VERSION}</div>
       <div className="topmeta">
         <div className="topleft">
           <BandArt src={state.bandArt} update={update}/>
