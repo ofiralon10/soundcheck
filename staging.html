@@ -350,7 +350,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.176';
+const VERSION='0.177';
 const CHANGELOG={
   '0.176':[
     'Multiple shows per band — each with its own setlist, readiness tracking, and guests',
@@ -553,6 +553,8 @@ async function uploadImage(path, dataUrl){
 }
 const uploadCover = (songId,dataUrl)=> uploadImage(coverPath(songId), dataUrl);
 const uploadBandArt = (dataUrl)=> uploadImage(bandArtPath(), dataUrl);
+function showArtPath(showId){ return 'showart/'+BOARD+'/'+showId+'.jpg'; }
+const uploadShowArt = (showId,dataUrl)=> uploadImage(showArtPath(showId), dataUrl);
 async function uploadFileToStorage(id, file){
   const path = 'files/'+BOARD+'/'+id+'-'+file.name.replace(/[^\w.\-]+/g,'_');
   const ref = storage.ref().child(path);
@@ -607,7 +609,7 @@ function migrate(s){
         setlist.push({songId:song.id,parts:parts,guests:guests,encore:!!song.encore,excluded:!!song.excluded});
       });
       var rh=Array.isArray(s.readinessHistory)?s.readinessHistory:[];
-      s.shows.push({id:migratedId,name:c.name||'',date:c.date||'',venue:c.venue||'',setlist:setlist,readinessHistory:rh});
+      s.shows.push({id:migratedId,name:c.name||'',date:c.date||'',venue:c.venue||'',art:'',setlist:setlist,readinessHistory:rh});
       s.rehearsals.forEach(function(r){if(!r.showId) r.showId=migratedId;});
       s.songs.forEach(function(song){delete song.parts;delete song.guests;delete song.encore;delete song.excluded;delete song.status;});
     })();
@@ -619,6 +621,7 @@ function migrate(s){
     if(show.name===undefined) show.name='';
     if(show.date===undefined) show.date='';
     if(show.venue===undefined) show.venue='';
+    if(show.art===undefined) show.art='';
     if(!Array.isArray(show.setlist)) show.setlist=[];
     show.setlist.forEach(function(entry){
       if(!entry.parts||typeof entry.parts!=='object') entry.parts={};
@@ -662,6 +665,7 @@ function getOther(arr){ const e=(arr||[]).find(isOther); return e? e.slice(6):''
 function setOtherInArr(arr,text){ const cleaned=(arr||[]).filter(x=>!isOther(x)); return text? [...cleaned,'other:'+text] : cleaned; }
 function focusName(id,songs){ if(isOther(id)) return id.slice(6)||'Other'; const s=songs.find(y=>y.id===id); return s?s.title:null; }
 function fmtDate(iso){ if(!iso) return ''; const d=new Date(iso); return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}); }
+function fmtDateY(iso){ if(!iso) return ''; const d=new Date(iso); return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'}); }
 function fmtTime(iso){ if(!iso) return ''; const d=new Date(iso); return d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); }
 function daysUntil(iso){ if(!iso) return null; const ms=new Date(iso).setHours(23,59,59)-Date.now(); return Math.ceil(ms/86400000); }
 function meterColor(p){ return p>=0.8?'var(--ok)' : p>=0.45?'var(--warn)' : p>0?'var(--drums)':'var(--muted-2)'; }
@@ -1139,7 +1143,7 @@ function InstrPicker(){
 function Header({state,update,onSwitch,showId}){
   const show = getShow(state,showId);
   const d = show ? daysUntil(show.date) : null;
-  const sub = show ? [show.name, show.venue, show.date?fmtDate(show.date):null].filter(Boolean).join(' · ') || 'Set up your show in Shows' : 'Create a show in the Shows tab';
+  const sub = show ? [show.name, show.venue, show.date?fmtDateY(show.date):null].filter(Boolean).join(' · ') || 'Set up your show in Shows' : 'Create a show in the Shows tab';
   return (
     <div className="topbar">
       <div className="topline">
@@ -1180,14 +1184,14 @@ function ShowSelector({shows,showId,pickShow}){
     <div className="show-sel-bar">
       <button className="show-sel-btn" onClick={()=>setOpen(v=>!v)}>
         <span className="show-sel-name" dir="auto">{cur?cur.name||'Untitled show':'Select show'}</span>
-        {cur&&cur.date?<span className="show-sel-date">{fmtDate(cur.date)}</span>:null}
+        {cur&&cur.date?<span className="show-sel-date">{fmtDateY(cur.date)}</span>:null}
         <span className="show-sel-arrow">{open?'▲':'▼'}</span>
       </button>
       {open && <div className="show-sel-drop">
         {shows.map(sh=>(
           <button key={sh.id} className={'show-sel-item'+(sh.id===showId?' on':'')} onClick={()=>{pickShow(sh.id);setOpen(false);}}>
             <span dir="auto">{sh.name||'Untitled show'}</span>
-            {sh.date && <span className="show-sel-date">{fmtDate(sh.date)}</span>}
+            {sh.date && <span className="show-sel-date">{fmtDateY(sh.date)}</span>}
           </button>
         ))}
       </div>}
@@ -2658,11 +2662,14 @@ function Shows({state,update,pickShow,selectedShowId}){
   const [venue,setVenue]=useState('');
   const [confirmDel,setConfirmDel]=useState(null);
   const [manageSongs,setManageSongs]=useState(null);
+  const [cropSrc,setCropSrc]=useState(null);
+  const [artTarget,setArtTarget]=useState(null);
+  const [busy,setBusy]=useState('');
   const startAdd=()=>{ setName(''); setDate(''); setVenue(''); setAdding(true); };
-  const saveNew=()=>{ const id=uid(); update(s=>{ s.shows.push({id,name:name.trim()||'Untitled show',date,venue,setlist:[],readinessHistory:[]}); logAct(s,'created show "'+(name.trim()||'Untitled show')+'"'); return s; }); pickShow(id); setAdding(false); };
+  const saveNew=()=>{ const id=uid(); update(s=>{ s.shows.push({id,name:name.trim()||'Untitled show',date,venue,art:'',setlist:[],readinessHistory:[]}); logAct(s,'created show "'+(name.trim()||'Untitled show')+'"'); return s; }); pickShow(id); setAdding(false); };
   const startEdit=(sh)=>{ setEditId(sh.id); setName(sh.name); setDate(sh.date); setVenue(sh.venue); };
   const saveEdit=()=>{ update(s=>{ const sh=getShow(s,editId); if(sh){ sh.name=name.trim()||'Untitled show'; sh.date=date; sh.venue=venue; } return s; }); setEditId(null); };
-  const delShow=(id)=>{ update(s=>{ s.shows=s.shows.filter(x=>x.id!==id); s.rehearsals=s.rehearsals.filter(r=>r.showId!==id); logAct(s,'deleted a show'); return s; }); setConfirmDel(null); if(selectedShowId===id && state.shows.length>1){ const next=state.shows.find(x=>x.id!==id); if(next) pickShow(next.id); } };
+  const delShow=(id)=>{ deleteStoragePath(showArtPath(id)); update(s=>{ s.shows=s.shows.filter(x=>x.id!==id); s.rehearsals=s.rehearsals.filter(r=>r.showId!==id); logAct(s,'deleted a show'); return s; }); setConfirmDel(null); if(selectedShowId===id && state.shows.length>1){ const next=state.shows.find(x=>x.id!==id); if(next) pickShow(next.id); } };
   const toggleSongInShow=(showId,songId)=>update(s=>{
     const sh=getShow(s,showId); if(!sh) return s;
     const idx=sh.setlist.findIndex(e=>e.songId===songId);
@@ -2670,6 +2677,12 @@ function Shows({state,update,pickShow,selectedShowId}){
     else{ sh.setlist.push({songId,parts:freshParts(),guests:[],encore:false,excluded:false}); }
     return s;
   });
+  const onArtPick=(e,showId)=>{ const file=e.target.files&&e.target.files[0]; e.target.value=''; if(!file) return;
+    setArtTarget(showId);
+    const rd=new FileReader(); rd.onload=()=>setCropSrc(rd.result); rd.onerror=()=>{}; rd.readAsDataURL(file); };
+  const onCropDone=async(data)=>{ setCropSrc(null); if(!data||!artTarget) return;
+    setBusy(artTarget); try{ const url=await uploadShowArt(artTarget,data); update(s=>{ const sh=getShow(s,artTarget); if(sh) sh.art=url; return s; }); }catch(e){} setBusy(''); setArtTarget(null); };
+  const clearArt=(showId)=>{ deleteStoragePath(showArtPath(showId)); update(s=>{ const sh=getShow(s,showId); if(sh) sh.art=''; return s; }); };
   return (
     <div className="page">
       <div className="section-h">Shows · {state.shows.length}</div>
@@ -2692,11 +2705,14 @@ function Shows({state,update,pickShow,selectedShowId}){
               <div className="btnrow"><button className="btn ghost" onClick={()=>setEditId(null)}>Cancel</button><button className="btn" onClick={saveEdit}>Save</button></div>
             </React.Fragment> : <React.Fragment>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:10}}>
-                <div style={{minWidth:0,flex:1}}>
-                  <div style={{fontFamily:'var(--display)',fontWeight:700,fontSize:16,lineHeight:1.2}} dir="auto">{sh.name||'Untitled show'}</div>
-                  <div style={{fontSize:12,color:'var(--muted)',marginTop:3}}>{[sh.venue,sh.date?fmtDate(sh.date):null].filter(Boolean).join(' · ')||'No date or venue set'}</div>
+                <div style={{display:'flex',gap:12,alignItems:'flex-start',minWidth:0,flex:1}}>
+                  <CoverThumb src={sh.art} size={52} radius={12}/>
+                  <div style={{minWidth:0,flex:1}}>
+                    <div style={{fontFamily:'var(--display)',fontWeight:700,fontSize:16,lineHeight:1.2}} dir="auto">{sh.name||'Untitled show'}</div>
+                    <div style={{fontSize:12,color:'var(--muted)',marginTop:3}}>{[sh.venue,sh.date?fmtDateY(sh.date):null].filter(Boolean).join(' · ')||'No date or venue set'}</div>
+                  </div>
                 </div>
-                {d!==null && <div className="countchip" style={{textAlign:'right'}}>
+                {d!==null && <div className="countchip" style={{textAlign:'right',flexShrink:0}}>
                   <div className="num" style={{fontSize:18}}>{d>0?d:d===0?'0':'—'}</div>
                   <div className="lbl">{d>1?'days':d===1?'day':d===0?'today':'past'}</div>
                 </div>}
@@ -2710,6 +2726,8 @@ function Shows({state,update,pickShow,selectedShowId}){
               </div>
               <div style={{display:'flex',gap:8,marginTop:12,flexWrap:'wrap'}}>
                 <button className="btn ghost sm" onClick={()=>startEdit(sh)}>Edit</button>
+                <label className="btn ghost sm" style={{cursor:'pointer',opacity:busy===sh.id?0.5:1}}><input type="file" accept="image/*" hidden disabled={busy===sh.id} onChange={e=>onArtPick(e,sh.id)}/>{busy===sh.id?'Uploading…':(sh.art?'Change art':'Add art')}</label>
+                {sh.art && busy!==sh.id && <button className="btn ghost sm" onClick={()=>clearArt(sh.id)}>Remove art</button>}
                 <button className="btn ghost sm" onClick={()=>setManageSongs(sh.id)}>Manage songs</button>
                 {confirmDel===sh.id
                   ? <React.Fragment><button className="btn danger sm" onClick={()=>delShow(sh.id)}>Confirm</button><button className="btn ghost sm" onClick={()=>setConfirmDel(null)}>Cancel</button></React.Fragment>
@@ -2729,6 +2747,7 @@ function Shows({state,update,pickShow,selectedShowId}){
         <div className="btnrow"><button className="btn ghost" onClick={()=>setAdding(false)}>Cancel</button><button className="btn" onClick={saveNew}>Create show</button></div>
       </div>
       : <div className="add-bar"><button className="btn ghost" onClick={startAdd}>+ New show</button></div>}
+      {cropSrc && <CropModal src={cropSrc} onCancel={()=>{setCropSrc(null);setArtTarget(null);}} onDone={onCropDone}/>}
       {manageSongs && (()=>{
         const sh=getShow(state,manageSongs);
         if(!sh) return null;
