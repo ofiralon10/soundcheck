@@ -350,7 +350,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.187';
+const VERSION='0.188';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -1648,6 +1648,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [dropCat,setDropCat]=useState(null);
   const STEM_CATS=[{id:'vocals',label:'Vocals',color:'var(--vocals)'},{id:'drums',label:'Drums',color:'var(--drums)'},{id:'bass',label:'Bass',color:'var(--bass)'},{id:'keys',label:'Keys',color:'var(--keys)'},{id:'guitar',label:'Guitar',color:'var(--guitar)'},{id:'other',label:'Other',color:'#5BC0EB'},{id:'metronome',label:'Metronome',color:'#948FA6'}];
   const [stemOpen,setStemOpen]=useState(false);
+  const [stemRecPlayback,setStemRecPlayback]=useState(false);
   const wide=useWide();
   const [stemCfg,setStemCfg]=useState(wide);
   const [stemPlaying,setStemPlaying]=useState(false);
@@ -1728,6 +1729,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     stemStop();
     Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.src='';}});
     stemAudiosRef.current={};
+    setStemRecPlayback(false);
     setStemChans(prev=>{
       try{const saved=JSON.parse(localStorage.getItem(stemStorageKey));if(saved&&saved.length)return stemDefaultChans().map(d=>{const sv=saved.find(x=>x.id===d.id);return sv?{...d,vol:sv.vol,muted:sv.muted,soloed:sv.soloed}:d;});}catch(_){}
       return stemDefaultChans();
@@ -1735,6 +1737,22 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     setStemDur(0);setStemTime(0);setStemCfg(wide);setStemOpen(true);
     const files=s.files||[];
     STEM_CATS.forEach(cat=>{
+      const af=files.filter(f=>(f.cat==='original'?'other':f.cat||'other')===cat.id&&f.type==='audio');
+      if(af.length>0) stemLoadUrl(cat.id,af[0].url,af[0].name);
+    });
+  };
+  const openStemRecPlayback=(recFile)=>{
+    stemStop();
+    Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.src='';}});
+    stemAudiosRef.current={};
+    setStemRecPlayback(true);
+    const otherCats=STEM_CATS.filter(c=>!MY_INSTRS.includes(c.id)&&c.id!=='metronome');
+    const chans=[{id:'mystem',label:'My Stem',color:'var(--drums)',vol:80,muted:false,soloed:false,loaded:false,fileName:null},...otherCats.map(c=>({id:c.id,label:c.label,color:c.color,vol:80,muted:false,soloed:false,loaded:false,fileName:null}))];
+    setStemChans(chans);
+    setStemDur(0);setStemTime(0);setStemCfg(true);setStemOpen(true);
+    stemLoadUrl('mystem',recFile.url,recFile.name);
+    const files=s.files||[];
+    otherCats.forEach(cat=>{
       const af=files.filter(f=>(f.cat==='original'?'other':f.cat||'other')===cat.id&&f.type==='audio');
       if(af.length>0) stemLoadUrl(cat.id,af[0].url,af[0].name);
     });
@@ -2213,7 +2231,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
                 <div className="fileitem" key={f.id}>
                   <span className="ftype" style={{background:KIND_COLOR[f.type]||'var(--muted)'}}>{badgeText(f)}</span>
                   <div className="fname" dir="auto">{f.name}{f.size?<span className="fsize"> · {fmtSize(f.size)}</span>:null}</div>
-                  <button className="fbtn" style={playerFile&&playerFile.id===f.id?{color:'var(--keys)'}:null} onClick={()=>openPlayer(f)}>{playerFile&&playerFile.id===f.id?'Playing…':'Play'}</button>
+                  <button className="fbtn" style={{color:'var(--drums)'}} onClick={()=>{setFilesOpen(false);openStemRecPlayback(f);}}>▶ Play</button>
                   {f.kind==='upload' && <button className="fbtn" onClick={()=>downloadFile(f)}>↓</button>}
                   {confirmDel===f.id
                     ? <React.Fragment>
@@ -2299,8 +2317,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       </div>}
       {stemOpen && <div className="stem-player">
         <div className="stem-title-bar">
-          <span className="stitle">{s.title}</span>
-          <button className="btn ghost sm" style={{fontSize:13,padding:'4px 12px',marginLeft:8}} onClick={()=>{const d=stemDefaultChans();setStemChans(prev=>prev.map((c,i)=>({...c,vol:d[i].vol,muted:d[i].muted,soloed:d[i].soloed})));stemApplyMix(d);}}>Reset</button>
+          <span className="stitle">{s.title}{stemRecPlayback?' — Stem Recording':''}</span>
+          {!stemRecPlayback && <button className="btn ghost sm" style={{fontSize:13,padding:'4px 12px',marginLeft:8}} onClick={()=>{const d=stemDefaultChans();setStemChans(prev=>prev.map((c,i)=>({...c,vol:d[i].vol,muted:d[i].muted,soloed:d[i].soloed})));stemApplyMix(d);}}>Reset</button>}
           <button className="xbtn" style={{fontSize:23,width:46,height:52}} onClick={closeStemPlayer}>×</button>
         </div>
         {stemCfg && <div className="stem-channels">
@@ -2310,7 +2328,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             return (
             <div key={ch.id} className={'stem-ch'+(ch.loaded?' loaded':'')+(ch.muted?' muted':'')+(ch.soloed?' soloed':'')} style={isMetNoFile?{opacity:.4}:null}>
               <div className="stem-ch-top">
-                {ch.id==='metronome' ? <InstrBadge id="metronome" size={22}/> : instrId ? <InstrBadge id={instrId} size={22}/> : ch.id==='other' ? <InstrBadge id="other" size={22}/> : <span style={{width:29,height:29,borderRadius:'50%',background:'var(--surface-3)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:11,fontWeight:700,color:'var(--muted)'}}>+</span>}
+                {ch.id==='mystem' ? <span style={{width:29,height:29,borderRadius:'50%',background:'var(--drums)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:13,fontWeight:700,color:'#fff'}}>🎙</span> : ch.id==='metronome' ? <InstrBadge id="metronome" size={22}/> : instrId ? <InstrBadge id={instrId} size={22}/> : ch.id==='other' ? <InstrBadge id="other" size={22}/> : <span style={{width:29,height:29,borderRadius:'50%',background:'var(--surface-3)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:11,fontWeight:700,color:'var(--muted)'}}>+</span>}
                 <div className="stem-ch-name"><small>{ch.fileName||'no file'}</small></div>
                 <div className="stem-ch-btns-row">
                   <button className={'stem-ch-btn'+(ch.muted?' on-m':'')} onClick={()=>stemToggleMute(ch.id)}>M</button>
@@ -2333,8 +2351,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           <div className="stem-btns">
             <button className="stem-play" onClick={stemPlay} disabled={!stemDur}>PLAY</button>
             <button onClick={stemPauseOrStop} disabled={!stemDur}>PAUSE/STOP</button>
-            <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>{stemCfg?'CLOSE':'CONFIG'}</button>
-            <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'8px 12px',fontSize:12,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>setStemRecPrompt(true)} disabled={stemRecState==='recording'}>🎙 Record Stem</button>
+            {!stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>{stemCfg?'CLOSE':'CONFIG'}</button>}
+            {!stemRecPlayback && <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'8px 12px',fontSize:12,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>setStemRecPrompt(true)} disabled={stemRecState==='recording'}>🎙 Record Stem</button>}
           </div>
         </div>
       </div>}
