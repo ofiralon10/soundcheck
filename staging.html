@@ -350,7 +350,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.188';
+const VERSION='0.189';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -1822,11 +1822,13 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id:fid,name,kind:'upload',url,path,size:blob.size,type:'audio',cat:'stem-rec',by:MY_NAME||'unknown'});logAct(st,'saved a stem recording to "'+so.title+'"');return st;});
     }catch(err){setFileMsg('Recording upload failed — '+prettyErr(err));}
     stemRecBlobRef.current=null;setBusy('');setStemRecTime(0);
-    if(stemRecPreMixRef.current){setStemChans(prev=>prev.map(c=>{const sv=stemRecPreMixRef.current.find(x=>x.id===c.id);return sv?{...c,muted:sv.muted,soloed:sv.soloed}:c;}));stemRecPreMixRef.current=null;}
+    stemRecPreMixRef.current=null;
+    closeStemPlayer();
   };
   const abandonStemRec=()=>{
     stemRecBlobRef.current=null;setStemRecConfirm(false);setStemRecTime(0);
-    if(stemRecPreMixRef.current){setStemChans(prev=>prev.map(c=>{const sv=stemRecPreMixRef.current.find(x=>x.id===c.id);return sv?{...c,muted:sv.muted,soloed:sv.soloed}:c;}));stemRecPreMixRef.current=null;}
+    stemRecPreMixRef.current=null;
+    closeStemPlayer();
   };
 
   const rowRef=useRef(null);
