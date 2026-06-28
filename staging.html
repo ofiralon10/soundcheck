@@ -350,7 +350,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.186';
+const VERSION='0.187';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -1749,6 +1749,68 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const stemToggleSolo=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,soloed:!c.soloed,muted:!c.soloed?false:c.muted}:c);stemApplyMix(n);return n;});};
   const stemSetVol=(id,v)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,vol:v}:c);stemApplyMix(n);return n;});};
   useEffect(()=>{stemApplyMix();try{localStorage.setItem(stemStorageKey,JSON.stringify(stemChans.map(c=>({id:c.id,vol:c.vol,muted:c.muted,soloed:c.soloed}))));}catch(_){}},[stemChans]);
+
+  const [stemRecPrompt,setStemRecPrompt]=useState(false);
+  const [stemRecState,setStemRecState]=useState(null);
+  const [stemRecTime,setStemRecTime]=useState(0);
+  const [stemRecConfirm,setStemRecConfirm]=useState(false);
+  const stemRecRef=useRef(null);
+  const stemRecChunksRef=useRef([]);
+  const stemRecTimerRef=useRef(null);
+  const stemRecMimeRef=useRef('');
+  const stemRecBlobRef=useRef(null);
+  const stemRecPreMixRef=useRef(null);
+
+  const startStemRec=async()=>{
+    try{
+      const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false,sampleRate:48000}});
+      const mr=new MediaRecorder(stream,{audioBitsPerSecond:256000});
+      stemRecChunksRef.current=[];
+      mr.ondataavailable=(e)=>{if(e.data.size>0) stemRecChunksRef.current.push(e.data);};
+      mr.onstop=()=>{
+        stream.getTracks().forEach(t=>t.stop());
+        clearInterval(stemRecTimerRef.current);
+        stemStop();
+        const blob=new Blob(stemRecChunksRef.current,{type:mr.mimeType||'audio/webm'});
+        if(blob.size<100){setStemRecState(null);setStemRecTime(0);return;}
+        stemRecBlobRef.current=blob;
+        stemRecMimeRef.current=mr.mimeType||'audio/webm';
+        setStemRecState(null);setStemRecConfirm(true);
+      };
+      stemRecPreMixRef.current=stemChans.map(c=>({id:c.id,muted:c.muted,soloed:c.soloed}));
+      setStemChans(prev=>{const n=prev.map(c=>({...c,muted:MY_INSTRS.includes(c.id)?true:c.muted,soloed:false}));stemApplyMix(n);return n;});
+      stemSeek(0);
+      await stemPlay();
+      mr.start(1000);
+      stemRecRef.current=mr;
+      setStemRecState('recording');
+      setStemRecTime(0);
+      stemRecTimerRef.current=setInterval(()=>setStemRecTime(t=>t+1),1000);
+    }catch(e){setFileMsg('Microphone not available — check browser permissions.');}
+  };
+  const stopStemRec=()=>{if(stemRecRef.current&&stemRecRef.current.state!=='inactive') stemRecRef.current.stop();};
+  const uploadStemRec=async()=>{
+    const blob=stemRecBlobRef.current;const mime=stemRecMimeRef.current;
+    if(!blob){setStemRecConfirm(false);setStemRecTime(0);return;}
+    setBusy('stemrec');setStemRecConfirm(false);
+    const fid=uid();
+    const ext=mime.includes('mp4')?'m4a':mime.includes('ogg')?'ogg':'webm';
+    const name=autoName('stem-rec')+'.'+ext;
+    try{
+      const path='files/'+BOARD+'/'+fid+'-stemrec.'+ext;
+      const sRef=storage.ref().child(path);
+      await sRef.put(blob,{contentType:mime});
+      const url=await sRef.getDownloadURL();
+      update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id:fid,name,kind:'upload',url,path,size:blob.size,type:'audio',cat:'stem-rec',by:MY_NAME||'unknown'});logAct(st,'saved a stem recording to "'+so.title+'"');return st;});
+    }catch(err){setFileMsg('Recording upload failed — '+prettyErr(err));}
+    stemRecBlobRef.current=null;setBusy('');setStemRecTime(0);
+    if(stemRecPreMixRef.current){setStemChans(prev=>prev.map(c=>{const sv=stemRecPreMixRef.current.find(x=>x.id===c.id);return sv?{...c,muted:sv.muted,soloed:sv.soloed}:c;}));stemRecPreMixRef.current=null;}
+  };
+  const abandonStemRec=()=>{
+    stemRecBlobRef.current=null;setStemRecConfirm(false);setStemRecTime(0);
+    if(stemRecPreMixRef.current){setStemChans(prev=>prev.map(c=>{const sv=stemRecPreMixRef.current.find(x=>x.id===c.id);return sv?{...c,muted:sv.muted,soloed:sv.soloed}:c;}));stemRecPreMixRef.current=null;}
+  };
+
   const rowRef=useRef(null);
   const recorderRef=useRef(null);
   const chunksRef=useRef([]);
@@ -1963,6 +2025,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const closeFiles=useCallback(()=>{setFilesOpen(false);setPickCat(null);setLinkMode(false);},[]);
   useBackHandler(filesOpen,closeFiles);
   useBackHandler(stemOpen,closeStemPlayer);
+  const closeStemRecPrompt=useCallback(()=>setStemRecPrompt(false),[]);
+  useBackHandler(stemRecPrompt,closeStemRecPrompt);
   useBackHandler(!!playerFile,closePlayer);
 
   const fileCount=s.files?s.files.length:0;
@@ -2136,6 +2200,31 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             </div>
             <div style={{fontSize:11,color:'var(--muted)',marginTop:4}}>{stemProg.done} / {stemProg.total} stems</div>
           </div>}
+          {(()=>{
+            const myRecs=(s.files||[]).filter(f=>f.cat==='stem-rec'&&f.by===(MY_NAME||'unknown'));
+            return myRecs.length>0 && <div className="files-cat">
+              <div className="files-cat-h" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                <div style={{display:'flex',alignItems:'center',gap:6}}>
+                  <span style={{fontFamily:'var(--mono)',fontWeight:700,fontSize:14,color:'var(--drums)'}}>🎙</span>
+                  My Stem Recordings
+                </div>
+              </div>
+              {myRecs.map(f=>(
+                <div className="fileitem" key={f.id}>
+                  <span className="ftype" style={{background:KIND_COLOR[f.type]||'var(--muted)'}}>{badgeText(f)}</span>
+                  <div className="fname" dir="auto">{f.name}{f.size?<span className="fsize"> · {fmtSize(f.size)}</span>:null}</div>
+                  <button className="fbtn" style={playerFile&&playerFile.id===f.id?{color:'var(--keys)'}:null} onClick={()=>openPlayer(f)}>{playerFile&&playerFile.id===f.id?'Playing…':'Play'}</button>
+                  {f.kind==='upload' && <button className="fbtn" onClick={()=>downloadFile(f)}>↓</button>}
+                  {confirmDel===f.id
+                    ? <React.Fragment>
+                        <button className="fbtn" style={{color:'var(--drums)'}} onClick={()=>{removeFile(f);setConfirmDel(null);}}>Delete</button>
+                        <button className="fbtn" onClick={()=>setConfirmDel(null)}>Cancel</button>
+                      </React.Fragment>
+                    : <button className="xmini" onClick={()=>setConfirmDel(f.id)} aria-label="Remove file">×</button>}
+                </div>
+              ))}
+            </div>;
+          })()}
           {fileMsg && <div className="filemsg">{fileMsg}</div>}
         </div>
       </div>}
@@ -2245,6 +2334,36 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             <button className="stem-play" onClick={stemPlay} disabled={!stemDur}>PLAY</button>
             <button onClick={stemPauseOrStop} disabled={!stemDur}>PAUSE/STOP</button>
             <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>{stemCfg?'CLOSE':'CONFIG'}</button>
+            <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'8px 12px',fontSize:12,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>setStemRecPrompt(true)} disabled={stemRecState==='recording'}>🎙 Record Stem</button>
+          </div>
+        </div>
+      </div>}
+      {stemRecPrompt && <div className="rec-confirm">
+        <div className="rec-confirm-panel">
+          <div className="modaltitle">Record Stem</div>
+          <div style={{fontSize:13,color:'var(--muted)',marginBottom:10}}>Record your part over "{s.title}"</div>
+          <div style={{fontSize:12,color:'var(--muted)',marginBottom:18,lineHeight:1.5}}>Your instruments ({MY_INSTRS.length?MY_INSTRS.map(id=>(INSTR.find(i=>i.id===id)||{label:id}).label).join(', '):'none set'}) will be muted while all other stems play. Your microphone recording will be saved as a personal stem recording.</div>
+          <div className="btnrow">
+            <button className="btn ghost" onClick={()=>setStemRecPrompt(false)}>Cancel</button>
+            <button className="btn" style={{background:'var(--drums)'}} disabled={!MY_INSTRS.length} onClick={()=>{setStemRecPrompt(false);startStemRec();}}>Start</button>
+          </div>
+        </div>
+      </div>}
+      {stemRecState==='recording' && <div className="rec-confirm">
+        <div className="rec-confirm-panel" style={{textAlign:'center'}}>
+          <div className="modaltitle" style={{color:'var(--drums)'}}>🎙 Recording…</div>
+          <div style={{fontFamily:'var(--mono)',fontSize:28,fontWeight:700,margin:'12px 0'}}>{fmtSecs(stemRecTime)}</div>
+          <div style={{fontSize:12,color:'var(--muted)',marginBottom:16}}>Playing stems · your instruments muted</div>
+          <button className="btn" style={{background:'var(--drums)'}} onClick={stopStemRec}>Stop Recording</button>
+        </div>
+      </div>}
+      {stemRecConfirm && <div className="rec-confirm">
+        <div className="rec-confirm-panel">
+          <div className="modaltitle">Save stem recording?</div>
+          <div style={{fontSize:13,color:'var(--muted)',marginBottom:18}}>{fmtSecs(stemRecTime)} recorded for "{s.title}"</div>
+          <div className="btnrow">
+            <button className="btn danger" onClick={abandonStemRec}>Discard</button>
+            <button className="btn" onClick={uploadStemRec}>{busy==='stemrec'?'Saving…':'Save'}</button>
           </div>
         </div>
       </div>}
