@@ -270,8 +270,8 @@
   .stem-ch.soloed::before{background:var(--bass)}
   .stem-ch-top{display:flex;align-items:center;gap:8px;margin-bottom:6px}
   .stem-ch-name{flex:1;font-family:var(--display);font-size:12px;font-weight:600;letter-spacing:.03em}
-  .stem-ch-name small{display:block;font-size:10px;color:var(--muted);font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;margin-top:1px}
-  .stem-ch-btn{border:1px solid var(--line-2);background:var(--surface-2);color:var(--muted);font-family:var(--mono);font-size:10px;font-weight:700;width:30px;height:26px;border-radius:6px;cursor:pointer;flex:none}
+  .stem-ch-name small{display:block;font-size:13px;color:var(--muted);font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px;margin-top:1px}
+  .stem-ch-btn{border:1px solid var(--line-2);background:var(--surface-2);color:var(--muted);font-family:var(--mono);font-size:13px;font-weight:700;width:34px;height:30px;border-radius:6px;cursor:pointer;flex:none}
   .stem-ch-btn.on-m{background:var(--drums);border-color:var(--drums);color:#fff}
   .stem-ch-btn.on-s{background:var(--bass);border-color:var(--bass);color:#fff}
   .stem-vol{display:flex;align-items:center;gap:8px}
@@ -350,7 +350,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.184';
+const VERSION='0.185';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -1721,8 +1721,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     stemAudiosRef.current={};
     setStemOpen(false);
   };
-  const stemToggleMute=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,muted:!c.muted}:c);stemApplyMix(n);return n;});};
-  const stemToggleSolo=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,soloed:!c.soloed}:c);stemApplyMix(n);return n;});};
+  const stemToggleMute=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,muted:!c.muted,soloed:!c.muted?false:c.soloed}:c);stemApplyMix(n);return n;});};
+  const stemToggleSolo=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,soloed:!c.soloed,muted:!c.soloed?false:c.muted}:c);stemApplyMix(n);return n;});};
   const stemSetVol=(id,v)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,vol:v}:c);stemApplyMix(n);return n;});};
   useEffect(()=>{stemApplyMix();try{localStorage.setItem(stemStorageKey,JSON.stringify(stemChans.map(c=>({id:c.id,vol:c.vol,muted:c.muted,soloed:c.soloed}))));}catch(_){}},[stemChans]);
   const rowRef=useRef(null);
