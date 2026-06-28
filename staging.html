@@ -350,7 +350,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.185';
+const VERSION='0.186';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -671,6 +671,22 @@ function isOther(x){ return String(x).indexOf('other:')===0; }
 function getOther(arr){ const e=(arr||[]).find(isOther); return e? e.slice(6):''; }
 function setOtherInArr(arr,text){ const cleaned=(arr||[]).filter(x=>!isOther(x)); return text? [...cleaned,'other:'+text] : cleaned; }
 function focusName(id,songs){ if(isOther(id)) return id.slice(6)||'Other'; const s=songs.find(y=>y.id===id); return s?s.title:null; }
+const backHandlers=[];
+let lastBackTime=0;
+function useBackHandler(active,closeFn){
+  useEffect(()=>{
+    if(!active) return;
+    const entry={close:closeFn};
+    backHandlers.push(entry);
+    if(backHandlers.length===1) history.pushState({sc:true},'');
+    return ()=>{ const idx=backHandlers.indexOf(entry); if(idx>=0) backHandlers.splice(idx,1); };
+  },[active,closeFn]);
+}
+if(typeof window!=='undefined') window.addEventListener('popstate',function(e){
+  if(backHandlers.length>0){ const h=backHandlers.pop(); h.close(); if(backHandlers.length>0) history.pushState({sc:true},''); }
+  else{ const now=Date.now(); if(now-lastBackTime<400){ window.history.back(); } else{ lastBackTime=now; history.pushState({sc:true},''); } }
+});
+
 function fmtDate(iso){ if(!iso) return ''; const d=new Date(iso); return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}); }
 function fmtDateY(iso){ if(!iso) return ''; const d=new Date(iso); return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'}); }
 function fmtTime(iso){ if(!iso) return ''; const d=new Date(iso); return d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); }
@@ -866,6 +882,10 @@ function App(){
   const [showChangelog,setShowChangelog]=useState(()=>{try{const seen=localStorage.getItem('sc_seen_ver');return seen!==VERSION;}catch(_){return false;}});
   const [showInstrPrompt,setShowInstrPrompt]=useState(false);
   const [promptInstrs,setPromptInstrs]=useState([]);
+  const closeChangelog=useCallback(()=>{try{localStorage.setItem('sc_seen_ver',VERSION);}catch(_){} setShowChangelog(false);},[]);
+  useBackHandler(showChangelog,closeChangelog);
+  const closeInstrPrompt=useCallback(()=>setShowInstrPrompt(false),[]);
+  useBackHandler(showInstrPrompt,closeInstrPrompt);
   const inited=useRef(false);
   const startBoardFn=useRef(null);
 
@@ -990,7 +1010,7 @@ function App(){
       </div>}
       {tab==='stage'    && <Stage state={state} go={setTab} update={update} goSong={id=>{setTab('setlist');setGoSongId(id);}} showId={curShowId} pickShow={pickShow} />}
       {tab==='setlist'  && <Setlist state={state} update={update} goSongId={goSongId} clearGoSong={()=>setGoSongId(null)} showId={curShowId} pickShow={pickShow} />}
-      {tab==='rehearse' && <Rehearsals state={state} update={update} />}
+      {tab==='rehearse' && <Rehearsals state={state} update={update} goSong={id=>{setTab('setlist');setGoSongId(id);}} />}
       {tab==='shows'    && <Shows state={state} update={update} pickShow={pickShow} selectedShowId={curShowId} />}
       {tab==='album'    && <Album state={state} update={update} />}
       {tab==='setup'    && <Setup state={state} update={update} user={user} onSignOut={signOut} onSwitch={switchBoard} />}
@@ -1262,6 +1282,8 @@ function Stage({state,go,update,goSong,showId,pickShow}){
   const readyCount = songs.filter(s=>entryReadiness(getEntry(show,s.id))===1).length;
   const perMember = INSTR.map(i=>({...i, pct: songs.length? songs.reduce((a,s)=>a+score(s.parts[i.id]),0)/songs.length : 0 }));
   const [bulkInstr,setBulkInstr]=useState(null);
+  const closeBulk=useCallback(()=>setBulkInstr(null),[]);
+  useBackHandler(!!bulkInstr,closeBulk);
   const bulkSet=(songId,iid,v)=>update(st=>{const sh=getShow(st,showId);const entry=getEntry(sh,songId);if(entry) entry.parts[iid]=v;return st;});
   const showRehearsals = state.rehearsals.filter(r=>r.showId===showId);
   const next = [...showRehearsals].filter(r=>!r.done && r.date).sort((a,b)=>new Date(a.date)-new Date(b.date))[0];
@@ -1384,6 +1406,8 @@ function Setlist({state,update,goSongId,clearGoSong,showId,pickShow}){
   const [open,setOpen]=useState(null);
   const [adding,setAdding]=useState(false);
   const [addExisting,setAddExisting]=useState(false);
+  const closeAddExisting=useCallback(()=>setAddExisting(false),[]);
+  useBackHandler(addExisting,closeAddExisting);
   const [roleFilter,setRoleFilter]=useState(null);
   const [reorder,setReorder]=useState(false);
   const [dragId,setDragId]=useState(null);
@@ -1936,6 +1960,11 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const setVol=(v)=>{ setPlayerVol(v); if(audioRef.current) audioRef.current.volume=v; };
   const closePlayer=()=>{ if(audioRef.current){ audioRef.current.pause(); audioRef.current=null; } clearInterval(playerTimerRef.current); setPlayerFile(null); setPlayerPlaying(false); setPlayerTime(0); };
 
+  const closeFiles=useCallback(()=>{setFilesOpen(false);setPickCat(null);setLinkMode(false);},[]);
+  useBackHandler(filesOpen,closeFiles);
+  useBackHandler(stemOpen,closeStemPlayer);
+  useBackHandler(!!playerFile,closePlayer);
+
   const fileCount=s.files?s.files.length:0;
   const rehCount=rehearsals?songRehCount(s.id,rehearsals):0;
   const meta=[s.artist, s.songKey&&('Key '+s.songKey), s.tempo&&(s.tempo+' bpm'), s.duration&&(s.duration+'m')].filter(Boolean);
@@ -2021,8 +2050,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
             <div className="modaltitle" style={{margin:0}}>Files — {s.title}</div>
             <div style={{display:'flex',gap:8,alignItems:'center'}}>
-              <button className="btn ghost sm" style={{color:stemBtnColor,borderColor:stemBtnColor,fontSize:12,padding:'4px 10px'}} onClick={()=>{setFilesOpen(false);openStemPlayer();}}>▶ Practice</button>
-              <button className="xbtn" onClick={()=>{setFilesOpen(false);setPickCat(null);setLinkMode(false);}}>×</button>
+              <button className="btn ghost sm" style={{color:stemBtnColor,borderColor:stemBtnColor,fontSize:16,padding:'6px 14px'}} onClick={()=>{setFilesOpen(false);openStemPlayer();}}>▶ Practice</button>
+              <button className="xbtn" style={{fontSize:23,width:46,height:52}} onClick={()=>{setFilesOpen(false);setPickCat(null);setLinkMode(false);}}>×</button>
             </div>
           </div>
           {FILE_CATS.filter(cat=>cat.id==='slide'||(MY_INSTRS.length>0&&cat.instr&&MY_INSTRS.includes(cat.instr))||(MY_INSTRS.length===0&&cat.instr)||(cat.id==='other'&&MY_INSTRS.includes('other'))||(MY_INSTRS.length===0&&cat.id==='other')).map(cat=>{
@@ -2182,8 +2211,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       {stemOpen && <div className="stem-player">
         <div className="stem-title-bar">
           <span className="stitle">{s.title}</span>
-          <button className="btn ghost sm" style={{fontSize:10,padding:'2px 8px',marginLeft:8}} onClick={()=>{const d=stemDefaultChans();setStemChans(prev=>prev.map((c,i)=>({...c,vol:d[i].vol,muted:d[i].muted,soloed:d[i].soloed})));stemApplyMix(d);}}>Reset</button>
-          <button className="xbtn" onClick={closeStemPlayer}>×</button>
+          <button className="btn ghost sm" style={{fontSize:13,padding:'4px 12px',marginLeft:8}} onClick={()=>{const d=stemDefaultChans();setStemChans(prev=>prev.map((c,i)=>({...c,vol:d[i].vol,muted:d[i].muted,soloed:d[i].soloed})));stemApplyMix(d);}}>Reset</button>
+          <button className="xbtn" style={{fontSize:23,width:46,height:52}} onClick={closeStemPlayer}>×</button>
         </div>
         {stemCfg && <div className="stem-channels">
           {stemChans.map(ch=>{
@@ -2311,7 +2340,7 @@ function FocusPicker({songs,learn,practice,onToggle,onSetOther}){
   );
 }
 
-function Rehearsals({state,update}){
+function Rehearsals({state,update,goSong}){
   const [adding,setAdding]=useState(false);
   const list=[...state.rehearsals].sort((a,b)=>new Date(a.date||0)-new Date(b.date||0));
   const upcoming=list.filter(r=>!r.done);
@@ -2325,16 +2354,16 @@ function Rehearsals({state,update}){
       {adding && <RehForm shows={state.shows} songs={state.songs} members={state.members} guestList={allShowGuests(state.shows)} onSave={add} onCancel={()=>setAdding(false)}/>}
       {upcoming.length===0 && !adding &&
         <div className="empty"><div className="big">No rehearsals booked</div><div className="sm">Schedule a session and pick which songs to focus on.</div></div>}
-      {upcoming.map(r=><RehCard key={r.id} r={r} state={state} patch={patch} del={del} update={update}/>)}
+      {upcoming.map(r=><RehCard key={r.id} r={r} state={state} patch={patch} del={del} update={update} goSong={goSong}/>)}
       {!adding && <div className="add-bar"><button className="btn ghost" onClick={()=>{setAdding(true);window.scrollTo({top:0,behavior:'smooth'});}}>+ Schedule rehearsal</button></div>}
       {past.length>0 && <React.Fragment>
         <div className="section-h">Done · {past.length}</div>
-        {past.map(r=><RehCard key={r.id} r={r} state={state} patch={patch} del={del} update={update}/>)}
+        {past.map(r=><RehCard key={r.id} r={r} state={state} patch={patch} del={del} update={update} goSong={goSong}/>)}
       </React.Fragment>}
     </div>
   );
 }
-function RehCard({r,state,patch,del,update}){
+function RehCard({r,state,patch,del,update,goSong}){
   const rehShow=getShow(state,r.showId);
   const showEntries=rehShow?(rehShow.setlist||[]).filter(e=>!e.excluded):[];
   const songs=showEntries.map(e=>state.songs.find(x=>x.id===e.songId)).filter(Boolean);
@@ -2406,7 +2435,7 @@ function RehCard({r,state,patch,del,update}){
           </div>
         </div>
       </div>}
-      <FocusTags songs={songs} learn={r.focusLearn} practice={r.focusPractice}/>
+      <FocusTags songs={songs} learn={r.focusLearn} practice={r.focusPractice} onGoSong={goSong}/>
       {!editFocus
         ? <button className="btn sm ghost" style={{marginTop:11}} onClick={()=>setEditFocus(true)}>{(r.focusLearn&&r.focusLearn.length)||(r.focusPractice&&r.focusPractice.length)?'Edit focus songs':'+ Set focus songs'}</button>
         : <div style={{marginTop:4}}>
@@ -2609,6 +2638,8 @@ function CropModal({src,onCancel,onDone}){
 
 function Album({state,update}){
   const [viewing,setViewing]=useState(null);
+  const closeViewing=useCallback(()=>setViewing(null),[]);
+  useBackHandler(!!viewing,closeViewing);
   const photos=[...(state.album||[])].sort((a,b)=>(b.ts||'').localeCompare(a.ts||''));
   const cameraRef=useRef(null);
   const [pendingPhoto,setPendingPhoto]=useState(null);
@@ -2685,6 +2716,8 @@ function Shows({state,update,pickShow,selectedShowId}){
   const [venue,setVenue]=useState('');
   const [confirmDel,setConfirmDel]=useState(null);
   const [manageSongs,setManageSongs]=useState(null);
+  const closeManage=useCallback(()=>setManageSongs(null),[]);
+  useBackHandler(!!manageSongs,closeManage);
   const [cropSrc,setCropSrc]=useState(null);
   const [artTarget,setArtTarget]=useState(null);
   const [busy,setBusy]=useState('');
