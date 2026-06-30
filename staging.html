@@ -351,7 +351,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.195';
+const VERSION='0.196';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -763,6 +763,7 @@ function fileKind(name){
 function badgeText(f){ const parts=(f.name||'').split('.'); const ext=parts.length>1?parts.pop().toUpperCase():''; if(ext && ext.length<=4) return ext; return f.kind==='link'?'LINK':'FILE'; }
 function fmtSize(b){ if(!b) return ''; if(b<1024) return b+' B'; if(b<1048576) return Math.round(b/1024)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
 function fmtSecs(s){ return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
+function encodeWav(audioBuffer){const nc=audioBuffer.numberOfChannels,sr=audioBuffer.sampleRate,len=audioBuffer.length;const interleaved=new Float32Array(len*nc);for(let ch=0;ch<nc;ch++){const d=audioBuffer.getChannelData(ch);for(let i=0;i<len;i++)interleaved[i*nc+ch]=d[i];}const buf=new ArrayBuffer(44+interleaved.length*2);const v=new DataView(buf);const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};ws(0,'RIFF');v.setUint32(4,36+interleaved.length*2,true);ws(8,'WAVE');ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,nc,true);v.setUint32(24,sr,true);v.setUint32(28,sr*nc*2,true);v.setUint16(32,nc*2,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,interleaved.length*2,true);for(let i=0;i<interleaved.length;i++){const s=Math.max(-1,Math.min(1,interleaved[i]));v.setInt16(44+i*2,s<0?s*0x8000:s*0x7FFF,true);}return buf;}
 function validEmail(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((e||'').trim()); }
 
 /* ============================== AUTH SHELL & SCREENS ============================== */
@@ -1788,6 +1789,50 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     stemAudiosRef.current={};
     setStemOpen(false);
   };
+  const [stemShareBusy,setStemShareBusy]=useState(false);
+  const stemShareMix=async()=>{
+    setStemShareBusy(true);
+    try{
+      const cc=stemChans;const anySolo=cc.some(c=>c.soloed&&stemAudiosRef.current[c.id]);
+      const active=cc.filter(c=>{const a=stemAudiosRef.current[c.id];if(!a||!a.src)return false;if(anySolo)return c.soloed;return !c.muted;});
+      if(!active.length){alert('No active channels to mix.');setStemShareBusy(false);return;}
+      const ctx=new (window.AudioContext||window.webkitAudioContext)();
+      const buffers=[];
+      for(const ch of active){
+        const a=stemAudiosRef.current[ch.id];
+        const resp=await fetch(a.src);
+        const ab=await resp.arrayBuffer();
+        const decoded=await ctx.decodeAudioData(ab);
+        buffers.push({ch,decoded});
+      }
+      const sr=buffers[0].decoded.sampleRate;
+      const maxLen=Math.max(...buffers.map(b=>b.decoded.length));
+      const numCh=Math.max(...buffers.map(b=>b.decoded.numberOfChannels));
+      const offCtx=new OfflineAudioContext(numCh,maxLen,sr);
+      buffers.forEach(({ch,decoded})=>{
+        const src=offCtx.createBufferSource();src.buffer=decoded;
+        const gain=offCtx.createGain();
+        gain.gain.value=ch.vol/100;
+        src.connect(gain);gain.connect(offCtx.destination);
+        src.start(0);
+      });
+      const rendered=await offCtx.startRendering();
+      const wavBuf=encodeWav(rendered);
+      const blob=new Blob([wavBuf],{type:'audio/wav'});
+      const fname=(s.title||'mix').replace(/[^a-zA-Z0-9֐-׿ ]/g,'')+' stem-mix.wav';
+      const file=new File([blob],fname,{type:'audio/wav'});
+      if(navigator.canShare&&navigator.canShare({files:[file]})){
+        await navigator.share({title:s.title+' — Stem Mix',files:[file]});
+      }else{
+        const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=fname;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+      }
+    }catch(e){
+      if(e.name==='AbortError'){}
+      else if(e.message&&/cors|fetch|network/i.test(e.message)){alert('Cannot mix: CORS is not configured on Firebase Storage. Ask your admin to run:\ngsutil cors set cors.json gs://YOUR-BUCKET\n\nwith cors.json containing:\n[{"origin":["*"],"method":["GET"],"maxAgeSeconds":3600}]');}
+      else{alert('Share failed: '+e.message);}
+    }
+    setStemShareBusy(false);
+  };
   const stemToggleMute=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,muted:!c.muted,soloed:!c.muted?false:c.soloed}:c);stemApplyMix(n);return n;});};
   const stemToggleSolo=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,soloed:!c.soloed,muted:!c.soloed?false:c.muted}:c);stemApplyMix(n);return n;});};
   const stemSetVol=(id,v)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,vol:v}:c);stemApplyMix(n);return n;});};
@@ -2383,6 +2428,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             <button onClick={stemPauseOrStop} disabled={!stemDur}>PAUSE/STOP</button>
             {!stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>{stemCfg?'CLOSE':'CONFIG'}</button>}
             {!stemRecPlayback && <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>setStemRecPrompt(true)} disabled={stemRecState==='recording'}>🎙 StemRec</button>}
+            {stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>{stemCfg?'CLOSE':'CONFIG'}</button>}
+            {stemRecPlayback && <button style={{background:'#2DD4BF',color:'#000',border:'none',borderRadius:8,padding:'4px 12px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',opacity:stemShareBusy?0.6:1}} onClick={stemShareMix} disabled={stemShareBusy}>{stemShareBusy?'Mixing…':'📤 Share'}</button>}
           </div>
         </div>
       </div>}
