@@ -294,8 +294,9 @@
   .stem-title-bar .stitle{font-family:var(--display);font-size:13px;font-weight:600;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0;direction:ltr}
   .stem-title-bar .xbtn{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 8px}
   .practice-full{position:fixed;inset:0;z-index:59;background:var(--bg);display:flex;flex-direction:column}
-  .practice-slide{flex:1;overflow:auto;display:flex;align-items:stretch;justify-content:center;padding:0;min-height:0}
-  .practice-slide img,.practice-slide iframe{width:100%;height:100%;object-fit:contain;border:none}
+  .practice-slide{flex:1;overflow:hidden;display:flex;align-items:stretch;justify-content:center;padding:0;min-height:0;touch-action:none;cursor:grab}
+  .practice-slide.dragging{cursor:grabbing}
+  .practice-slide img,.practice-slide iframe{width:100%;height:100%;object-fit:contain;border:none;pointer-events:none}
   .practice-slide iframe{width:100%;height:100%}
   .practice-no-slide{color:var(--muted);font-style:italic;font-size:14px}
   .reh-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
@@ -350,7 +351,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.193';
+const VERSION='0.197';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -457,6 +458,30 @@ function InstrBadge({id,size=28}){
   );
 }
 const DISC=(<g><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></g>);
+function SlideViewer({children}){
+  const ref=useRef(null);
+  const st=useRef({scale:1,tx:0,ty:0,dragging:false,startX:0,startY:0,startTx:0,startTy:0,pinchDist:0});
+  const apply=()=>{const el=ref.current;if(el){const c=el.firstElementChild;if(c)c.style.transform='translate('+st.current.tx+'px,'+st.current.ty+'px) scale('+st.current.scale+')';el.classList.toggle('dragging',st.current.dragging);}};
+  const clampScale=(s)=>Math.max(0.5,Math.min(s,5));
+  useEffect(()=>{
+    const el=ref.current;if(!el)return;
+    const onWheel=(e)=>{if(!e.ctrlKey&&!e.metaKey)return;e.preventDefault();const d=e.deltaY>0?0.9:1.1;const r=el.getBoundingClientRect();const ox=e.clientX-r.left-r.width/2;const oy=e.clientY-r.top-r.height/2;const ns=clampScale(st.current.scale*d);const f=ns/st.current.scale;st.current.tx=ox-(ox-st.current.tx)*f;st.current.ty=oy-(oy-st.current.ty)*f;st.current.scale=ns;apply();};
+    const onMD=(e)=>{if(e.button!==0)return;st.current.dragging=true;st.current.startX=e.clientX;st.current.startY=e.clientY;st.current.startTx=st.current.tx;st.current.startTy=st.current.ty;apply();};
+    const onMM=(e)=>{if(!st.current.dragging)return;st.current.tx=st.current.startTx+(e.clientX-st.current.startX);st.current.ty=st.current.startTy+(e.clientY-st.current.startY);apply();};
+    const onMU=()=>{st.current.dragging=false;apply();};
+    const dist=(t)=>Math.hypot(t[1].clientX-t[0].clientX,t[1].clientY-t[0].clientY);
+    const onTS=(e)=>{if(e.touches.length===2){st.current.pinchDist=dist(e.touches);}else if(e.touches.length===1){st.current.dragging=true;st.current.startX=e.touches[0].clientX;st.current.startY=e.touches[0].clientY;st.current.startTx=st.current.tx;st.current.startTy=st.current.ty;}};
+    const onTM=(e)=>{if(e.touches.length===2){e.preventDefault();const nd=dist(e.touches);const f=nd/st.current.pinchDist;const ns=clampScale(st.current.scale*f);st.current.scale=ns;st.current.pinchDist=nd;apply();}else if(e.touches.length===1&&st.current.dragging){st.current.tx=st.current.startTx+(e.touches[0].clientX-st.current.startX);st.current.ty=st.current.startTy+(e.touches[0].clientY-st.current.startY);apply();}};
+    const onTE=()=>{st.current.dragging=false;apply();};
+    const onDbl=(e)=>{e.preventDefault();st.current.scale=1;st.current.tx=0;st.current.ty=0;apply();};
+    el.addEventListener('wheel',onWheel,{passive:false});
+    el.addEventListener('mousedown',onMD);window.addEventListener('mousemove',onMM);window.addEventListener('mouseup',onMU);
+    el.addEventListener('touchstart',onTS,{passive:true});el.addEventListener('touchmove',onTM,{passive:false});el.addEventListener('touchend',onTE);
+    el.addEventListener('dblclick',onDbl);
+    return()=>{el.removeEventListener('wheel',onWheel);el.removeEventListener('mousedown',onMD);window.removeEventListener('mousemove',onMM);window.removeEventListener('mouseup',onMU);el.removeEventListener('touchstart',onTS);el.removeEventListener('touchmove',onTM);el.removeEventListener('touchend',onTE);el.removeEventListener('dblclick',onDbl);};
+  },[]);
+  return <div ref={ref} className="practice-slide"><div style={{width:'100%',height:'100%',transformOrigin:'center center',willChange:'transform'}}>{children}</div></div>;
+}
 function CoverThumb({src,size=46,radius=10,title}){
   if(src) return <img src={src} alt="" title={title||''} className="cover-thumb" style={{width:size,height:size,borderRadius:radius}}/>;
   return <div className="cover-thumb ph" title={title||''} style={{width:size,height:size,borderRadius:radius}}>
@@ -738,6 +763,7 @@ function fileKind(name){
 function badgeText(f){ const parts=(f.name||'').split('.'); const ext=parts.length>1?parts.pop().toUpperCase():''; if(ext && ext.length<=4) return ext; return f.kind==='link'?'LINK':'FILE'; }
 function fmtSize(b){ if(!b) return ''; if(b<1024) return b+' B'; if(b<1048576) return Math.round(b/1024)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
 function fmtSecs(s){ return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
+function encodeWav(audioBuffer){const nc=audioBuffer.numberOfChannels,sr=audioBuffer.sampleRate,len=audioBuffer.length;const interleaved=new Float32Array(len*nc);for(let ch=0;ch<nc;ch++){const d=audioBuffer.getChannelData(ch);for(let i=0;i<len;i++)interleaved[i*nc+ch]=d[i];}const buf=new ArrayBuffer(44+interleaved.length*2);const v=new DataView(buf);const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};ws(0,'RIFF');v.setUint32(4,36+interleaved.length*2,true);ws(8,'WAVE');ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,nc,true);v.setUint32(24,sr,true);v.setUint32(28,sr*nc*2,true);v.setUint16(32,nc*2,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,interleaved.length*2,true);for(let i=0;i<interleaved.length;i++){const s=Math.max(-1,Math.min(1,interleaved[i]));v.setInt16(44+i*2,s<0?s*0x8000:s*0x7FFF,true);}return buf;}
 function validEmail(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((e||'').trim()); }
 
 /* ============================== AUTH SHELL & SCREENS ============================== */
@@ -1763,6 +1789,58 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     stemAudiosRef.current={};
     setStemOpen(false);
   };
+  const [stemShareBusy,setStemShareBusy]=useState(false);
+  const [stemShareReady,setStemShareReady]=useState(null);
+  const stemShareMix=async()=>{
+    setStemShareBusy(true);setStemShareReady(null);
+    try{
+      const cc=stemChans;const anySolo=cc.some(c=>c.soloed&&stemAudiosRef.current[c.id]);
+      const active=cc.filter(c=>{const a=stemAudiosRef.current[c.id];if(!a||!a.src)return false;if(anySolo)return c.soloed;return !c.muted;});
+      if(!active.length){alert('No active channels to mix.');setStemShareBusy(false);return;}
+      const ctx=new (window.AudioContext||window.webkitAudioContext)();
+      const buffers=[];
+      for(const ch of active){
+        const a=stemAudiosRef.current[ch.id];
+        const resp=await fetch(a.src);
+        const ab=await resp.arrayBuffer();
+        const decoded=await ctx.decodeAudioData(ab);
+        buffers.push({ch,decoded});
+      }
+      const sr=buffers[0].decoded.sampleRate;
+      const maxLen=Math.max(...buffers.map(b=>b.decoded.length));
+      const numCh=Math.max(...buffers.map(b=>b.decoded.numberOfChannels));
+      const offCtx=new OfflineAudioContext(numCh,maxLen,sr);
+      buffers.forEach(({ch,decoded})=>{
+        const src=offCtx.createBufferSource();src.buffer=decoded;
+        const gain=offCtx.createGain();
+        gain.gain.value=ch.vol/100;
+        src.connect(gain);gain.connect(offCtx.destination);
+        src.start(0);
+      });
+      const rendered=await offCtx.startRendering();
+      const wavBuf=encodeWav(rendered);
+      const blob=new Blob([wavBuf],{type:'audio/wav'});
+      const fname=(s.title||'mix').replace(/[^a-zA-Z0-9֐-׿ ]/g,'')+' stem-mix.wav';
+      setStemShareReady({blob,fname});
+    }catch(e){
+      if(e.message&&/cors|fetch|network/i.test(e.message)){alert('Cannot mix: CORS is not configured on Firebase Storage. Ask your admin to run:\ngsutil cors set cors.json gs://YOUR-BUCKET\n\nwith cors.json containing:\n[{"origin":["*"],"method":["GET"],"maxAgeSeconds":3600}]');}
+      else{alert('Mix failed: '+e.message);}
+    }
+    setStemShareBusy(false);
+  };
+  const stemShareSend=async()=>{
+    if(!stemShareReady)return;
+    const {blob,fname}=stemShareReady;
+    const file=new File([blob],fname,{type:'audio/wav'});
+    try{
+      if(navigator.canShare&&navigator.canShare({files:[file]})){
+        await navigator.share({title:s.title+' — Stem Mix',files:[file]});
+      }else{
+        const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=fname;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+      }
+    }catch(e){if(e.name!=='AbortError')alert('Share failed: '+e.message);}
+    setStemShareReady(null);
+  };
   const stemToggleMute=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,muted:!c.muted,soloed:!c.muted?false:c.soloed}:c);stemApplyMix(n);return n;});};
   const stemToggleSolo=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,soloed:!c.soloed,muted:!c.soloed?false:c.muted}:c);stemApplyMix(n);return n;});};
   const stemSetVol=(id,v)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,vol:v}:c);stemApplyMix(n);return n;});};
@@ -2309,16 +2387,16 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         </div>
       </div>}
       {stemOpen && <div className="practice-full">
-        <div className="practice-slide">
+        <SlideViewer>
           {(()=>{const slides=(s.files||[]).filter(f=>(f.cat==='slide')&&f.url);
             if(!slides.length) return <div className="practice-no-slide">No slide uploaded</div>;
             const isImg=f=>/\.(jpe?g|png|webp|gif|bmp|svg)$/i.test(f.name||'');
             const isPdf=f=>f.type==='pdf'||/\.pdf$/i.test(f.name||'');
             const slideFile=slides.find(isImg)||slides.find(isPdf)||slides[0];
-            if(isPdf(slideFile)) return <iframe src={slideFile.url+'#toolbar=0'} title="Slide"/>;
+            if(isPdf(slideFile)){const mob=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);const src=mob?'https://docs.google.com/gview?embedded=true&url='+encodeURIComponent(slideFile.url):slideFile.url+'#toolbar=0';return <iframe src={src} title="Slide"/>;}
             return <img src={slideFile.url} alt={slideFile.name||'Slide'}/>;
           })()}
-        </div>
+        </SlideViewer>
       </div>}
       {stemOpen && <div className="stem-player">
         <div className="stem-title-bar">
@@ -2358,6 +2436,9 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             <button onClick={stemPauseOrStop} disabled={!stemDur}>PAUSE/STOP</button>
             {!stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>{stemCfg?'CLOSE':'CONFIG'}</button>}
             {!stemRecPlayback && <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>setStemRecPrompt(true)} disabled={stemRecState==='recording'}>🎙 StemRec</button>}
+            {stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>{stemCfg?'CLOSE':'CONFIG'}</button>}
+            {stemRecPlayback && !stemShareReady && <button style={{background:'#2DD4BF',color:'#000',border:'none',borderRadius:8,padding:'4px 12px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',opacity:stemShareBusy?0.6:1}} onClick={stemShareMix} disabled={stemShareBusy}>{stemShareBusy?'Mixing…':'📤 Share'}</button>}
+            {stemRecPlayback && stemShareReady && <button style={{background:'var(--green)',color:'#000',border:'none',borderRadius:8,padding:'4px 12px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',animation:'pulse 1s infinite'}} onClick={stemShareSend}>📤 Send</button>}
           </div>
         </div>
       </div>}
