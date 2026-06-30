@@ -350,7 +350,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.193';
+const VERSION='0.194';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -2315,7 +2315,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             const isImg=f=>/\.(jpe?g|png|webp|gif|bmp|svg)$/i.test(f.name||'');
             const isPdf=f=>f.type==='pdf'||/\.pdf$/i.test(f.name||'');
             const slideFile=slides.find(isImg)||slides.find(isPdf)||slides[0];
-            if(isPdf(slideFile)) return <iframe src={slideFile.url+'#toolbar=0'} title="Slide"/>;
+            if(isPdf(slideFile)){const mob=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);const src=mob?'https://docs.google.com/gview?embedded=true&url='+encodeURIComponent(slideFile.url):slideFile.url+'#toolbar=0';return <iframe src={src} title="Slide"/>;}
             return <img src={slideFile.url} alt={slideFile.name||'Slide'}/>;
           })()}
         </div>
