@@ -350,7 +350,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.192';
+const VERSION='0.193';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -2310,10 +2310,13 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       </div>}
       {stemOpen && <div className="practice-full">
         <div className="practice-slide">
-          {(()=>{const slideFile=(s.files||[]).find(f=>(f.cat==='slide')&&f.url);
-            if(!slideFile) return <div className="practice-no-slide">No slide uploaded</div>;
-            const isPdf=slideFile.type==='pdf'||/\.pdf$/i.test(slideFile.name||'');
-            return isPdf ? <iframe src={slideFile.url+'#toolbar=0'} title="Slide"/> : <img src={slideFile.url} alt={slideFile.name||'Slide'}/>;
+          {(()=>{const slides=(s.files||[]).filter(f=>(f.cat==='slide')&&f.url);
+            if(!slides.length) return <div className="practice-no-slide">No slide uploaded</div>;
+            const isImg=f=>/\.(jpe?g|png|webp|gif|bmp|svg)$/i.test(f.name||'');
+            const isPdf=f=>f.type==='pdf'||/\.pdf$/i.test(f.name||'');
+            const slideFile=slides.find(isImg)||slides.find(isPdf)||slides[0];
+            if(isPdf(slideFile)) return <iframe src={slideFile.url+'#toolbar=0'} title="Slide"/>;
+            return <img src={slideFile.url} alt={slideFile.name||'Slide'}/>;
           })()}
         </div>
       </div>}
