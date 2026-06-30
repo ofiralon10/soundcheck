@@ -351,7 +351,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.196';
+const VERSION='0.197';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -1790,8 +1790,9 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     setStemOpen(false);
   };
   const [stemShareBusy,setStemShareBusy]=useState(false);
+  const [stemShareReady,setStemShareReady]=useState(null);
   const stemShareMix=async()=>{
-    setStemShareBusy(true);
+    setStemShareBusy(true);setStemShareReady(null);
     try{
       const cc=stemChans;const anySolo=cc.some(c=>c.soloed&&stemAudiosRef.current[c.id]);
       const active=cc.filter(c=>{const a=stemAudiosRef.current[c.id];if(!a||!a.src)return false;if(anySolo)return c.soloed;return !c.muted;});
@@ -1820,18 +1821,25 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       const wavBuf=encodeWav(rendered);
       const blob=new Blob([wavBuf],{type:'audio/wav'});
       const fname=(s.title||'mix').replace(/[^a-zA-Z0-9֐-׿ ]/g,'')+' stem-mix.wav';
-      const file=new File([blob],fname,{type:'audio/wav'});
+      setStemShareReady({blob,fname});
+    }catch(e){
+      if(e.message&&/cors|fetch|network/i.test(e.message)){alert('Cannot mix: CORS is not configured on Firebase Storage. Ask your admin to run:\ngsutil cors set cors.json gs://YOUR-BUCKET\n\nwith cors.json containing:\n[{"origin":["*"],"method":["GET"],"maxAgeSeconds":3600}]');}
+      else{alert('Mix failed: '+e.message);}
+    }
+    setStemShareBusy(false);
+  };
+  const stemShareSend=async()=>{
+    if(!stemShareReady)return;
+    const {blob,fname}=stemShareReady;
+    const file=new File([blob],fname,{type:'audio/wav'});
+    try{
       if(navigator.canShare&&navigator.canShare({files:[file]})){
         await navigator.share({title:s.title+' — Stem Mix',files:[file]});
       }else{
         const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=fname;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
       }
-    }catch(e){
-      if(e.name==='AbortError'){}
-      else if(e.message&&/cors|fetch|network/i.test(e.message)){alert('Cannot mix: CORS is not configured on Firebase Storage. Ask your admin to run:\ngsutil cors set cors.json gs://YOUR-BUCKET\n\nwith cors.json containing:\n[{"origin":["*"],"method":["GET"],"maxAgeSeconds":3600}]');}
-      else{alert('Share failed: '+e.message);}
-    }
-    setStemShareBusy(false);
+    }catch(e){if(e.name!=='AbortError')alert('Share failed: '+e.message);}
+    setStemShareReady(null);
   };
   const stemToggleMute=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,muted:!c.muted,soloed:!c.muted?false:c.soloed}:c);stemApplyMix(n);return n;});};
   const stemToggleSolo=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,soloed:!c.soloed,muted:!c.soloed?false:c.muted}:c);stemApplyMix(n);return n;});};
@@ -2429,7 +2437,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             {!stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>{stemCfg?'CLOSE':'CONFIG'}</button>}
             {!stemRecPlayback && <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>setStemRecPrompt(true)} disabled={stemRecState==='recording'}>🎙 StemRec</button>}
             {stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>{stemCfg?'CLOSE':'CONFIG'}</button>}
-            {stemRecPlayback && <button style={{background:'#2DD4BF',color:'#000',border:'none',borderRadius:8,padding:'4px 12px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',opacity:stemShareBusy?0.6:1}} onClick={stemShareMix} disabled={stemShareBusy}>{stemShareBusy?'Mixing…':'📤 Share'}</button>}
+            {stemRecPlayback && !stemShareReady && <button style={{background:'#2DD4BF',color:'#000',border:'none',borderRadius:8,padding:'4px 12px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',opacity:stemShareBusy?0.6:1}} onClick={stemShareMix} disabled={stemShareBusy}>{stemShareBusy?'Mixing…':'📤 Share'}</button>}
+            {stemRecPlayback && stemShareReady && <button style={{background:'var(--green)',color:'#000',border:'none',borderRadius:8,padding:'4px 12px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',animation:'pulse 1s infinite'}} onClick={stemShareSend}>📤 Send</button>}
           </div>
         </div>
       </div>}
