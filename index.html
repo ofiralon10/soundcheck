@@ -351,7 +351,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.199';
+const VERSION='0.200';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -1687,11 +1687,12 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     return stemDefaultChans();
   });
   const stemAudiosRef=useRef({});
+  const stemChansRef=useRef(stemChans);
   const stemRafRef=useRef(null);
   const stemPlayingRef=useRef(false);
   const stemGetMaxDur=()=>{let m=0;Object.values(stemAudiosRef.current).forEach(a=>{if(a&&isFinite(a.duration))m=Math.max(m,a.duration);});return m;};
   const stemApplyMix=(chans)=>{
-    const cc=chans||stemChans;
+    const cc=chans||stemChansRef.current;
     const anySolo=cc.some(c=>c.soloed&&stemAudiosRef.current[c.id]);
     cc.forEach(c=>{
       const a=stemAudiosRef.current[c.id];if(!a)return;
@@ -1712,6 +1713,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     const audios=Object.values(stemAudiosRef.current).filter(Boolean);
     if(!audios.length)return;
     audios.forEach(a=>{if(a.currentTime>=md) a.currentTime=0;});
+    stemApplyMix();
     await Promise.all(audios.map(a=>a.play().catch(()=>{})));
     stemPlayingRef.current=true;setStemPlaying(true);setStemDur(md);
     stemRafRef.current=requestAnimationFrame(stemTick);
@@ -1844,7 +1846,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const stemToggleMute=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,muted:!c.muted,soloed:!c.muted?false:c.soloed}:c);stemApplyMix(n);return n;});};
   const stemToggleSolo=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,soloed:!c.soloed,muted:!c.soloed?false:c.muted}:c);stemApplyMix(n);return n;});};
   const stemSetVol=(id,v)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,vol:v}:c);stemApplyMix(n);return n;});};
-  useEffect(()=>{stemApplyMix();try{localStorage.setItem(stemStorageKey,JSON.stringify(stemChans.map(c=>({id:c.id,vol:c.vol,muted:c.muted,soloed:c.soloed}))));}catch(_){}},[stemChans]);
+  useEffect(()=>{stemChansRef.current=stemChans;stemApplyMix(stemChans);try{localStorage.setItem(stemStorageKey,JSON.stringify(stemChans.map(c=>({id:c.id,vol:c.vol,muted:c.muted,soloed:c.soloed}))));}catch(_){}},[stemChans]);
 
   const [stemRecPrompt,setStemRecPrompt]=useState(false);
   const [stemRecState,setStemRecState]=useState(null);
