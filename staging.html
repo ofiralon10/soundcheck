@@ -351,7 +351,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.198';
+const VERSION='0.199';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -1885,9 +1885,13 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       stemRecPreMixRef.current=stemChans.map(c=>({id:c.id,muted:c.muted,soloed:c.soloed,vol:c.vol}));
       setStemChans(prev=>{const n=prev.map(c=>({...c,muted:MY_INSTRS.includes(c.id)?true:c.muted,soloed:false}));stemApplyMix(n);return n;});
       stemSeek(0);
-      await stemPlay();
-      mr.start(1000);
+      const audios=Object.values(stemAudiosRef.current).filter(Boolean);
+      audios.forEach(a=>{a.currentTime=0;});
+      mr.start(100);
       stemRecRef.current=mr;
+      await Promise.all(audios.map(a=>a.play().catch(()=>{})));
+      stemPlayingRef.current=true;setStemPlaying(true);setStemDur(stemGetMaxDur());
+      stemRafRef.current=requestAnimationFrame(stemTick);
       setStemRecState('recording');
       setStemRecTime(0);
       stemRecTimerRef.current=setInterval(()=>setStemRecTime(t=>t+1),1000);
