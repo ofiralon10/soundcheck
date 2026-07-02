@@ -39,7 +39,7 @@ You cannot run Firebase locally. To check a change before handing it off:
 - **Versioning.** There's a `const VERSION='x.yyy'` near the top of the script, rendered next
   to the SOUNDCHECK wordmark. **Every change bumps the right-hand number by 1** (0.103 → 0.104).
   Never change the left-hand number unless explicitly told. The owner uses the on-screen version
-  to confirm a deploy landed. Current version: **0.175**.
+  to confirm a deploy landed. Current version: **0.201**.
 - **Edit staging.html first.** Don't touch `index.html` until the owner asks to port a tested change.
 - **Porting to index.html:** `cp staging.html index.html`, then apply two fixes in index.html:
   1. Change `/staging/i.test(location.pathname)` → `/staging\.html/i.test(location.pathname)`
@@ -47,10 +47,13 @@ You cannot run Firebase locally. To check a change before handing it off:
   These prevent index.html from auto-selecting the staging board.
 - **Single big file** (~2300+ lines). When editing, keep `str_replace` targets unique; re-read a
   region before editing it again.
-- **State doc shape** (`boards/{bandId}`): `band`, `bandArt`, `concert`, `members` (per instrument:
-  keys/drums/guitar/bass/vocals), `songs[]`, `rehearsals[]`, `activity[]`, `album[]`, `readinessHistory[]`,
-  `access`, `memberEmails`, `_rev`, `_updatedAt`. `defaultState()` creates it; `migrate()` defaults/
-  normalizes on every load — **add new fields' defaults to `migrate()`** so old docs don't break.
+- **State doc shape** (`boards/{bandId}`): `band`, `bandArt`, `shows[]` (replaces old `concert`),
+  `members` (per instrument: keys/drums/guitar/bass/vocals), `songs[]`, `rehearsals[]`,
+  `activity[]`, `album[]`, `access`, `memberEmails`, `_rev`, `_updatedAt`.
+  Each show: `{id, name, date, venue, setlist[], readinessHistory[]}`.
+  Each setlist entry: `{songId, parts:{}, guests:[], encore, excluded}`.
+  `defaultState()` creates it; `migrate()` defaults/normalizes on every load —
+  **add new fields' defaults to `migrate()`** so old docs don't break.
 - **Saves** overwrite the whole doc (`boardRef.set(...)`), last-write-wins, real-time synced.
 - **Songs are per band, never shared between bands.**
 - Mobile-first: forms scroll above the keyboard; touch-friendly controls. Drag-and-drop for reorder
@@ -61,7 +64,7 @@ You cannot run Firebase locally. To check a change before handing it off:
 - **Changelog**: update the `CHANGELOG` object with entries for each version that ships to production.
   The "What's New" modal shows on first load when version changes.
 
-## Tabs & components (staging.html, v0.175)
+## Tabs & components (staging.html, v0.201)
 
 ### Stage tab
 - Show-readiness dashboard: overall %, tick visualization, song count, ready count, set length.
@@ -101,9 +104,9 @@ You cannot run Firebase locally. To check a change before handing it off:
 
 ### File management (Files modal)
 - Opened via "Access Files" button on each song.
-- **Filtered view**: shows only sections relevant to the user — **Slide**, **Recordings**, and the
-  section matching the user's chosen instrument (`MY_INSTR`). "Other" section only appears if
-  the user's instrument is set to "other" (or no instrument is set).
+- **Filtered view**: shows only sections relevant to the user — **Slide**, **Recordings**,
+  **My Stem Recordings**, and sections matching the user's chosen instruments (`MY_INSTRS`).
+  "Other" section only appears if the user has "other" selected (or no instrument is set).
 - **File categories** (`FILE_CATS`): Slide, Vocals, Drums, Bass, Guitar, Keys, Other.
   Files have `cat` field. Old files with `cat:'original'` map to `'other'`.
 - **Per-section Add button** for uploading files to a specific category.
@@ -118,6 +121,9 @@ You cannot run Firebase locally. To check a change before handing it off:
   - Progress bar also visible on the song row when Files modal is closed (background upload).
   - Button color: green (all 6 core stems), yellow (partial), red (none).
 - **Practice button** in Files modal header — jumps to stem player. Colored same as stem availability.
+- **My Stem Recordings section**: shows files with `cat:'stem-rec'` and `by:MY_NAME`. Only
+  visible to the recording author. Play button opens stem-rec playback mode. Appears above
+  the Get Stems button.
 - Files can be played (audio player modal), opened, downloaded, or deleted with confirmation.
 - **Known bug fixed (v0.159)**: `e.target.files` is a FileList reference — must copy to array
   via `Array.from()` before clearing input with `e.target.value=''`, or the FileList empties.
@@ -127,22 +133,78 @@ You cannot run Firebase locally. To check a change before handing it off:
   Other, Metronome (7 channels total).
 - Uses plain `Audio` elements with `.volume` for mixing — **NOT Web Audio API** due to Firebase
   Storage CORS restrictions (`fetch()` and `crossOrigin='anonymous'` both fail on storage URLs).
+  CORS has been configured on the bucket (`gsutil cors set cors.json gs://soundcheck-1f16b.firebasestorage.app`)
+  to allow `fetch()` for the Share/mix feature only.
 - **Per-channel controls**: volume slider (0–100%), Mute (M) button, Solo (S) button.
+  M and S are mutually exclusive: pressing M clears S, pressing S clears M.
 - **Metronome channel**: separate from Other, detected from filename (metronome/click/tick).
   Muted by default. Not counted toward stem availability (6 core stems = green).
   Greyed out when no file loaded.
 - **Transport**: PLAY (green), PAUSE/STOP (tap=pause/resume, double-tap=reset to beginning),
-  CONFIG (toggle channel visibility).
+  CONFIG (toggle channel visibility), StemRec (red, opens stem recording flow).
 - **Scrub bar**: draggable green thumb (18px) with time display.
 - **Config persistence**: volume/mute/solo saved per song in `localStorage` key `sc_stem_[songId]`.
   Reset button in header restores defaults.
 - **Slide overlay**: when Practice is opened, the song's slide file (if any) displays above the
   stem player on the remaining screen space (z-index 59, player at 60).
+  - **Slide selection priority**: images (jpg/png/webp/gif) first, then PDF, then any other format.
+    TIF files are not supported by browsers.
+  - **PDF slides on mobile**: uses Google Docs Viewer (`docs.google.com/gview?embedded=true`) as
+    mobile browsers can't render PDFs inline in iframes.
+  - **Zoom/pan controls** (`SlideViewer` component): pinch-to-zoom + finger pan on mobile,
+    Ctrl+scroll zoom + click-drag pan on PC. Double-tap/click resets to original view.
 - **Wide-screen layout** (≥900px): channels display horizontally left-to-right instead of
   vertically stacked. Config panel defaults to open on wide screens.
 - **CSS**: `.stem-player` fixed at bottom, centered with `max-width:540px` (mobile) / `1200px` (wide).
-- `stemLoadUrl(catId, url, name)` — loads audio into a channel.
-- `stemApplyMix(chans)` — applies mute/solo/volume to all Audio elements.
+- **Stale closure fix (v0.200)**: `stemApplyMix` reads from `stemChansRef` (a ref that always holds
+  current channel state) instead of the `stemChans` closure, which goes stale in callbacks and
+  effects. The `useEffect` on `stemChans` updates the ref and reapplies the mix.
+- `stemLoadUrl(catId, url, name)` — loads audio into a channel. Calls `stemApplyMix` on load to
+  apply correct volume immediately.
+- `stemApplyMix(chans)` — applies mute/solo/volume to all Audio elements. Uses `stemChansRef`
+  when called without args.
+
+### Stem recording (v0.187+)
+- **Record your part over backing stems**. StemRec button in stem player transport opens a
+  confirmation dialog, then records the user's microphone while playing all non-user stems.
+- **Mic processing**: Web Audio pipeline with 2.5x gain node + dynamics compressor (threshold
+  -24dB, ratio 4:1) for louder, more consistent recordings from phone mics.
+  `autoGainControl:true` enabled for adaptive mic sensitivity.
+- **Audio unlock**: all Audio elements get `play()+pause()` synchronously during the "Start"
+  button tap, before the async `getUserMedia` call. This prevents mobile browsers from blocking
+  playback after the user gesture context is lost. If all plays still fail, shows an error message.
+- **Sync**: MediaRecorder starts (`mr.start(100)`) before stems play, so recording begins at the
+  same moment as playback. 100ms timeslice for tight data capture.
+- **Mix state preservation**: saves current mute/solo/vol config to `stemRecPreMixRef` before
+  recording. User's instruments are force-muted, solo cleared. Restored after save/discard.
+- **File storage**: saved as `cat:'stem-rec'`, `by:MY_NAME`. Path: `files/{BOARD}/{fid}-stemrec.{ext}`.
+- **Stem-rec playback mode** (`stemRecPlayback` state): opened from "My Stem Recordings" Play button.
+  - Channels: one "My Stem" channel (vol 100%) + one channel per non-user instrument (vol 70%).
+  - Transport: PLAY, PAUSE/STOP, CONFIG, Share button (no StemRec button).
+  - **Share/mix feature**: two-phase flow — tap "Share" to fetch and offline-mix all active channels
+    into a WAV file (using `OfflineAudioContext` + `encodeWav`), then tap "Send" to trigger the
+    native share sheet (mobile) or download (PC). Two phases needed because `navigator.share()`
+    requires a direct user gesture, which is lost after async mixing.
+
+### Shows tab (v0.177+)
+- **Multi-show support**: each band can have multiple shows (concerts). Shows replace the old
+  single `state.concert` object.
+- Show cards display: name, date, venue, song count, overall readiness %, cover art grid of
+  song covers (non-excluded).
+- **Tap-to-reveal art buttons**: Change Art / Remove Art only shown when art area is tapped.
+- **Clone show** (v0.184): clone from an existing show with updated date/venue. Copies setlist
+  with fresh `parts` (all `todo`), carries over art URL.
+- **Delete show**: requires confirmation dialog.
+- **Show selector**: compact dropdown in Stage and Setlist tabs for switching active show.
+- Each show has its own setlist with per-song `parts`, `guests`, `encore`, `excluded`.
+- `state.shows[]` array, each with `{id, name, date, venue, setlist[], readinessHistory[]}`.
+
+### Back button handling (v0.186+)
+- **Global `backHandlers` registry**: modals/overlays register close functions via
+  `useBackHandler(active, closeFn)` hook.
+- Phone back button closes the topmost modal instead of exiting the app.
+- If no modal is open, single back does nothing; double-tap fast exits the app.
+- `window.addEventListener('popstate', ...)` manages the handler stack and `history.pushState`.
 
 ### Instrument system
 - 5 core instruments: keys (#8B7CF6), drums (#F2545B), guitar (#F4A93C), bass (#2DD4BF),
@@ -150,11 +212,15 @@ You cannot run Firebase locally. To check a change before handing it off:
 - **"Other" instrument**: treble clef icon, light blue (#5BC0EB). Available in instrument picker
   and prompt. When selected, Files modal shows the Other file section.
 - **Metronome**: metronome icon (triangular body with pendulum), grey (#948FA6).
+- **Multi-instrument selection** (v0.179+): users can pick multiple instruments (e.g. Vocals + Keys).
+  `MY_INSTRS` is an array stored comma-separated in `localStorage` key `sc_instr`. Single values
+  from old versions still work. `isMyInstr(id)` returns true if no instruments set OR if id is in
+  the array. Files modal shows sections for all selected instruments.
 - `ICON` object holds SVG paths for each instrument (including `other` and `metronome`).
 - `InstrIcon({id, size})` — renders plain SVG icon.
 - `InstrBadge({id, size})` — renders icon in colored circle with inner ring.
-- `InstrPicker` — dropdown in header for choosing your instrument. Includes Other option.
-- `MY_INSTR` stored in `localStorage` key `sc_instr`. Set via `setMyInstr(id)`.
+- `InstrPicker` — header dropdown that toggles multiple instruments on/off. Shows all selected
+  instrument icons in the header button.
 - Instrument prompt appears on first use (after changelog dismiss) if no instrument set.
 
 ### Rehearsals tab
@@ -241,7 +307,8 @@ Currently logged events:
   `sc_board` can be set to `"staging"` from a previous staging.html visit and persist into index.html.
   Add `last!=='staging'` guard in the localStorage restore.
 - Don't introduce `localStorage`/`sessionStorage` assumptions that break first-load; existing keys are
-  `sc_name`, `sc_board`, `sc_seen_activity`, `sc_instr`, `sc_seen_ver`, `sc_stem_[songId]`.
+  `sc_name`, `sc_board`, `sc_seen_activity`, `sc_instr` (comma-separated multi-instrument),
+  `sc_seen_ver`, `sc_stem_[songId]`, `sc_show` (last-selected show ID).
 - Adding a new persisted field: update `defaultState()` AND `migrate()`.
 - **scrollIntoView with sticky header**: `scrollIntoView({block:'start'})` positions the element at
   the very top of the viewport, hidden behind the sticky `.topbar`. Use manual `window.scrollTo()`
@@ -269,6 +336,23 @@ Currently logged events:
   extras). `uploadStemFile` replaces existing stem for same category on re-upload.
 - **Metronome migration**: `migrate()` moves files with metronome/click/tick in name from
   `cat:'other'` to `cat:'metronome'`.
+- **Mobile autoplay policy**: `Audio.play()` is blocked after async operations (like
+  `getUserMedia`) because the user gesture context is lost. Must "unlock" Audio elements by
+  calling `play()+pause()` synchronously during the button tap, before any async work.
+- **`navigator.share()` user gesture**: also requires a direct user gesture. Cannot call it
+  after an async mixing operation. Use a two-phase flow: async work first, then show a button
+  whose tap triggers the share.
+- **`stemApplyMix` stale closure**: never call `stemApplyMix()` without args from inside
+  callbacks or effects — it used to read stale `stemChans` closure. Fixed by using
+  `stemChansRef` (a ref always holding current state). Always pass explicit `chans` arg or
+  rely on the ref.
+- **TIF/TIFF images**: browsers cannot display `.tif` files. Slide files must be in
+  jpg/png/webp/gif (images) or pdf format.
+- **PDF in mobile iframe**: mobile browsers download PDFs instead of rendering them inline.
+  Use Google Docs Viewer (`docs.google.com/gview?embedded=true&url=...`) for mobile.
+- **Firebase Storage CORS config**: bucket `soundcheck-1f16b.firebasestorage.app` has CORS
+  configured (`cors.json` in repo root) to allow `GET` from any origin. This enables `fetch()`
+  for the stem mix/share feature. Set via `gsutil cors set cors.json gs://BUCKET`.
 
 ## Key helper functions
 
@@ -287,6 +371,11 @@ Currently logged events:
 - `uid()` — short random ID generator.
 - `stemCatFromName(name)` — detects instrument from filename (vocals/drums/bass/guitar/keys/metronome/other).
 - `stemRename(origName, cat)` — renames stem file to `[song title] [Instrument] stem.[ext]`.
+- `isMyInstr(id)` — true if no instruments set OR if id is in `MY_INSTRS`.
+- `setMyInstrs(ids)` — sets `MY_INSTRS` array, persists comma-separated to localStorage.
+- `useBackHandler(active, closeFn)` — registers a modal close function for the phone back button.
+- `encodeWav(audioBuffer)` — encodes an AudioBuffer to a WAV ArrayBuffer (PCM 16-bit).
+- `SlideViewer({children})` — wrapper component with zoom/pan support for practice slide overlay.
 
 ## CSS architecture
 
