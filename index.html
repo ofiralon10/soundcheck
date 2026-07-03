@@ -261,7 +261,7 @@
   .stem-btns button{flex:1;height:42px;border-radius:10px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);font-family:var(--display);font-size:12px;font-weight:700;letter-spacing:.06em;cursor:pointer}
   .stem-btns button.stem-play{background:var(--ok);border-color:var(--ok);color:#fff}
   .stem-btns button.stem-cfg-btn{background:none;color:var(--muted)}
-  .stem-btns button.stem-cfg-btn.open{color:var(--accent);border-color:var(--accent)}
+  .stem-btns button.stem-cfg-btn.open{background:var(--surface-3);color:var(--text);border-color:var(--line-2)}
   .stem-channels{display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:55vh;overflow-y:auto;padding:10px 14px 6px;background:var(--bg)}
   .stem-ch{background:var(--surface);border:1px solid var(--line-2);border-radius:10px;padding:6px 8px;position:relative;overflow:hidden}
   .stem-ch::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--line-2);transition:background .15s}
@@ -342,7 +342,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.210';
+const VERSION='0.212';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -1888,6 +1888,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   useEffect(()=>{stemChansRef.current=stemChans;stemApplyMix(stemChans);if(!stemRecPreMixRef.current){try{localStorage.setItem(stemRecPlayback?stemRecStorageKey:stemStorageKey,JSON.stringify(stemChans.map(c=>({id:c.id,vol:c.vol,muted:c.muted,soloed:c.soloed,custom:c.custom}))));}catch(_){}}},[stemChans]);
 
   const [stemRecPrompt,setStemRecPrompt]=useState(false);
+  const [stemRecHp,setStemRecHp]=useState(()=>{try{return localStorage.getItem('sc_rec_hp')==='1';}catch(_){return false;}});
+  const setStemRecHpPersist=(v)=>{setStemRecHp(v);try{localStorage.setItem('sc_rec_hp',v?'1':'0');}catch(_){}};
   const [stemRecState,setStemRecState]=useState(null);
   const [stemRecTime,setStemRecTime]=useState(0);
   const [stemRecConfirm,setStemRecConfirm]=useState(false);
@@ -1909,16 +1911,20 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     try{
       const audios=Object.values(stemAudiosRef.current).filter(Boolean);
       audios.forEach(a=>{try{a.play();a.pause();}catch(_){}});
-      const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:true,sampleRate:48000}});
+      const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:!stemRecHp,noiseSuppression:false,autoGainControl:false,sampleRate:48000}});
       const actx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
       if(actx.state==='suspended') await actx.resume();
       const src=actx.createMediaStreamSource(stream);
+      const hp=actx.createBiquadFilter();
+      hp.type='highpass';hp.frequency.value=90;
       const gain=actx.createGain();
       gain.gain.value=2.5;
       const comp=actx.createDynamicsCompressor();
       comp.threshold.value=-24;comp.knee.value=12;comp.ratio.value=4;comp.attack.value=0.003;comp.release.value=0.15;
+      const lim=actx.createDynamicsCompressor();
+      lim.threshold.value=-2;lim.knee.value=0;lim.ratio.value=20;lim.attack.value=0.001;lim.release.value=0.1;
       const dest=actx.createMediaStreamDestination();
-      src.connect(gain);gain.connect(comp);comp.connect(dest);
+      src.connect(hp);hp.connect(gain);gain.connect(comp);comp.connect(lim);lim.connect(dest);
       const mr=new MediaRecorder(dest.stream,{audioBitsPerSecond:256000});
       stemRecChunksRef.current=[];
       mr.ondataavailable=(e)=>{if(e.data.size>0) stemRecChunksRef.current.push(e.data);};
@@ -2468,7 +2474,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           <span className="stitle">{s.title}{stemRecPlayback?' — StemRec Player':''}</span>
           <button className="btn ghost sm" style={{fontSize:13,padding:'4px 12px',marginLeft:8}} onClick={()=>{closeStemPlayer();setFilesOpen(true);}}>Files</button>
           <button className="btn ghost sm" style={{fontSize:13,padding:'4px 12px',marginLeft:8}} onClick={()=>{const d=stemRecPlayback?stemRecDefaultChans():stemDefaultChans();setStemChans(prev=>{const n=prev.map(c=>{const dv=d.find(x=>x.id===c.id);return dv?{...c,vol:dv.vol,muted:dv.muted,soloed:dv.soloed,custom:false}:c;});stemApplyMix(n);return n;});}}>Reset</button>
-          <button className="xbtn" style={{fontSize:23,width:46,height:52}} onClick={closeStemPlayer}>×</button>
+          <button className="btn ghost sm" style={{fontSize:13,padding:'4px 12px',marginLeft:8}} onClick={closeStemPlayer}>Close</button>
         </div>
         {stemCfg && <div className="stem-channels">
           {stemChans.map(ch=>{
@@ -2500,9 +2506,9 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           <div className="stem-btns">
             <button className="stem-play" onClick={stemPlay} disabled={!stemDur}>PLAY</button>
             <button onClick={stemPauseOrStop} disabled={!stemDur}>PAUSE/STOP</button>
-            {!stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>{stemCfg?'CLOSE':'CONFIG'}</button>}
+            {!stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>CONFIG</button>}
             {!stemRecPlayback && <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>setStemRecPrompt(true)} disabled={stemRecState==='recording'}>🎙 StemRec</button>}
-            {stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>{stemCfg?'CLOSE':'CONFIG'}</button>}
+            {stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>CONFIG</button>}
             {stemRecPlayback && !stemShareReady && <button style={{background:'#2DD4BF',color:'#000',border:'none',borderRadius:8,padding:'4px 12px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',opacity:stemShareBusy?0.6:1}} onClick={stemShareMix} disabled={stemShareBusy}>{stemShareBusy?'Mixing…':'📤 Share'}</button>}
             {stemRecPlayback && stemShareReady && <button style={{background:'var(--green)',color:'#000',border:'none',borderRadius:8,padding:'4px 12px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',animation:'pulse 1s infinite'}} onClick={stemShareSend}>📤 Send</button>}
           </div>
@@ -2512,7 +2518,14 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         <div className="rec-confirm-panel">
           <div className="modaltitle">Record Stem</div>
           <div style={{fontSize:13,color:'var(--muted)',marginBottom:10}}>Record your part over "{s.title}"</div>
-          <div style={{fontSize:12,color:'var(--muted)',marginBottom:18,lineHeight:1.5}}>Your instruments ({MY_INSTRS.length?MY_INSTRS.map(id=>(INSTR.find(i=>i.id===id)||{label:id}).label).join(', '):'none set'}) will be muted while all other stems play. Your microphone recording will be saved as a personal stem recording.</div>
+          <div style={{fontSize:12,color:'var(--muted)',marginBottom:12,lineHeight:1.5}}>Your instruments ({MY_INSTRS.length?MY_INSTRS.map(id=>(INSTR.find(i=>i.id===id)||{label:id}).label).join(', '):'none set'}) will be muted while all other stems play. Your microphone recording will be saved as a personal stem recording.</div>
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6,padding:'8px 10px',background:'var(--surface-2)',borderRadius:8,cursor:'pointer'}} onClick={()=>setStemRecHpPersist(!stemRecHp)}>
+            <span style={{width:36,height:20,borderRadius:10,background:stemRecHp?'var(--accent)':'var(--line-2)',position:'relative',flexShrink:0,transition:'background .15s'}}>
+              <span style={{position:'absolute',top:2,left:stemRecHp?18:2,width:16,height:16,borderRadius:'50%',background:'#fff',transition:'left .15s'}}/>
+            </span>
+            <span style={{fontSize:13}}>🎧 Using headphones</span>
+          </div>
+          <div style={{fontSize:11,color:'var(--muted)',marginBottom:16,lineHeight:1.4}}>{stemRecHp?'Echo cancellation off — best quality. Make sure stems play in your headphones.':'No headphones: echo cancellation will filter the speaker-played stems out of your recording.'}</div>
           <div className="btnrow">
             <button className="btn ghost" onClick={()=>setStemRecPrompt(false)}>Cancel</button>
             <button className="btn" style={{background:'var(--drums)'}} disabled={!MY_INSTRS.length} onClick={()=>{setStemRecPrompt(false);startStemRec();}}>Start</button>
