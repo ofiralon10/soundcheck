@@ -261,11 +261,11 @@
   .stem-btns button{flex:1;height:42px;border-radius:10px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);font-family:var(--display);font-size:12px;font-weight:700;letter-spacing:.06em;cursor:pointer}
   .stem-btns button.stem-play{background:var(--ok);border-color:var(--ok);color:#fff}
   .stem-btns button.stem-cfg-btn{background:none;color:var(--muted)}
-  .stem-btns button.stem-cfg-btn.open{background:var(--surface-3);color:var(--text);border-color:var(--line-2)}
+  .stem-btns button.stem-cfg-btn.open{background:var(--muted-2);color:#15141B;border-color:var(--muted-2)}
   .stem-channels{display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:55vh;overflow-y:auto;padding:10px 14px 6px;background:var(--bg)}
   .stem-ch{background:var(--surface);border:1px solid var(--line-2);border-radius:10px;padding:6px 8px;position:relative;overflow:hidden}
   .stem-ch::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--line-2);transition:background .15s}
-  .stem-ch.loaded::before{background:var(--accent)}
+  .stem-ch.loaded::before{background:var(--ok)}
   .stem-ch.muted::before{background:var(--drums)}
   .stem-ch.soloed::before{background:var(--bass)}
   .stem-ch-row{display:flex;align-items:center;gap:6px}
@@ -342,7 +342,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.212';
+const VERSION='0.215';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -1705,6 +1705,24 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const stemGetMaxDur=()=>{let m=0;Object.entries(stemAudiosRef.current).forEach(([k,a])=>{if(a&&isFinite(a.duration))m=Math.max(m,a.duration-stemOff(k));});return m;};
   const stemSyncRef=useRef({});
   const stemOff=(k)=>stemSyncRef.current[k]||0;
+  const stemRecFileRef=useRef(null);
+  const stemSyncValRef=useRef(0);
+  const stemSyncSaveTRef=useRef(null);
+  const [stemSyncMs,setStemSyncMs]=useState(0);
+  const stemSyncMap=(sy)=>{const o={};if(sy>=0)o.mystem=sy;else STEM_CATS.forEach(c=>{o[c.id]=-sy;});return o;};
+  const stemNudgeSync=(dMs)=>{
+    const f=stemRecFileRef.current;if(!f)return;
+    const sy=Math.round((stemSyncValRef.current*1000+dMs))/1000;
+    stemSyncValRef.current=sy;
+    stemSyncRef.current=stemSyncMap(sy);
+    const t=stemTime;
+    Object.entries(stemAudiosRef.current).forEach(([k,a])=>{if(a)a.currentTime=t+stemOff(k);});
+    setStemSyncMs(Math.round(sy*1000));
+    clearTimeout(stemSyncSaveTRef.current);
+    stemSyncSaveTRef.current=setTimeout(()=>{
+      update(st=>{const so=st.songs.find(x=>x.id===s.id);if(!so)return st;const ff=(so.files||[]).find(x=>x.id===f.id);if(ff)ff.sync=sy;return st;});
+    },800);
+  };
   const stemChanAudioKeys=(chId)=>{
     if(chId==='backing') return Object.keys(stemAudiosRef.current).filter(k=>k!=='mystem');
     return stemAudiosRef.current[chId]?[chId]:[];
@@ -1798,7 +1816,10 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     stemStop();
     Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.src='';}});
     stemAudiosRef.current={};
-    stemSyncRef.current={mystem:(recFile.sync||0)};
+    stemRecFileRef.current=recFile;
+    stemSyncValRef.current=recFile.sync||0;
+    setStemSyncMs(Math.round((recFile.sync||0)*1000));
+    stemSyncRef.current=stemSyncMap(recFile.sync||0);
     setStemRecPlayback(true);
     setStemChans(()=>{
       try{const saved=JSON.parse(localStorage.getItem(stemRecStorageKey));if(saved&&saved.length)return stemRecDefaultChans().map(d=>{const sv=saved.find(x=>x.id===d.id);return sv?{...d,vol:sv.vol,muted:sv.muted,soloed:sv.soloed,custom:!!sv.custom}:d;});}catch(_){}
@@ -1942,11 +1963,23 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       stemRecPreMixRef.current=stemChansRef.current.map(c=>({id:c.id,muted:c.muted,soloed:c.soloed,vol:c.vol,custom:c.custom}));
       setStemChans(prev=>{const n=prev.map(c=>MY_INSTRS.includes(c.id)?{...c,muted:true,soloed:false,custom:false}:{...c,soloed:false});stemApplyMix(n);return n;});
       audios.forEach(a=>{a.pause();a.currentTime=0;});
+      let recCap0=0;
+      mr.onstart=()=>{recCap0=performance.now();};
       mr.start(100);
       stemRecRef.current=mr;
       const recT0=performance.now();
       const playResults=await Promise.all(audios.map(a=>a.play().then(()=>true).catch(()=>false)));
       stemRecSyncRef.current=Math.round(performance.now()-recT0)/1000;
+      const syncSamples=[];
+      const takeSync=()=>{
+        if(!stemRecRef.current||stemRecRef.current.state!=='recording')return;
+        const a=audios.find(x=>x&&!x.paused&&x.currentTime>0.05);
+        if(!a)return;
+        syncSamples.push((performance.now()-(recCap0||recT0))/1000-a.currentTime);
+        const sorted=[...syncSamples].sort((x,y)=>x-y);
+        stemRecSyncRef.current=Math.round(sorted[Math.floor(sorted.length/2)]*1000)/1000;
+      };
+      [300,700,1200,1800].forEach(ms=>setTimeout(takeSync,ms));
       if(playResults.every(r=>!r)){setFileMsg('Browser blocked audio playback. Tap Play first, then try recording.');stream.getTracks().forEach(t=>t.stop());actx.close().catch(()=>{});mr.stop();stemRecRestoreMix();return;}
       stemPlayingRef.current=true;setStemPlaying(true);setStemDur(stemGetMaxDur());
       stemRafRef.current=requestAnimationFrame(stemTick);
@@ -2497,6 +2530,13 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             </div>);
           })}
         </div>}
+        {stemRecPlayback && stemCfg && <div style={{display:'flex',alignItems:'center',gap:8,padding:'0 14px 8px',background:'var(--bg)'}}>
+          <span style={{fontSize:11,color:'var(--muted)',fontFamily:'var(--mono)',flexShrink:0}}>SYNC</span>
+          <button className="btn ghost sm" style={{fontSize:12,padding:'2px 10px'}} onClick={()=>stemNudgeSync(-50)}>−50ms</button>
+          <span style={{fontFamily:'var(--mono)',fontSize:12,minWidth:64,textAlign:'center'}}>{stemSyncMs>=0?'+':''}{stemSyncMs}ms</span>
+          <button className="btn ghost sm" style={{fontSize:12,padding:'2px 10px'}} onClick={()=>stemNudgeSync(50)}>+50ms</button>
+          <span style={{fontSize:10,color:'var(--muted)',flex:1,textAlign:'right'}}>My Stem late? tap +</span>
+        </div>}
         <div className="stem-transport">
           <div className="stem-scrub">
             <span className="stem-time">{fmtSecs(Math.floor(stemTime))}</span>
@@ -2510,7 +2550,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             {!stemRecPlayback && <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>setStemRecPrompt(true)} disabled={stemRecState==='recording'}>🎙 StemRec</button>}
             {stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>CONFIG</button>}
             {stemRecPlayback && !stemShareReady && <button style={{background:'#2DD4BF',color:'#000',border:'none',borderRadius:8,padding:'4px 12px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',opacity:stemShareBusy?0.6:1}} onClick={stemShareMix} disabled={stemShareBusy}>{stemShareBusy?'Mixing…':'📤 Share'}</button>}
-            {stemRecPlayback && stemShareReady && <button style={{background:'var(--green)',color:'#000',border:'none',borderRadius:8,padding:'4px 12px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',animation:'pulse 1s infinite'}} onClick={stemShareSend}>📤 Send</button>}
+            {stemRecPlayback && stemShareReady && <button style={{background:'var(--ok)',color:'#000',border:'none',borderRadius:8,padding:'4px 12px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',animation:'pulse 1s infinite'}} onClick={stemShareSend}>📤 Send</button>}
           </div>
         </div>
       </div>}
@@ -2520,7 +2560,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           <div style={{fontSize:13,color:'var(--muted)',marginBottom:10}}>Record your part over "{s.title}"</div>
           <div style={{fontSize:12,color:'var(--muted)',marginBottom:12,lineHeight:1.5}}>Your instruments ({MY_INSTRS.length?MY_INSTRS.map(id=>(INSTR.find(i=>i.id===id)||{label:id}).label).join(', '):'none set'}) will be muted while all other stems play. Your microphone recording will be saved as a personal stem recording.</div>
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6,padding:'8px 10px',background:'var(--surface-2)',borderRadius:8,cursor:'pointer'}} onClick={()=>setStemRecHpPersist(!stemRecHp)}>
-            <span style={{width:36,height:20,borderRadius:10,background:stemRecHp?'var(--accent)':'var(--line-2)',position:'relative',flexShrink:0,transition:'background .15s'}}>
+            <span style={{width:36,height:20,borderRadius:10,background:stemRecHp?'var(--ok)':'var(--line-2)',position:'relative',flexShrink:0,transition:'background .15s'}}>
               <span style={{position:'absolute',top:2,left:stemRecHp?18:2,width:16,height:16,borderRadius:'50%',background:'#fff',transition:'left .15s'}}/>
             </span>
             <span style={{fontSize:13}}>🎧 Using headphones</span>
