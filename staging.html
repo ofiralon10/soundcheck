@@ -342,7 +342,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.210';
+const VERSION='0.211';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -1888,6 +1888,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   useEffect(()=>{stemChansRef.current=stemChans;stemApplyMix(stemChans);if(!stemRecPreMixRef.current){try{localStorage.setItem(stemRecPlayback?stemRecStorageKey:stemStorageKey,JSON.stringify(stemChans.map(c=>({id:c.id,vol:c.vol,muted:c.muted,soloed:c.soloed,custom:c.custom}))));}catch(_){}}},[stemChans]);
 
   const [stemRecPrompt,setStemRecPrompt]=useState(false);
+  const [stemRecHp,setStemRecHp]=useState(()=>{try{return localStorage.getItem('sc_rec_hp')==='1';}catch(_){return false;}});
+  const setStemRecHpPersist=(v)=>{setStemRecHp(v);try{localStorage.setItem('sc_rec_hp',v?'1':'0');}catch(_){}};
   const [stemRecState,setStemRecState]=useState(null);
   const [stemRecTime,setStemRecTime]=useState(0);
   const [stemRecConfirm,setStemRecConfirm]=useState(false);
@@ -1909,16 +1911,20 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     try{
       const audios=Object.values(stemAudiosRef.current).filter(Boolean);
       audios.forEach(a=>{try{a.play();a.pause();}catch(_){}});
-      const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:true,sampleRate:48000}});
+      const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:!stemRecHp,noiseSuppression:false,autoGainControl:false,sampleRate:48000}});
       const actx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
       if(actx.state==='suspended') await actx.resume();
       const src=actx.createMediaStreamSource(stream);
+      const hp=actx.createBiquadFilter();
+      hp.type='highpass';hp.frequency.value=90;
       const gain=actx.createGain();
       gain.gain.value=2.5;
       const comp=actx.createDynamicsCompressor();
       comp.threshold.value=-24;comp.knee.value=12;comp.ratio.value=4;comp.attack.value=0.003;comp.release.value=0.15;
+      const lim=actx.createDynamicsCompressor();
+      lim.threshold.value=-2;lim.knee.value=0;lim.ratio.value=20;lim.attack.value=0.001;lim.release.value=0.1;
       const dest=actx.createMediaStreamDestination();
-      src.connect(gain);gain.connect(comp);comp.connect(dest);
+      src.connect(hp);hp.connect(gain);gain.connect(comp);comp.connect(lim);lim.connect(dest);
       const mr=new MediaRecorder(dest.stream,{audioBitsPerSecond:256000});
       stemRecChunksRef.current=[];
       mr.ondataavailable=(e)=>{if(e.data.size>0) stemRecChunksRef.current.push(e.data);};
@@ -2512,7 +2518,14 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         <div className="rec-confirm-panel">
           <div className="modaltitle">Record Stem</div>
           <div style={{fontSize:13,color:'var(--muted)',marginBottom:10}}>Record your part over "{s.title}"</div>
-          <div style={{fontSize:12,color:'var(--muted)',marginBottom:18,lineHeight:1.5}}>Your instruments ({MY_INSTRS.length?MY_INSTRS.map(id=>(INSTR.find(i=>i.id===id)||{label:id}).label).join(', '):'none set'}) will be muted while all other stems play. Your microphone recording will be saved as a personal stem recording.</div>
+          <div style={{fontSize:12,color:'var(--muted)',marginBottom:12,lineHeight:1.5}}>Your instruments ({MY_INSTRS.length?MY_INSTRS.map(id=>(INSTR.find(i=>i.id===id)||{label:id}).label).join(', '):'none set'}) will be muted while all other stems play. Your microphone recording will be saved as a personal stem recording.</div>
+          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6,padding:'8px 10px',background:'var(--surface-2)',borderRadius:8,cursor:'pointer'}} onClick={()=>setStemRecHpPersist(!stemRecHp)}>
+            <span style={{width:36,height:20,borderRadius:10,background:stemRecHp?'var(--accent)':'var(--line-2)',position:'relative',flexShrink:0,transition:'background .15s'}}>
+              <span style={{position:'absolute',top:2,left:stemRecHp?18:2,width:16,height:16,borderRadius:'50%',background:'#fff',transition:'left .15s'}}/>
+            </span>
+            <span style={{fontSize:13}}>🎧 Using headphones</span>
+          </div>
+          <div style={{fontSize:11,color:'var(--muted)',marginBottom:16,lineHeight:1.4}}>{stemRecHp?'Echo cancellation off — best quality. Make sure stems play in your headphones.':'No headphones: echo cancellation will filter the speaker-played stems out of your recording.'}</div>
           <div className="btnrow">
             <button className="btn ghost" onClick={()=>setStemRecPrompt(false)}>Cancel</button>
             <button className="btn" style={{background:'var(--drums)'}} disabled={!MY_INSTRS.length} onClick={()=>{setStemRecPrompt(false);startStemRec();}}>Start</button>
