@@ -342,7 +342,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.209';
+const VERSION='0.210';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -2466,6 +2466,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       {stemOpen && <div className="stem-player">
         <div className="stem-title-bar">
           <span className="stitle">{s.title}{stemRecPlayback?' — StemRec Player':''}</span>
+          <button className="btn ghost sm" style={{fontSize:13,padding:'4px 12px',marginLeft:8}} onClick={()=>{closeStemPlayer();setFilesOpen(true);}}>Files</button>
           <button className="btn ghost sm" style={{fontSize:13,padding:'4px 12px',marginLeft:8}} onClick={()=>{const d=stemRecPlayback?stemRecDefaultChans():stemDefaultChans();setStemChans(prev=>{const n=prev.map(c=>{const dv=d.find(x=>x.id===c.id);return dv?{...c,vol:dv.vol,muted:dv.muted,soloed:dv.soloed,custom:false}:c;});stemApplyMix(n);return n;});}}>Reset</button>
           <button className="xbtn" style={{fontSize:23,width:46,height:52}} onClick={closeStemPlayer}>×</button>
         </div>
