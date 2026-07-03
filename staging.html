@@ -342,7 +342,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.214';
+const VERSION='0.215';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -1705,6 +1705,24 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const stemGetMaxDur=()=>{let m=0;Object.entries(stemAudiosRef.current).forEach(([k,a])=>{if(a&&isFinite(a.duration))m=Math.max(m,a.duration-stemOff(k));});return m;};
   const stemSyncRef=useRef({});
   const stemOff=(k)=>stemSyncRef.current[k]||0;
+  const stemRecFileRef=useRef(null);
+  const stemSyncValRef=useRef(0);
+  const stemSyncSaveTRef=useRef(null);
+  const [stemSyncMs,setStemSyncMs]=useState(0);
+  const stemSyncMap=(sy)=>{const o={};if(sy>=0)o.mystem=sy;else STEM_CATS.forEach(c=>{o[c.id]=-sy;});return o;};
+  const stemNudgeSync=(dMs)=>{
+    const f=stemRecFileRef.current;if(!f)return;
+    const sy=Math.round((stemSyncValRef.current*1000+dMs))/1000;
+    stemSyncValRef.current=sy;
+    stemSyncRef.current=stemSyncMap(sy);
+    const t=stemTime;
+    Object.entries(stemAudiosRef.current).forEach(([k,a])=>{if(a)a.currentTime=t+stemOff(k);});
+    setStemSyncMs(Math.round(sy*1000));
+    clearTimeout(stemSyncSaveTRef.current);
+    stemSyncSaveTRef.current=setTimeout(()=>{
+      update(st=>{const so=st.songs.find(x=>x.id===s.id);if(!so)return st;const ff=(so.files||[]).find(x=>x.id===f.id);if(ff)ff.sync=sy;return st;});
+    },800);
+  };
   const stemChanAudioKeys=(chId)=>{
     if(chId==='backing') return Object.keys(stemAudiosRef.current).filter(k=>k!=='mystem');
     return stemAudiosRef.current[chId]?[chId]:[];
@@ -1798,7 +1816,10 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     stemStop();
     Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.src='';}});
     stemAudiosRef.current={};
-    stemSyncRef.current=(()=>{const sy=recFile.sync||0;if(sy>=0)return{mystem:sy};const o={};STEM_CATS.forEach(c=>{o[c.id]=-sy;});return o;})();
+    stemRecFileRef.current=recFile;
+    stemSyncValRef.current=recFile.sync||0;
+    setStemSyncMs(Math.round((recFile.sync||0)*1000));
+    stemSyncRef.current=stemSyncMap(recFile.sync||0);
     setStemRecPlayback(true);
     setStemChans(()=>{
       try{const saved=JSON.parse(localStorage.getItem(stemRecStorageKey));if(saved&&saved.length)return stemRecDefaultChans().map(d=>{const sv=saved.find(x=>x.id===d.id);return sv?{...d,vol:sv.vol,muted:sv.muted,soloed:sv.soloed,custom:!!sv.custom}:d;});}catch(_){}
@@ -2508,6 +2529,13 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
               </div>}
             </div>);
           })}
+        </div>}
+        {stemRecPlayback && stemCfg && <div style={{display:'flex',alignItems:'center',gap:8,padding:'0 14px 8px',background:'var(--bg)'}}>
+          <span style={{fontSize:11,color:'var(--muted)',fontFamily:'var(--mono)',flexShrink:0}}>SYNC</span>
+          <button className="btn ghost sm" style={{fontSize:12,padding:'2px 10px'}} onClick={()=>stemNudgeSync(-50)}>−50ms</button>
+          <span style={{fontFamily:'var(--mono)',fontSize:12,minWidth:64,textAlign:'center'}}>{stemSyncMs>=0?'+':''}{stemSyncMs}ms</span>
+          <button className="btn ghost sm" style={{fontSize:12,padding:'2px 10px'}} onClick={()=>stemNudgeSync(50)}>+50ms</button>
+          <span style={{fontSize:10,color:'var(--muted)',flex:1,textAlign:'right'}}>My Stem late? tap +</span>
         </div>}
         <div className="stem-transport">
           <div className="stem-scrub">
