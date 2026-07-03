@@ -351,7 +351,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.203';
+const VERSION='0.204';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -1745,11 +1745,13 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     a.preload='auto';
     a.volume=1.0;
     const onReady=()=>{
+      a.removeEventListener('loadedmetadata',onReady);
       a.removeEventListener('canplaythrough',onReady);
       stemAudiosRef.current[catId]=a;
       setStemChans(prev=>{const n=prev.map(c=>c.id===catId?{...c,loaded:true,fileName:name||'loaded'}:c);stemApplyMix(n);return n;});
       setStemDur(prev=>Math.max(prev,isFinite(a.duration)?a.duration:0));
     };
+    a.addEventListener('loadedmetadata',onReady);
     a.addEventListener('canplaythrough',onReady);
     a.onerror=()=>setStemChans(prev=>prev.map(c=>c.id===catId?{...c,loaded:false,fileName:'load failed'}:c));
     a.src=url;
