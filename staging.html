@@ -351,7 +351,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.205';
+const VERSION='0.206';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -1681,7 +1681,12 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [stemTime,setStemTime]=useState(0);
   const [stemDur,setStemDur]=useState(0);
   const stemDefaultChans=()=>STEM_CATS.map(c=>({id:c.id,label:c.label,color:c.color,vol:80,muted:c.id==='metronome',soloed:false,loaded:false,fileName:null}));
+  const stemRecDefaultChans=()=>[
+    {id:'mystem',label:'My Stem',color:'var(--drums)',vol:100,muted:false,soloed:false,loaded:false,fileName:null},
+    {id:'backing',label:'Backing',color:'#5BC0EB',vol:70,muted:false,soloed:false,loaded:false,fileName:null}
+  ];
   const stemStorageKey='sc_stem_'+s.id;
+  const stemRecStorageKey='sc_stemrec_'+s.id;
   const [stemChans,setStemChans]=useState(()=>{
     try{const saved=JSON.parse(localStorage.getItem(stemStorageKey));if(saved&&saved.length)return stemDefaultChans().map(d=>{const sv=saved.find(x=>x.id===d.id);return sv?{...d,vol:sv.vol,muted:sv.muted,soloed:sv.soloed}:d;});}catch(_){}
     return stemDefaultChans();
@@ -1690,21 +1695,27 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const stemChansRef=useRef(stemChans);
   const stemRafRef=useRef(null);
   const stemPlayingRef=useRef(false);
-  const stemGetMaxDur=()=>{let m=0;Object.values(stemAudiosRef.current).forEach(a=>{if(a&&isFinite(a.duration))m=Math.max(m,a.duration);});return m;};
+  const stemGetMaxDur=()=>{let m=0;Object.entries(stemAudiosRef.current).forEach(([k,a])=>{if(a&&isFinite(a.duration))m=Math.max(m,a.duration-stemOff(k));});return m;};
+  const stemSyncRef=useRef({});
+  const stemOff=(k)=>stemSyncRef.current[k]||0;
+  const stemChanAudioKeys=(chId)=>{
+    if(chId==='backing') return Object.keys(stemAudiosRef.current).filter(k=>k!=='mystem');
+    return stemAudiosRef.current[chId]?[chId]:[];
+  };
   const stemApplyMix=(chans)=>{
     const cc=chans||stemChansRef.current;
-    const anySolo=cc.some(c=>c.soloed&&stemAudiosRef.current[c.id]);
+    const anySolo=cc.some(c=>c.soloed&&stemChanAudioKeys(c.id).length);
     cc.forEach(c=>{
-      const a=stemAudiosRef.current[c.id];if(!a)return;
+      const keys=stemChanAudioKeys(c.id);if(!keys.length)return;
       let v=c.vol/100;
       if(anySolo) v=c.soloed?c.vol/100:0;
       else if(c.muted) v=0;
-      a.volume=v;
+      keys.forEach(k=>{const a=stemAudiosRef.current[k];if(a)a.volume=v;});
     });
   };
   const stemTick=()=>{
-    const first=Object.values(stemAudiosRef.current).find(a=>a&&!a.paused);
-    if(first) setStemTime(first.currentTime);
+    const ent=Object.entries(stemAudiosRef.current).find(([k,a])=>a&&!a.paused);
+    if(ent) setStemTime(Math.max(0,ent[1].currentTime-stemOff(ent[0])));
     if(stemPlayingRef.current) stemRafRef.current=requestAnimationFrame(stemTick);
   };
   const stemPlay=async()=>{
@@ -1712,7 +1723,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     const md=stemGetMaxDur();if(!md)return;
     const audios=Object.values(stemAudiosRef.current).filter(Boolean);
     if(!audios.length)return;
-    audios.forEach(a=>{if(a.currentTime>=md) a.currentTime=0;});
+    Object.entries(stemAudiosRef.current).forEach(([k,a])=>{if(a&&(a.currentTime-stemOff(k))>=md) a.currentTime=stemOff(k);});
     stemApplyMix();
     const results=await Promise.all(audios.map(a=>a.play().then(()=>true).catch(()=>false)));
     if(results.every(r=>!r)){setFileMsg('Browser blocked audio playback. Try tapping Play again.');return;}
@@ -1732,15 +1743,16 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     if(stemPlayingRef.current) stemPause(); else stemPlay();
   };
   const stemStop=()=>{
-    Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.currentTime=0;}});
+    Object.entries(stemAudiosRef.current).forEach(([k,a])=>{if(a){a.pause();a.currentTime=stemOff(k);}});
     stemPlayingRef.current=false;setStemPlaying(false);setStemTime(0);cancelAnimationFrame(stemRafRef.current);
   };
   const stemSeek=(v)=>{
     setStemTime(v);
-    Object.values(stemAudiosRef.current).forEach(a=>{if(a)a.currentTime=v;});
+    Object.entries(stemAudiosRef.current).forEach(([k,a])=>{if(a)a.currentTime=v+stemOff(k);});
   };
-  const stemLoadUrl=(catId,url,name)=>{
-    setStemChans(prev=>prev.map(c=>c.id===catId?{...c,fileName:'loading…'}:c));
+  const stemLoadUrl=(catId,url,name,chanId)=>{
+    const cid=chanId||catId;
+    setStemChans(prev=>prev.map(c=>c.id===cid&&!c.loaded?{...c,fileName:'loading…'}:c));
     const a=new Audio();
     a.preload='auto';
     a.volume=1.0;
@@ -1748,18 +1760,20 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       a.removeEventListener('loadedmetadata',onReady);
       a.removeEventListener('canplaythrough',onReady);
       stemAudiosRef.current[catId]=a;
-      setStemChans(prev=>{const n=prev.map(c=>c.id===catId?{...c,loaded:true,fileName:name||'loaded'}:c);stemApplyMix(n);return n;});
-      setStemDur(prev=>Math.max(prev,isFinite(a.duration)?a.duration:0));
+      if(stemOff(catId)) try{a.currentTime=stemOff(catId);}catch(_){}
+      setStemChans(prev=>{const n=prev.map(c=>c.id===cid?{...c,loaded:true,fileName:name||'loaded'}:c);stemApplyMix(n);return n;});
+      setStemDur(prev=>Math.max(prev,isFinite(a.duration)?a.duration-stemOff(catId):0));
     };
     a.addEventListener('loadedmetadata',onReady);
     a.addEventListener('canplaythrough',onReady);
-    a.onerror=()=>setStemChans(prev=>prev.map(c=>c.id===catId?{...c,loaded:false,fileName:'load failed'}:c));
+    a.onerror=()=>setStemChans(prev=>prev.map(c=>c.id===cid&&!c.loaded?{...c,loaded:false,fileName:'load failed'}:c));
     a.src=url;
   };
   const openStemPlayer=()=>{
     stemStop();
     Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.src='';}});
     stemAudiosRef.current={};
+    stemSyncRef.current={};
     setStemRecPlayback(false);
     setStemChans(prev=>{
       try{const saved=JSON.parse(localStorage.getItem(stemStorageKey));if(saved&&saved.length)return stemDefaultChans().map(d=>{const sv=saved.find(x=>x.id===d.id);return sv?{...d,vol:sv.vol,muted:sv.muted,soloed:sv.soloed}:d;});}catch(_){}
@@ -1776,16 +1790,19 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     stemStop();
     Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.src='';}});
     stemAudiosRef.current={};
+    stemSyncRef.current={mystem:(recFile.sync||0)};
     setStemRecPlayback(true);
-    const otherCats=STEM_CATS.filter(c=>!MY_INSTRS.includes(c.id)&&c.id!=='metronome');
-    const chans=[{id:'mystem',label:'My Stem',color:'var(--drums)',vol:100,muted:false,soloed:false,loaded:false,fileName:null},...otherCats.map(c=>({id:c.id,label:c.label,color:c.color,vol:70,muted:false,soloed:false,loaded:false,fileName:null}))];
-    setStemChans(chans);
+    setStemChans(()=>{
+      try{const saved=JSON.parse(localStorage.getItem(stemRecStorageKey));if(saved&&saved.length)return stemRecDefaultChans().map(d=>{const sv=saved.find(x=>x.id===d.id);return sv?{...d,vol:sv.vol,muted:sv.muted,soloed:sv.soloed}:d;});}catch(_){}
+      return stemRecDefaultChans();
+    });
     setStemDur(0);setStemTime(0);setStemCfg(true);setStemOpen(true);
     stemLoadUrl('mystem',recFile.url,recFile.name);
     const files=s.files||[];
+    const otherCats=STEM_CATS.filter(c=>!MY_INSTRS.includes(c.id)&&c.id!=='metronome');
     otherCats.forEach(cat=>{
       const af=files.filter(f=>(f.cat==='original'?'other':f.cat||'other')===cat.id&&f.type==='audio');
-      if(af.length>0) stemLoadUrl(cat.id,af[0].url,af[0].name);
+      if(af.length>0) stemLoadUrl(cat.id,af[0].url,'backing stems','backing');
     });
   };
   const closeStemPlayer=()=>{
@@ -1799,20 +1816,27 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const stemShareMix=async()=>{
     setStemShareBusy(true);setStemShareReady(null);
     try{
-      const cc=stemChans;const anySolo=cc.some(c=>c.soloed&&stemAudiosRef.current[c.id]);
-      const active=cc.filter(c=>{const a=stemAudiosRef.current[c.id];if(!a||!a.src)return false;if(anySolo)return c.soloed;return !c.muted;});
+      const cc=stemChans;const anySolo=cc.some(c=>c.soloed&&stemChanAudioKeys(c.id).length);
+      const active=[];
+      cc.forEach(c=>{
+        const on=anySolo?c.soloed:!c.muted;
+        if(!on)return;
+        stemChanAudioKeys(c.id).forEach(k=>{
+          const a=stemAudiosRef.current[k];
+          if(a&&a.src) active.push({key:k,vol:c.vol,src:a.src});
+        });
+      });
       if(!active.length){alert('No active channels to mix.');setStemShareBusy(false);return;}
       const ctx=new (window.AudioContext||window.webkitAudioContext)();
       const buffers=[];
       for(const ch of active){
-        const a=stemAudiosRef.current[ch.id];
-        const resp=await fetch(a.src);
+        const resp=await fetch(ch.src);
         const ab=await resp.arrayBuffer();
         const decoded=await ctx.decodeAudioData(ab);
         buffers.push({ch,decoded});
       }
       const sr=buffers[0].decoded.sampleRate;
-      const maxLen=Math.max(...buffers.map(b=>b.decoded.length));
+      const maxLen=Math.max(...buffers.map(b=>b.decoded.length-Math.floor(stemOff(b.ch.key)*b.decoded.sampleRate)));
       const numCh=Math.max(...buffers.map(b=>b.decoded.numberOfChannels));
       const offCtx=new OfflineAudioContext(numCh,maxLen,sr);
       buffers.forEach(({ch,decoded})=>{
@@ -1820,7 +1844,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         const gain=offCtx.createGain();
         gain.gain.value=ch.vol/100;
         src.connect(gain);gain.connect(offCtx.destination);
-        src.start(0);
+        src.start(0,stemOff(ch.key));
       });
       const rendered=await offCtx.startRendering();
       const wavBuf=encodeWav(rendered);
@@ -1849,7 +1873,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const stemToggleMute=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,muted:!c.muted,soloed:!c.muted?false:c.soloed}:c);stemApplyMix(n);return n;});};
   const stemToggleSolo=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,soloed:!c.soloed,muted:!c.soloed?false:c.muted}:c);stemApplyMix(n);return n;});};
   const stemSetVol=(id,v)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,vol:v}:c);stemApplyMix(n);return n;});};
-  useEffect(()=>{stemChansRef.current=stemChans;stemApplyMix(stemChans);if(!stemRecPlayback&&!stemRecPreMixRef.current){try{localStorage.setItem(stemStorageKey,JSON.stringify(stemChans.map(c=>({id:c.id,vol:c.vol,muted:c.muted,soloed:c.soloed}))));}catch(_){}}},[stemChans]);
+  useEffect(()=>{stemChansRef.current=stemChans;stemApplyMix(stemChans);if(!stemRecPreMixRef.current){try{localStorage.setItem(stemRecPlayback?stemRecStorageKey:stemStorageKey,JSON.stringify(stemChans.map(c=>({id:c.id,vol:c.vol,muted:c.muted,soloed:c.soloed}))));}catch(_){}}},[stemChans]);
 
   const [stemRecPrompt,setStemRecPrompt]=useState(false);
   const [stemRecState,setStemRecState]=useState(null);
@@ -1861,6 +1885,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const stemRecMimeRef=useRef('');
   const stemRecBlobRef=useRef(null);
   const stemRecPreMixRef=useRef(null);
+  const stemRecSyncRef=useRef(0);
   const stemRecRestoreMix=()=>{
     const pm=stemRecPreMixRef.current;
     if(!pm)return;
@@ -1901,7 +1926,9 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       audios.forEach(a=>{a.pause();a.currentTime=0;});
       mr.start(100);
       stemRecRef.current=mr;
+      const recT0=performance.now();
       const playResults=await Promise.all(audios.map(a=>a.play().then(()=>true).catch(()=>false)));
+      stemRecSyncRef.current=Math.round(performance.now()-recT0)/1000;
       if(playResults.every(r=>!r)){setFileMsg('Browser blocked audio playback. Tap Play first, then try recording.');stream.getTracks().forEach(t=>t.stop());actx.close().catch(()=>{});mr.stop();stemRecRestoreMix();return;}
       stemPlayingRef.current=true;setStemPlaying(true);setStemDur(stemGetMaxDur());
       stemRafRef.current=requestAnimationFrame(stemTick);
@@ -1923,7 +1950,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       const sRef=storage.ref().child(path);
       await sRef.put(blob,{contentType:mime});
       const url=await sRef.getDownloadURL();
-      update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id:fid,name,kind:'upload',url,path,size:blob.size,type:'audio',cat:'stem-rec',by:MY_NAME||'unknown'});logAct(st,'saved a stem recording to "'+so.title+'"');return st;});
+      update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id:fid,name,kind:'upload',url,path,size:blob.size,type:'audio',cat:'stem-rec',by:MY_NAME||'unknown',sync:stemRecSyncRef.current||0});logAct(st,'saved a stem recording to "'+so.title+'"');return st;});
     }catch(err){setFileMsg('Recording upload failed — '+prettyErr(err));}
     stemRecBlobRef.current=null;setBusy('');setStemRecTime(0);
     stemRecRestoreMix();
@@ -2426,8 +2453,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       </div>}
       {stemOpen && <div className="stem-player">
         <div className="stem-title-bar">
-          <span className="stitle">{s.title}{stemRecPlayback?' — Stem Recording':''}</span>
-          {!stemRecPlayback && <button className="btn ghost sm" style={{fontSize:13,padding:'4px 12px',marginLeft:8}} onClick={()=>{const d=stemDefaultChans();setStemChans(prev=>prev.map((c,i)=>({...c,vol:d[i].vol,muted:d[i].muted,soloed:d[i].soloed})));stemApplyMix(d);}}>Reset</button>}
+          <span className="stitle">{s.title}{stemRecPlayback?' — StemRec Player':''}</span>
+          <button className="btn ghost sm" style={{fontSize:13,padding:'4px 12px',marginLeft:8}} onClick={()=>{const d=stemRecPlayback?stemRecDefaultChans():stemDefaultChans();setStemChans(prev=>{const n=prev.map(c=>{const dv=d.find(x=>x.id===c.id);return dv?{...c,vol:dv.vol,muted:dv.muted,soloed:dv.soloed}:c;});stemApplyMix(n);return n;});}}>Reset</button>
           <button className="xbtn" style={{fontSize:23,width:46,height:52}} onClick={closeStemPlayer}>×</button>
         </div>
         {stemCfg && <div className="stem-channels">
@@ -2437,7 +2464,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             return (
             <div key={ch.id} className={'stem-ch'+(ch.loaded?' loaded':'')+(ch.muted?' muted':'')+(ch.soloed?' soloed':'')} style={isMetNoFile?{opacity:.4}:null}>
               <div className="stem-ch-top">
-                {ch.id==='mystem' ? <span style={{width:29,height:29,borderRadius:'50%',background:'var(--drums)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:13,fontWeight:700,color:'#fff'}}>🎙</span> : ch.id==='metronome' ? <InstrBadge id="metronome" size={22}/> : instrId ? <InstrBadge id={instrId} size={22}/> : ch.id==='other' ? <InstrBadge id="other" size={22}/> : <span style={{width:29,height:29,borderRadius:'50%',background:'var(--surface-3)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:11,fontWeight:700,color:'var(--muted)'}}>+</span>}
+                {ch.id==='mystem' ? <span style={{width:29,height:29,borderRadius:'50%',background:'var(--drums)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:13,fontWeight:700,color:'#fff'}}>🎙</span> : ch.id==='backing' ? <span style={{width:29,height:29,borderRadius:'50%',background:'#5BC0EB',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:14,fontWeight:700,color:'#fff'}}>♪</span> : ch.id==='metronome' ? <InstrBadge id="metronome" size={22}/> : instrId ? <InstrBadge id={instrId} size={22}/> : ch.id==='other' ? <InstrBadge id="other" size={22}/> : <span style={{width:29,height:29,borderRadius:'50%',background:'var(--surface-3)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:11,fontWeight:700,color:'var(--muted)'}}>+</span>}
                 <div className="stem-ch-name"><small>{ch.fileName||'no file'}</small></div>
                 <div className="stem-ch-btns-row">
                   <button className={'stem-ch-btn'+(ch.muted?' on-m':'')} onClick={()=>stemToggleMute(ch.id)}>M</button>
