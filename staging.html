@@ -351,7 +351,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.204';
+const VERSION='0.205';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -1849,7 +1849,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const stemToggleMute=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,muted:!c.muted,soloed:!c.muted?false:c.soloed}:c);stemApplyMix(n);return n;});};
   const stemToggleSolo=(id)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,soloed:!c.soloed,muted:!c.soloed?false:c.muted}:c);stemApplyMix(n);return n;});};
   const stemSetVol=(id,v)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,vol:v}:c);stemApplyMix(n);return n;});};
-  useEffect(()=>{stemChansRef.current=stemChans;stemApplyMix(stemChans);try{localStorage.setItem(stemStorageKey,JSON.stringify(stemChans.map(c=>({id:c.id,vol:c.vol,muted:c.muted,soloed:c.soloed}))));}catch(_){}},[stemChans]);
+  useEffect(()=>{stemChansRef.current=stemChans;stemApplyMix(stemChans);if(!stemRecPlayback&&!stemRecPreMixRef.current){try{localStorage.setItem(stemStorageKey,JSON.stringify(stemChans.map(c=>({id:c.id,vol:c.vol,muted:c.muted,soloed:c.soloed}))));}catch(_){}}},[stemChans]);
 
   const [stemRecPrompt,setStemRecPrompt]=useState(false);
   const [stemRecState,setStemRecState]=useState(null);
@@ -1861,6 +1861,12 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const stemRecMimeRef=useRef('');
   const stemRecBlobRef=useRef(null);
   const stemRecPreMixRef=useRef(null);
+  const stemRecRestoreMix=()=>{
+    const pm=stemRecPreMixRef.current;
+    if(!pm)return;
+    stemRecPreMixRef.current=null;
+    setStemChans(prev=>{const n=prev.map(c=>{const sv=pm.find(x=>x.id===c.id);return sv?{...c,muted:sv.muted,soloed:sv.soloed,vol:sv.vol}:c;});stemApplyMix(n);return n;});
+  };
 
   const startStemRec=async()=>{
     try{
@@ -1885,7 +1891,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         clearInterval(stemRecTimerRef.current);
         stemStop();
         const blob=new Blob(stemRecChunksRef.current,{type:mr.mimeType||'audio/webm'});
-        if(blob.size<100){setStemRecState(null);setStemRecTime(0);return;}
+        if(blob.size<100){setStemRecState(null);setStemRecTime(0);stemRecRestoreMix();return;}
         stemRecBlobRef.current=blob;
         stemRecMimeRef.current=mr.mimeType||'audio/webm';
         setStemRecState(null);setStemRecConfirm(true);
@@ -1896,13 +1902,13 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       mr.start(100);
       stemRecRef.current=mr;
       const playResults=await Promise.all(audios.map(a=>a.play().then(()=>true).catch(()=>false)));
-      if(playResults.every(r=>!r)){setFileMsg('Browser blocked audio playback. Tap Play first, then try recording.');stream.getTracks().forEach(t=>t.stop());actx.close().catch(()=>{});mr.stop();return;}
+      if(playResults.every(r=>!r)){setFileMsg('Browser blocked audio playback. Tap Play first, then try recording.');stream.getTracks().forEach(t=>t.stop());actx.close().catch(()=>{});mr.stop();stemRecRestoreMix();return;}
       stemPlayingRef.current=true;setStemPlaying(true);setStemDur(stemGetMaxDur());
       stemRafRef.current=requestAnimationFrame(stemTick);
       setStemRecState('recording');
       setStemRecTime(0);
       stemRecTimerRef.current=setInterval(()=>setStemRecTime(t=>t+1),1000);
-    }catch(e){setFileMsg('Microphone not available — check browser permissions.');}
+    }catch(e){setFileMsg('Microphone not available — check browser permissions.');stemRecRestoreMix();}
   };
   const stopStemRec=()=>{if(stemRecRef.current&&stemRecRef.current.state!=='inactive') stemRecRef.current.stop();};
   const uploadStemRec=async()=>{
@@ -1920,12 +1926,12 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id:fid,name,kind:'upload',url,path,size:blob.size,type:'audio',cat:'stem-rec',by:MY_NAME||'unknown'});logAct(st,'saved a stem recording to "'+so.title+'"');return st;});
     }catch(err){setFileMsg('Recording upload failed — '+prettyErr(err));}
     stemRecBlobRef.current=null;setBusy('');setStemRecTime(0);
-    stemRecPreMixRef.current=null;
+    stemRecRestoreMix();
     closeStemPlayer();
   };
   const abandonStemRec=()=>{
     stemRecBlobRef.current=null;setStemRecConfirm(false);setStemRecTime(0);
-    stemRecPreMixRef.current=null;
+    stemRecRestoreMix();
     closeStemPlayer();
   };
 
