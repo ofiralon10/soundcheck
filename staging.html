@@ -351,7 +351,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.206';
+const VERSION='0.207';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -764,6 +764,22 @@ function badgeText(f){ const parts=(f.name||'').split('.'); const ext=parts.leng
 function fmtSize(b){ if(!b) return ''; if(b<1024) return b+' B'; if(b<1048576) return Math.round(b/1024)+' KB'; return (b/1048576).toFixed(1)+' MB'; }
 function fmtSecs(s){ return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
 function encodeWav(audioBuffer){const nc=audioBuffer.numberOfChannels,sr=audioBuffer.sampleRate,len=audioBuffer.length;const interleaved=new Float32Array(len*nc);for(let ch=0;ch<nc;ch++){const d=audioBuffer.getChannelData(ch);for(let i=0;i<len;i++)interleaved[i*nc+ch]=d[i];}const buf=new ArrayBuffer(44+interleaved.length*2);const v=new DataView(buf);const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};ws(0,'RIFF');v.setUint32(4,36+interleaved.length*2,true);ws(8,'WAVE');ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,nc,true);v.setUint32(24,sr,true);v.setUint32(28,sr*nc*2,true);v.setUint16(32,nc*2,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,interleaved.length*2,true);for(let i=0;i<interleaved.length;i++){const s=Math.max(-1,Math.min(1,interleaved[i]));v.setInt16(44+i*2,s<0?s*0x8000:s*0x7FFF,true);}return buf;}
+function loadScript(src){return new Promise((res,rej)=>{if(document.querySelector('script[src="'+src+'"]')&&window.lamejs)return res();const sc=document.createElement('script');sc.src=src;sc.onload=res;sc.onerror=()=>rej(new Error('Failed to load '+src));document.head.appendChild(sc);});}
+function encodeMp3(audioBuffer,kbps){
+  const nc=Math.min(2,audioBuffer.numberOfChannels);
+  const sr=audioBuffer.sampleRate;
+  const enc=new lamejs.Mp3Encoder(nc,sr,kbps||128);
+  const toI16=(f)=>{const o=new Int16Array(f.length);for(let i=0;i<f.length;i++){const v=Math.max(-1,Math.min(1,f[i]));o[i]=v<0?v*0x8000:v*0x7FFF;}return o;};
+  const L=toI16(audioBuffer.getChannelData(0));
+  const R=nc>1?toI16(audioBuffer.getChannelData(1)):null;
+  const chunks=[];const block=1152;
+  for(let i=0;i<L.length;i+=block){
+    const mb=nc>1?enc.encodeBuffer(L.subarray(i,i+block),R.subarray(i,i+block)):enc.encodeBuffer(L.subarray(i,i+block));
+    if(mb.length)chunks.push(new Int8Array(mb));
+  }
+  const end=enc.flush();if(end.length)chunks.push(new Int8Array(end));
+  return new Blob(chunks,{type:'audio/mpeg'});
+}
 function validEmail(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((e||'').trim()); }
 
 /* ============================== AUTH SHELL & SCREENS ============================== */
@@ -1847,9 +1863,14 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         src.start(0,stemOff(ch.key));
       });
       const rendered=await offCtx.startRendering();
-      const wavBuf=encodeWav(rendered);
-      const blob=new Blob([wavBuf],{type:'audio/wav'});
-      const fname=(s.title||'mix').replace(/[^a-zA-Z0-9֐-׿ ]/g,'')+' stem-mix.wav';
+      let blob,ext;
+      try{
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.0/lame.min.js');
+        blob=encodeMp3(rendered,128);ext='mp3';
+      }catch(_){
+        blob=new Blob([encodeWav(rendered)],{type:'audio/wav'});ext='wav';
+      }
+      const fname=(s.title||'mix').replace(/[^a-zA-Z0-9֐-׿ ]/g,'')+' stem-mix.'+ext;
       setStemShareReady({blob,fname});
     }catch(e){
       if(e.message&&/cors|fetch|network/i.test(e.message)){alert('Cannot mix: CORS is not configured on Firebase Storage. Ask your admin to run:\ngsutil cors set cors.json gs://YOUR-BUCKET\n\nwith cors.json containing:\n[{"origin":["*"],"method":["GET"],"maxAgeSeconds":3600}]');}
@@ -1860,7 +1881,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const stemShareSend=async()=>{
     if(!stemShareReady)return;
     const {blob,fname}=stemShareReady;
-    const file=new File([blob],fname,{type:'audio/wav'});
+    const file=new File([blob],fname,{type:blob.type||'audio/mpeg'});
     try{
       if(navigator.canShare&&navigator.canShare({files:[file]})){
         await navigator.share({title:s.title+' — Stem Mix',files:[file]});
