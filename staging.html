@@ -351,7 +351,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.201';
+const VERSION='0.202';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -1862,7 +1862,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const startStemRec=async()=>{
     try{
       const audios=Object.values(stemAudiosRef.current).filter(Boolean);
-      audios.forEach(a=>{a.play().then(()=>a.pause()).catch(()=>{});});
+      audios.forEach(a=>{try{a.play();a.pause();}catch(_){}});
       const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:true,sampleRate:48000}});
       const actx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
       if(actx.state==='suspended') await actx.resume();
