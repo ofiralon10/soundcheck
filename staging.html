@@ -342,7 +342,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.217';
+const VERSION='0.218';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -1957,8 +1957,6 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     setStemChans(prev=>{const n=prev.map(c=>{const sv=pm.find(x=>x.id===c.id);return sv?{...c,muted:sv.muted,soloed:sv.soloed,vol:sv.vol,custom:!!sv.custom}:c;});stemApplyMix(n);return n;});
   };
 
-  const stemRecSrcsRef=useRef([]);
-  const stemRecOutRef=useRef(null);
   const stemRecBufCacheRef=useRef({});
   const stemRecDecodeCtxRef=useRef(null);
   const backingStemFiles=()=>{
@@ -1982,6 +1980,11 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       });
     }catch(_){}
   };
+  // Prepare phase: mic + a pre-rendered backing WAV (click at 0.35s, stems
+  // at 1.35s — sample-exact inside the file). Played via a plain blob-src
+  // Audio element so phone volume buttons control it like any media.
+  const stemRecReadyRef=useRef(null);
+  const stemRecDRef=useRef(null);
   const startStemRec=async()=>{
     let actx=null,stream=null;
     try{
@@ -2000,87 +2003,117 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       lim.threshold.value=-2;lim.knee.value=0;lim.ratio.value=20;lim.attack.value=0.001;lim.release.value=0.1;
       const dest=actx.createMediaStreamDestination();
       src.connect(hp);hp.connect(gain);gain.connect(comp);comp.connect(lim);lim.connect(dest);
-      // Backing stems: parallel fetch + decode via the prefetch cache
-      // (started when the StemRec dialog opened; retakes hit the cache).
-      // The user's own instruments are never scheduled, so they can't be
-      // heard even if the channel mix state is wrong.
       prefetchBackingStems();
       const backing=(await Promise.all(backingStemFiles().map(({cat,url})=>
         Promise.resolve(stemRecBufCacheRef.current[url]).then(buf=>buf?{cat,buf}:null).catch(()=>null)
       ))).filter(Boolean);
       if(!backing.length) throw new Error('no-backing');
-      // Route the backing mix through a MediaStream-backed Audio element so
-      // phone volume buttons (media volume) control it — raw Web Audio
-      // output bypasses media volume on some phones.
-      const mixDest=actx.createMediaStreamDestination();
+      // Offline-render click + stems into one buffer at fixed positions
+      const R_CLICK=0.35,R_LEAD=1.35;
+      const rsr=44100;
+      const maxDur=Math.max(...backing.map(b=>b.buf.duration));
+      const oc=new OfflineAudioContext(2,Math.ceil((R_LEAD+maxDur)*rsr),rsr);
+      const osc=oc.createOscillator();osc.frequency.value=1000;
+      const cg=oc.createGain();
+      cg.gain.setValueAtTime(0.0001,R_CLICK);cg.gain.exponentialRampToValueAtTime(0.6,R_CLICK+0.005);cg.gain.setValueAtTime(0.6,R_CLICK+0.04);cg.gain.exponentialRampToValueAtTime(0.0001,R_CLICK+0.05);
+      osc.connect(cg);cg.connect(oc.destination);osc.start(R_CLICK);osc.stop(R_CLICK+0.06);
+      const cc=stemChansRef.current;
+      backing.forEach(({cat,buf})=>{
+        const ch=cc.find(c=>c.id===cat);
+        const vol=ch?(ch.muted?0:(ch.custom?ch.vol:(ch.defVol!=null?ch.defVol:80))/100):0.8;
+        const g=oc.createGain();g.gain.value=vol;
+        const bs=oc.createBufferSource();bs.buffer=buf;
+        bs.connect(g);g.connect(oc.destination);
+        bs.start(R_LEAD);
+      });
+      const mix=await oc.startRendering();
+      const outUrl=URL.createObjectURL(new Blob([encodeWav(mix)],{type:'audio/wav'}));
       const out=new Audio();
-      out.srcObject=mixDest.stream;
-      stemRecOutRef.current=out;
-      try{await out.play();}catch(_){throw new Error('no-play');}
+      out.src=outUrl;out.preload='auto';
       const mr=new MediaRecorder(dest.stream,{audioBitsPerSecond:256000});
       stemRecChunksRef.current=[];
       mr.ondataavailable=(e)=>{if(e.data.size>0) stemRecChunksRef.current.push(e.data);};
       let recCap0=0;
       mr.onstart=()=>{recCap0=performance.now();};
-      stemRecPreMixRef.current=stemChansRef.current.map(c=>({id:c.id,muted:c.muted,soloed:c.soloed,vol:c.vol,custom:c.custom}));
-      setStemChans(prev=>{const n=prev.map(c=>MY_INSTRS.includes(c.id)?{...c,muted:true,soloed:false,custom:false}:{...c,soloed:false});stemApplyMix(n);return n;});
-      Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.currentTime=0;}});
-      mr.start(100);
-      stemRecRef.current=mr;
-      // Calibration click (count-in), then stems — all sample-accurately scheduled
-      const tClick=actx.currentTime+0.35;
-      const t0=tClick+1.0;
-      const osc=actx.createOscillator();osc.frequency.value=1000;
-      const cg=actx.createGain();
-      cg.gain.setValueAtTime(0.0001,tClick);cg.gain.exponentialRampToValueAtTime(0.6,tClick+0.005);cg.gain.setValueAtTime(0.6,tClick+0.04);cg.gain.exponentialRampToValueAtTime(0.0001,tClick+0.05);
-      osc.connect(cg);cg.connect(mixDest);osc.start(tClick);osc.stop(tClick+0.06);
-      const cc=stemChansRef.current;
-      const srcs=[];
-      backing.forEach(({cat,buf})=>{
-        const ch=cc.find(c=>c.id===cat);
-        const vol=ch?(ch.muted?0:(ch.custom?ch.vol:(ch.defVol!=null?ch.defVol:80))/100):0.8;
-        const g=actx.createGain();g.gain.value=vol;
-        const bs=actx.createBufferSource();bs.buffer=buf;
-        bs.connect(g);g.connect(mixDest);
-        bs.start(t0);
-        srcs.push(bs);
-      });
-      stemRecSrcsRef.current=srcs;
-      const outLat=actx.outputLatency||actx.baseLatency||0;
-      const schedPerf=performance.now()+(t0-actx.currentTime)*1000;
       mr.onstop=async()=>{
         stream.getTracks().forEach(t=>t.stop());
-        stemRecSrcsRef.current.forEach(x=>{try{x.stop();}catch(_){}});
-        stemRecSrcsRef.current=[];
-        if(stemRecOutRef.current){try{stemRecOutRef.current.pause();stemRecOutRef.current.srcObject=null;}catch(_){}stemRecOutRef.current=null;}
+        try{out.pause();out.src='';}catch(_){}
+        URL.revokeObjectURL(outUrl);
         clearInterval(stemRecTimerRef.current);
         const blob=new Blob(stemRecChunksRef.current,{type:mr.mimeType||'audio/webm'});
         if(blob.size<100){actx.close().catch(()=>{});setStemRecState(null);setStemRecTime(0);stemRecRestoreMix();return;}
-        // Sync: clock estimate incl. output latency; refined by locating the
-        // calibration click acoustically in the recording when detectable.
-        let sync=((schedPerf+outLat*1000)-(recCap0||(schedPerf-1350)))/1000;
+        // Sync = where in the recording song-time 0 sits. Click at R_CLICK,
+        // stems at R_LEAD inside the played file -> sync = click pos + 1.0s.
+        // Fallback: sampled element-position offset D -> sync = D + R_LEAD.
+        let sync=(stemRecDRef.current!=null?stemRecDRef.current:0.15)+R_LEAD;
         try{
           const rec=await actx.decodeAudioData(await blob.arrayBuffer());
-          const p=detectSyncClick(rec,Math.min(4,rec.duration));
-          if(p!=null) sync=p+(t0-tClick);
+          const p=detectSyncClick(rec,Math.min(5,rec.duration));
+          if(p!=null) sync=p+(R_LEAD-R_CLICK);
         }catch(_){}
         actx.close().catch(()=>{});
-        stemRecSyncRef.current=Math.round(sync*1000)/1000;
+        stemRecSyncRef.current=Math.round(Math.max(0,sync)*1000)/1000;
         stemRecBlobRef.current=blob;
         stemRecMimeRef.current=mr.mimeType||'audio/webm';
         setStemRecState(null);setStemRecConfirm(true);
       };
+      stemRecPreMixRef.current=stemChansRef.current.map(c=>({id:c.id,muted:c.muted,soloed:c.soloed,vol:c.vol,custom:c.custom}));
+      setStemChans(prev=>{const n=prev.map(c=>MY_INSTRS.includes(c.id)?{...c,muted:true,soloed:false,custom:false}:{...c,soloed:false});stemApplyMix(n);return n;});
+      Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.currentTime=0;}});
+      stemRecReadyRef.current={out,mr,stream,actx,outUrl,getRecCap:()=>recCap0};
+      setStemRecState('ready');
+    }catch(e){
+      if(stream)stream.getTracks().forEach(t=>t.stop());
+      if(actx)actx.close().catch(()=>{});
+      setStemRecState(null);
+      setFileMsg(e&&e.message==='no-backing'?'Could not load backing stems — check the stem files and network.':'Microphone not available — check browser permissions.');
+      stemRecRestoreMix();
+    }
+  };
+  // GO tap (direct user gesture -> blob-src playback allowed)
+  const beginStemRec=()=>{
+    const r=stemRecReadyRef.current;if(!r)return;
+    stemRecReadyRef.current=null;
+    const {out,mr,getRecCap}=r;
+    stemRecDRef.current=null;
+    try{
+      mr.start(100);
+      stemRecRef.current=mr;
+      out.currentTime=0;
+      out.play().catch(()=>{
+        setFileMsg('Playback was blocked by the browser — try again.');
+        try{mr.stop();}catch(_){}
+      });
+      const dSamples=[];
+      const takeD=()=>{
+        if(!stemRecRef.current||stemRecRef.current.state!=='recording')return;
+        const rc=getRecCap();
+        if(!rc||out.paused||out.currentTime<=0.05)return;
+        dSamples.push((performance.now()-rc)/1000-out.currentTime);
+        const so=[...dSamples].sort((a,b)=>a-b);
+        stemRecDRef.current=so[Math.floor(so.length/2)];
+      };
+      [500,1000,1600,2200].forEach(ms=>setTimeout(takeD,ms));
       setStemRecState('recording');
       setStemRecTime(0);
       stemRecTimerRef.current=setInterval(()=>setStemRecTime(t=>t+1),1000);
     }catch(e){
-      if(stream)stream.getTracks().forEach(t=>t.stop());
-      if(actx)actx.close().catch(()=>{});
-      if(stemRecOutRef.current){try{stemRecOutRef.current.pause();stemRecOutRef.current.srcObject=null;}catch(_){}stemRecOutRef.current=null;}
+      setFileMsg('Could not start recording.');
+      try{r.stream.getTracks().forEach(t=>t.stop());}catch(_){}
+      try{r.actx.close();}catch(_){}
       setStemRecState(null);
-      setFileMsg(e&&e.message==='no-backing'?'Could not load backing stems — check the stem files and network.':e&&e.message==='no-play'?'Playback was blocked by the browser — try starting the recording again.':'Microphone not available — check browser permissions.');
       stemRecRestoreMix();
     }
+  };
+  const cancelStemRecReady=()=>{
+    const r=stemRecReadyRef.current;if(!r)return;
+    stemRecReadyRef.current=null;
+    try{r.stream.getTracks().forEach(t=>t.stop());}catch(_){}
+    try{r.actx.close();}catch(_){}
+    try{r.out.pause();r.out.src='';}catch(_){}
+    URL.revokeObjectURL(r.outUrl);
+    setStemRecState(null);
+    stemRecRestoreMix();
   };
   const stopStemRec=()=>{if(stemRecRef.current&&stemRecRef.current.state!=='inactive') stemRecRef.current.stop();};
   const uploadStemRec=async()=>{
@@ -2088,14 +2121,30 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     if(!blob){setStemRecConfirm(false);setStemRecTime(0);return;}
     setBusy('stemrec');setStemRecConfirm(false);
     const fid=uid();
-    const ext=mime.includes('mp4')?'m4a':mime.includes('ogg')?'ogg':'webm';
+    // Trim the count-in lead (measured sync) off the take and re-encode to
+    // MP3: the saved stem then starts at song time 0 (sync:0) and is
+    // properly seekable — MediaRecorder webm has no seek index and drifts
+    // after rewinding. Falls back to the raw blob + sync offset on failure.
+    let upBlob=blob,upMime=mime,ext=mime.includes('mp4')?'m4a':mime.includes('ogg')?'ogg':'webm',syncVal=stemRecSyncRef.current||0;
+    try{
+      const ctx=new (window.AudioContext||window.webkitAudioContext)();
+      const dec=await ctx.decodeAudioData(await blob.arrayBuffer());
+      const from=Math.min(Math.max(0,syncVal),Math.max(0,dec.duration-1));
+      const start=Math.floor(from*dec.sampleRate);
+      const len=Math.max(1,dec.length-start);
+      const trimmed=ctx.createBuffer(dec.numberOfChannels,len,dec.sampleRate);
+      for(let ch=0;ch<dec.numberOfChannels;ch++) trimmed.getChannelData(ch).set(dec.getChannelData(ch).subarray(start));
+      ctx.close().catch(()=>{});
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.0/lame.min.js');
+      upBlob=encodeMp3(trimmed,128);upMime='audio/mpeg';ext='mp3';syncVal=0;
+    }catch(_){}
     const name=autoName('stem-rec')+'.'+ext;
     try{
       const path='files/'+BOARD+'/'+fid+'-stemrec.'+ext;
       const sRef=storage.ref().child(path);
-      await sRef.put(blob,{contentType:mime});
+      await sRef.put(upBlob,{contentType:upMime});
       const url=await sRef.getDownloadURL();
-      update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id:fid,name,kind:'upload',url,path,size:blob.size,type:'audio',cat:'stem-rec',by:MY_NAME||'unknown',sync:stemRecSyncRef.current||0});logAct(st,'saved a stem recording to "'+so.title+'"');return st;});
+      update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files.push({id:fid,name,kind:'upload',url,path,size:upBlob.size,type:'audio',cat:'stem-rec',by:MY_NAME||'unknown',sync:syncVal});logAct(st,'saved a stem recording to "'+so.title+'"');return st;});
     }catch(err){setFileMsg('Recording upload failed — '+prettyErr(err));}
     stemRecBlobRef.current=null;setBusy('');setStemRecTime(0);
     stemRecRestoreMix();
@@ -2676,6 +2725,14 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         <div className="rec-confirm-panel" style={{textAlign:'center'}}>
           <div className="modaltitle">Preparing…</div>
           <div style={{fontSize:12,color:'var(--muted)'}}>Loading backing stems</div>
+        </div>
+      </div>}
+      {stemRecState==='ready' && <div className="rec-confirm">
+        <div className="rec-confirm-panel" style={{textAlign:'center'}}>
+          <div className="modaltitle">Ready</div>
+          <div style={{fontSize:12,color:'var(--muted)',marginBottom:14,lineHeight:1.5}}>Tap GO — you'll hear a beep, and the stems start a second later.</div>
+          <button className="btn" style={{background:'var(--drums)',fontSize:16,padding:'12px 36px'}} onClick={beginStemRec}>🎙 GO</button>
+          <div style={{marginTop:12}}><button className="btn ghost sm" onClick={cancelStemRecReady}>Cancel</button></div>
         </div>
       </div>}
       {stemRecState==='recording' && <div className="rec-confirm">
