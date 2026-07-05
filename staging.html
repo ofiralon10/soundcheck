@@ -342,7 +342,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.218';
+const VERSION='0.219';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -784,19 +784,58 @@ function detectSyncClick(buffer,searchSecs){
     const m=Math.floor(0.04*ds);
     const cs=new Float32Array(m),sn=new Float32Array(m);
     for(let j=0;j<m;j++){const w=2*Math.PI*1000*j/ds;cs[j]=Math.cos(w);sn[j]=Math.sin(w);}
-    const mags=[];let best=0,bestI=-1;
+    const mags=[],tonal=[];let best=0;
     for(let i=0;i+m<n;i+=2){
-      let I=0,Q=0;
-      for(let j=0;j<m;j++){const v=x[i+j];I+=v*cs[j];Q+=v*sn[j];}
+      let I=0,Q=0,e=0;
+      for(let j=0;j<m;j++){const v=x[i+j];I+=v*cs[j];Q+=v*sn[j];e+=v*v;}
       const mag=Math.sqrt(I*I+Q*Q);
       mags.push(mag);
-      if(mag>best){best=mag;bestI=i;}
+      // fraction of window energy sitting at 1kHz — a beep is a pure tone
+      // (~1), a voiced "Ta" or noise burst is broadband (low)
+      tonal.push(e>1e-12?(2*mag*mag/m)/e:0);
+      if(mag>best&&tonal[tonal.length-1]>0.5)best=mag;
     }
-    if(bestI<0)return null;
+    if(!best)return null;
     const sorted=[...mags].sort((a,b)=>a-b);
     const med=sorted[Math.floor(sorted.length/2)]||0;
     if(best<med*4+1e-6)return null;
-    return Math.max(0,bestI/ds-0.005);
+    // several beeps may be present — take the earliest strong tonal one,
+    // then climb to its correlation peak (= beep start, full window overlap)
+    const thr=Math.max(best*0.45,med*4);
+    for(let j=0;j<mags.length;j++){
+      if(mags[j]>=thr&&tonal[j]>0.5){
+        while(j+1<mags.length&&mags[j+1]>mags[j])j++;
+        return Math.max(0,(j*2)/ds);
+      }
+    }
+    return null;
+  }catch(_){return null;}
+}
+function detectTaOnsets(buffer,dEst,beats){
+  // Find the user's "Ta" voice onsets near the expected silent beats and
+  // return the median extra delay vs (dEst + beat) — i.e. the output
+  // latency the user is hearing. Needs >=2 detected onsets.
+  try{
+    const sr=buffer.sampleRate,d=buffer.getChannelData(0);
+    const hopS=0.01,hop=Math.floor(sr*hopS);
+    const nH=Math.floor(d.length/hop);
+    if(nH<10)return null;
+    const env=new Float32Array(nH);
+    for(let i=0;i<nH;i++){let sum=0;const off=i*hop;for(let j=0;j<hop;j++){const v=d[off+j]||0;sum+=v*v;}env[i]=Math.sqrt(sum/hop);}
+    const sortedEnv=[...env].sort((a,b)=>a-b);
+    const noise=sortedEnv[Math.floor(nH*0.3)]||1e-6;
+    const thr=Math.max(noise*5,1e-4);
+    const delays=[];
+    beats.forEach(tb=>{
+      const from=Math.max(0,Math.floor((dEst+tb-0.15)/hopS));
+      const to=Math.min(nH-2,Math.floor((dEst+tb+0.45)/hopS));
+      for(let i=from;i<=to;i++){
+        if(env[i]>thr&&env[i+1]>thr){delays.push(i*hopS-(dEst+tb));break;}
+      }
+    });
+    if(delays.length<2)return null;
+    delays.sort((a,b)=>a-b);
+    return delays[Math.floor(delays.length/2)];
   }catch(_){return null;}
 }
 function validEmail(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((e||'').trim()); }
@@ -2008,15 +2047,20 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         Promise.resolve(stemRecBufCacheRef.current[url]).then(buf=>buf?{cat,buf}:null).catch(()=>null)
       ))).filter(Boolean);
       if(!backing.length) throw new Error('no-backing');
-      // Offline-render click + stems into one buffer at fixed positions
-      const R_CLICK=0.35,R_LEAD=1.35;
+      // Offline-render count-in + stems into one buffer at fixed positions:
+      // beeps on beats 1-4 (user answers "Ta" on silent beats 5-8),
+      // stems enter on beat 9.
+      const BEAT=0.5,B0=0.5,R_LEAD=B0+8*BEAT;
       const rsr=44100;
       const maxDur=Math.max(...backing.map(b=>b.buf.duration));
       const oc=new OfflineAudioContext(2,Math.ceil((R_LEAD+maxDur)*rsr),rsr);
-      const osc=oc.createOscillator();osc.frequency.value=1000;
-      const cg=oc.createGain();
-      cg.gain.setValueAtTime(0.0001,R_CLICK);cg.gain.exponentialRampToValueAtTime(0.6,R_CLICK+0.005);cg.gain.setValueAtTime(0.6,R_CLICK+0.04);cg.gain.exponentialRampToValueAtTime(0.0001,R_CLICK+0.05);
-      osc.connect(cg);cg.connect(oc.destination);osc.start(R_CLICK);osc.stop(R_CLICK+0.06);
+      for(let k=0;k<4;k++){
+        const tb=B0+k*BEAT;
+        const osc=oc.createOscillator();osc.frequency.value=1000;
+        const cg=oc.createGain();
+        cg.gain.setValueAtTime(0.0001,tb);cg.gain.exponentialRampToValueAtTime(0.6,tb+0.005);cg.gain.setValueAtTime(0.6,tb+0.04);cg.gain.exponentialRampToValueAtTime(0.0001,tb+0.05);
+        osc.connect(cg);cg.connect(oc.destination);osc.start(tb);osc.stop(tb+0.06);
+      }
       const cc=stemChansRef.current;
       backing.forEach(({cat,buf})=>{
         const ch=cc.find(c=>c.id===cat);
@@ -2042,14 +2086,29 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         clearInterval(stemRecTimerRef.current);
         const blob=new Blob(stemRecChunksRef.current,{type:mr.mimeType||'audio/webm'});
         if(blob.size<100){actx.close().catch(()=>{});setStemRecState(null);setStemRecTime(0);stemRecRestoreMix();return;}
-        // Sync = where in the recording song-time 0 sits. Click at R_CLICK,
-        // stems at R_LEAD inside the played file -> sync = click pos + 1.0s.
-        // Fallback: sampled element-position offset D -> sync = D + R_LEAD.
-        let sync=(stemRecDRef.current!=null?stemRecDRef.current:0.15)+R_LEAD;
+        // Sync = where in the recording song-time 0 sits. Priority:
+        // 1) first count-in beep found acoustically (speaker/leaky phones)
+        // 2) user's "Ta" answers on beats 5-8 measure the output delay
+        //    (works on Bluetooth: the voice reaches the mic directly)
+        // 3) remembered Ta calibration from a previous take
+        // 4) plain element-clock estimate
+        const D=stemRecDRef.current;
+        let sync=(D!=null?D:0.15)+R_LEAD;
         try{
           const rec=await actx.decodeAudioData(await blob.arrayBuffer());
-          const p=detectSyncClick(rec,Math.min(5,rec.duration));
-          if(p!=null) sync=p+(R_LEAD-R_CLICK);
+          const p=detectSyncClick(rec,Math.min(7,rec.duration));
+          if(p!=null){sync=p+(R_LEAD-B0);}
+          else if(D!=null){
+            const taBeats=[4,5,6,7].map(k=>B0+k*BEAT);
+            const dv=detectTaOnsets(rec,D,taBeats);
+            if(dv!=null&&dv>-0.06&&dv<0.6){
+              sync=D+R_LEAD+dv;
+              try{localStorage.setItem('sc_sync_out',String(Math.round(dv*1000)));}catch(_){}
+            }else{
+              let cal=NaN;try{cal=parseInt(localStorage.getItem('sc_sync_out'));}catch(_){}
+              if(!isNaN(cal)) sync=D+R_LEAD+cal/1000;
+            }
+          }
         }catch(_){}
         actx.close().catch(()=>{});
         stemRecSyncRef.current=Math.round(Math.max(0,sync)*1000)/1000;
@@ -2707,7 +2766,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         <div className="rec-confirm-panel">
           <div className="modaltitle">Record Stem</div>
           <div style={{fontSize:13,color:'var(--muted)',marginBottom:10}}>Record your part over "{s.title}"</div>
-          <div style={{fontSize:12,color:'var(--muted)',marginBottom:12,lineHeight:1.5}}>Your instruments ({MY_INSTRS.length?MY_INSTRS.map(id=>(INSTR.find(i=>i.id===id)||{label:id}).label).join(', '):'none set'}) will be muted while all other stems play. You'll hear a short beep (count-in), then the stems start about a second later. Your microphone recording will be saved as a personal stem recording.</div>
+          <div style={{fontSize:12,color:'var(--muted)',marginBottom:12,lineHeight:1.5}}>Your instruments ({MY_INSTRS.length?MY_INSTRS.map(id=>(INSTR.find(i=>i.id===id)||{label:id}).label).join(', '):'none set'}) will be muted while all other stems play. Count-in: 4 beeps, then you answer "Ta" on the 4 silent beats (calibrates your delay), then the stems start. Your microphone recording will be saved as a personal stem recording.</div>
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6,padding:'8px 10px',background:'var(--surface-2)',borderRadius:8,cursor:'pointer'}} onClick={()=>setStemRecHpPersist(!stemRecHp)}>
             <span style={{width:36,height:20,borderRadius:10,background:stemRecHp?'var(--ok)':'var(--line-2)',position:'relative',flexShrink:0,transition:'background .15s'}}>
               <span style={{position:'absolute',top:2,left:stemRecHp?18:2,width:16,height:16,borderRadius:'50%',background:'#fff',transition:'left .15s'}}/>
@@ -2730,7 +2789,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       {stemRecState==='ready' && <div className="rec-confirm">
         <div className="rec-confirm-panel" style={{textAlign:'center'}}>
           <div className="modaltitle">Ready</div>
-          <div style={{fontSize:12,color:'var(--muted)',marginBottom:14,lineHeight:1.5}}>Tap GO — you'll hear a beep, and the stems start a second later.</div>
+          <div style={{fontSize:12,color:'var(--muted)',marginBottom:14,lineHeight:1.5}}>Tap GO — you'll hear <b>4 beeps</b>. Keep the pulse going out loud: say <b>"Ta" on the next 4 silent beats</b> (this calibrates your delay). The stems start right after.</div>
           <button className="btn" style={{background:'var(--drums)',fontSize:16,padding:'12px 36px'}} onClick={beginStemRec}>🎙 GO</button>
           <div style={{marginTop:12}}><button className="btn ghost sm" onClick={cancelStemRecReady}>Cancel</button></div>
         </div>
@@ -2739,7 +2798,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         <div className="rec-confirm-panel" style={{textAlign:'center'}}>
           <div className="modaltitle" style={{color:'var(--drums)'}}>🎙 Recording…</div>
           <div style={{fontFamily:'var(--mono)',fontSize:28,fontWeight:700,margin:'12px 0'}}>{fmtSecs(stemRecTime)}</div>
-          <div style={{fontSize:12,color:'var(--muted)',marginBottom:16}}>Playing stems · your instruments muted</div>
+          <div style={{fontSize:12,color:'var(--muted)',marginBottom:16}}>4 beeps → say "Ta" ×4 → stems play · your instruments muted</div>
           <button className="btn" style={{background:'var(--drums)'}} onClick={stopStemRec}>Stop Recording</button>
         </div>
       </div>}
