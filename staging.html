@@ -342,7 +342,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.215';
+const VERSION='0.216';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -770,6 +770,34 @@ function encodeMp3(audioBuffer,kbps){
   }
   const end=enc.flush();if(end.length)chunks.push(new Int8Array(end));
   return new Blob(chunks,{type:'audio/mpeg'});
+}
+function detectSyncClick(buffer,searchSecs){
+  // Locate the 1kHz calibration click in the first searchSecs of a recording.
+  // Demodulation at 1kHz (I/Q) makes the match phase-insensitive.
+  try{
+    const sr=buffer.sampleRate,d=buffer.getChannelData(0);
+    const ds=8000,step=sr/ds;
+    const n=Math.min(Math.floor(searchSecs*ds),Math.floor(d.length/step));
+    if(n<ds*0.5)return null;
+    const x=new Float32Array(n);
+    for(let i=0;i<n;i++)x[i]=d[Math.floor(i*step)];
+    const m=Math.floor(0.04*ds);
+    const cs=new Float32Array(m),sn=new Float32Array(m);
+    for(let j=0;j<m;j++){const w=2*Math.PI*1000*j/ds;cs[j]=Math.cos(w);sn[j]=Math.sin(w);}
+    const mags=[];let best=0,bestI=-1;
+    for(let i=0;i+m<n;i+=2){
+      let I=0,Q=0;
+      for(let j=0;j<m;j++){const v=x[i+j];I+=v*cs[j];Q+=v*sn[j];}
+      const mag=Math.sqrt(I*I+Q*Q);
+      mags.push(mag);
+      if(mag>best){best=mag;bestI=i;}
+    }
+    if(bestI<0)return null;
+    const sorted=[...mags].sort((a,b)=>a-b);
+    const med=sorted[Math.floor(sorted.length/2)]||0;
+    if(best<med*4+1e-6)return null;
+    return Math.max(0,bestI/ds-0.005);
+  }catch(_){return null;}
 }
 function validEmail(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((e||'').trim()); }
 
@@ -1671,6 +1699,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [cropSrc,setCropSrc]=useState(null);
   const [busy,setBusy]=useState('');
   const [confirmDel,setConfirmDel]=useState(null);
+  const [confirmRemove,setConfirmRemove]=useState(false);
   const [renameId,setRenameId]=useState(null);
   const [renameTxt,setRenameTxt]=useState('');
   const [recState,setRecState]=useState(null);
@@ -1928,12 +1957,13 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     setStemChans(prev=>{const n=prev.map(c=>{const sv=pm.find(x=>x.id===c.id);return sv?{...c,muted:sv.muted,soloed:sv.soloed,vol:sv.vol,custom:!!sv.custom}:c;});stemApplyMix(n);return n;});
   };
 
+  const stemRecSrcsRef=useRef([]);
   const startStemRec=async()=>{
+    let actx=null,stream=null;
     try{
-      const audios=Object.values(stemAudiosRef.current).filter(Boolean);
-      audios.forEach(a=>{try{a.play();a.pause();}catch(_){}});
-      const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:!stemRecHp,noiseSuppression:false,autoGainControl:false,sampleRate:48000}});
-      const actx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
+      setStemRecState('preparing');
+      stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:!stemRecHp,noiseSuppression:false,autoGainControl:false,sampleRate:48000}});
+      actx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
       if(actx.state==='suspended') await actx.resume();
       const src=actx.createMediaStreamSource(stream);
       const hp=actx.createBiquadFilter();
@@ -1946,47 +1976,83 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       lim.threshold.value=-2;lim.knee.value=0;lim.ratio.value=20;lim.attack.value=0.001;lim.release.value=0.1;
       const dest=actx.createMediaStreamDestination();
       src.connect(hp);hp.connect(gain);gain.connect(comp);comp.connect(lim);lim.connect(dest);
+      // Backing stems fetched + decoded for Web Audio playback. The user's
+      // own instruments are never scheduled, so they can't be heard even if
+      // the channel mix state is wrong.
+      const files=s.files||[];
+      const backing=[];
+      for(const cat of STEM_CATS){
+        if(MY_INSTRS.includes(cat.id))continue;
+        const af=files.filter(f=>(f.cat==='original'?'other':f.cat||'other')===cat.id&&f.type==='audio');
+        if(!af.length)continue;
+        try{
+          const ab=await fetch(af[0].url).then(r=>{if(!r.ok)throw new Error('http '+r.status);return r.arrayBuffer();});
+          backing.push({cat:cat.id,buf:await actx.decodeAudioData(ab)});
+        }catch(_){}
+      }
+      if(!backing.length) throw new Error('no-backing');
       const mr=new MediaRecorder(dest.stream,{audioBitsPerSecond:256000});
       stemRecChunksRef.current=[];
       mr.ondataavailable=(e)=>{if(e.data.size>0) stemRecChunksRef.current.push(e.data);};
-      mr.onstop=()=>{
+      let recCap0=0;
+      mr.onstart=()=>{recCap0=performance.now();};
+      stemRecPreMixRef.current=stemChansRef.current.map(c=>({id:c.id,muted:c.muted,soloed:c.soloed,vol:c.vol,custom:c.custom}));
+      setStemChans(prev=>{const n=prev.map(c=>MY_INSTRS.includes(c.id)?{...c,muted:true,soloed:false,custom:false}:{...c,soloed:false});stemApplyMix(n);return n;});
+      Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.currentTime=0;}});
+      mr.start(100);
+      stemRecRef.current=mr;
+      // Calibration click (count-in), then stems — all sample-accurately scheduled
+      const tClick=actx.currentTime+0.35;
+      const t0=tClick+1.0;
+      const osc=actx.createOscillator();osc.frequency.value=1000;
+      const cg=actx.createGain();
+      cg.gain.setValueAtTime(0.0001,tClick);cg.gain.exponentialRampToValueAtTime(0.6,tClick+0.005);cg.gain.setValueAtTime(0.6,tClick+0.04);cg.gain.exponentialRampToValueAtTime(0.0001,tClick+0.05);
+      osc.connect(cg);cg.connect(actx.destination);osc.start(tClick);osc.stop(tClick+0.06);
+      const cc=stemChansRef.current;
+      const srcs=[];
+      backing.forEach(({cat,buf})=>{
+        const ch=cc.find(c=>c.id===cat);
+        const vol=ch?(ch.muted?0:(ch.custom?ch.vol:(ch.defVol!=null?ch.defVol:80))/100):0.8;
+        const g=actx.createGain();g.gain.value=vol;
+        const bs=actx.createBufferSource();bs.buffer=buf;
+        bs.connect(g);g.connect(actx.destination);
+        bs.start(t0);
+        srcs.push(bs);
+      });
+      stemRecSrcsRef.current=srcs;
+      const outLat=actx.outputLatency||actx.baseLatency||0;
+      const schedPerf=performance.now()+(t0-actx.currentTime)*1000;
+      mr.onstop=async()=>{
         stream.getTracks().forEach(t=>t.stop());
-        actx.close().catch(()=>{});
+        stemRecSrcsRef.current.forEach(x=>{try{x.stop();}catch(_){}});
+        stemRecSrcsRef.current=[];
         clearInterval(stemRecTimerRef.current);
-        stemStop();
         const blob=new Blob(stemRecChunksRef.current,{type:mr.mimeType||'audio/webm'});
-        if(blob.size<100){setStemRecState(null);setStemRecTime(0);stemRecRestoreMix();return;}
+        if(blob.size<100){actx.close().catch(()=>{});setStemRecState(null);setStemRecTime(0);stemRecRestoreMix();return;}
+        // Sync: clock estimate incl. output latency; refined by locating the
+        // calibration click acoustically in the recording when detectable.
+        let sync=((schedPerf+outLat*1000)-(recCap0||(schedPerf-1350)))/1000;
+        try{
+          const rec=await actx.decodeAudioData(await blob.arrayBuffer());
+          const p=detectSyncClick(rec,Math.min(4,rec.duration));
+          if(p!=null) sync=p+(t0-tClick);
+        }catch(_){}
+        actx.close().catch(()=>{});
+        stemRecSyncRef.current=Math.round(sync*1000)/1000;
         stemRecBlobRef.current=blob;
         stemRecMimeRef.current=mr.mimeType||'audio/webm';
         setStemRecState(null);setStemRecConfirm(true);
       };
-      stemRecPreMixRef.current=stemChansRef.current.map(c=>({id:c.id,muted:c.muted,soloed:c.soloed,vol:c.vol,custom:c.custom}));
-      setStemChans(prev=>{const n=prev.map(c=>MY_INSTRS.includes(c.id)?{...c,muted:true,soloed:false,custom:false}:{...c,soloed:false});stemApplyMix(n);return n;});
-      audios.forEach(a=>{a.pause();a.currentTime=0;});
-      let recCap0=0;
-      mr.onstart=()=>{recCap0=performance.now();};
-      mr.start(100);
-      stemRecRef.current=mr;
-      const recT0=performance.now();
-      const playResults=await Promise.all(audios.map(a=>a.play().then(()=>true).catch(()=>false)));
-      stemRecSyncRef.current=Math.round(performance.now()-recT0)/1000;
-      const syncSamples=[];
-      const takeSync=()=>{
-        if(!stemRecRef.current||stemRecRef.current.state!=='recording')return;
-        const a=audios.find(x=>x&&!x.paused&&x.currentTime>0.05);
-        if(!a)return;
-        syncSamples.push((performance.now()-(recCap0||recT0))/1000-a.currentTime);
-        const sorted=[...syncSamples].sort((x,y)=>x-y);
-        stemRecSyncRef.current=Math.round(sorted[Math.floor(sorted.length/2)]*1000)/1000;
-      };
-      [300,700,1200,1800].forEach(ms=>setTimeout(takeSync,ms));
-      if(playResults.every(r=>!r)){setFileMsg('Browser blocked audio playback. Tap Play first, then try recording.');stream.getTracks().forEach(t=>t.stop());actx.close().catch(()=>{});mr.stop();stemRecRestoreMix();return;}
-      stemPlayingRef.current=true;setStemPlaying(true);setStemDur(stemGetMaxDur());
-      stemRafRef.current=requestAnimationFrame(stemTick);
       setStemRecState('recording');
       setStemRecTime(0);
       stemRecTimerRef.current=setInterval(()=>setStemRecTime(t=>t+1),1000);
-    }catch(e){setFileMsg('Microphone not available — check browser permissions.');stemRecRestoreMix();}
+    }catch(e){
+      if(stream)stream.getTracks().forEach(t=>t.stop());
+      if(actx)actx.close().catch(()=>{});
+      setStemRecState(null);
+      setFileMsg(e&&e.message==='no-backing'?'Could not load backing stems — check the stem files and network.':'Microphone not available — check browser permissions.');
+      stemRecRestoreMix();
+    }
   };
   const stopStemRec=()=>{if(stemRecRef.current&&stemRecRef.current.state!=='inactive') stemRecRef.current.stop();};
   const uploadStemRec=async()=>{
@@ -2309,7 +2375,13 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             <button className="btn ghost" onClick={onToggleEncore} style={s.encore?{color:'var(--guitar)',borderColor:'rgba(244,169,60,.5)'}:null}>{s.encore?'★ Encore on':'Mark as encore'}</button>
             <button className="btn ghost" onClick={onExclude}>Exclude from set</button>
           </div>
-          <div className="btnrow"><button className="btn danger" onClick={del}>Remove song</button></div>
+          <div className="btnrow">{confirmRemove
+            ? <React.Fragment>
+                <span style={{fontSize:13,color:'var(--muted)',alignSelf:'center',direction:'ltr'}}>Remove "{s.title}"?</span>
+                <button className="btn danger" onClick={()=>{setConfirmRemove(false);del();}}>Yes, remove</button>
+                <button className="btn ghost" onClick={()=>setConfirmRemove(false)}>Cancel</button>
+              </React.Fragment>
+            : <button className="btn danger" onClick={()=>setConfirmRemove(true)}>Remove song</button>}</div>
         </div>}
       {filesOpen && <div className="files-modal" onClick={e=>{if(e.target===e.currentTarget){setFilesOpen(false);setPickCat(null);setLinkMode(false);}}}>
         <div className="files-panel">
@@ -2547,7 +2619,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             <button className="stem-play" onClick={stemPlay} disabled={!stemDur}>PLAY</button>
             <button onClick={stemPauseOrStop} disabled={!stemDur}>PAUSE/STOP</button>
             {!stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>CONFIG</button>}
-            {!stemRecPlayback && <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>setStemRecPrompt(true)} disabled={stemRecState==='recording'}>🎙 StemRec</button>}
+            {!stemRecPlayback && <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>setStemRecPrompt(true)} disabled={!!stemRecState}>🎙 StemRec</button>}
             {stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>CONFIG</button>}
             {stemRecPlayback && !stemShareReady && <button style={{background:'#2DD4BF',color:'#000',border:'none',borderRadius:8,padding:'4px 12px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',opacity:stemShareBusy?0.6:1}} onClick={stemShareMix} disabled={stemShareBusy}>{stemShareBusy?'Mixing…':'📤 Share'}</button>}
             {stemRecPlayback && stemShareReady && <button style={{background:'var(--ok)',color:'#000',border:'none',borderRadius:8,padding:'4px 12px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',animation:'pulse 1s infinite'}} onClick={stemShareSend}>📤 Send</button>}
@@ -2558,7 +2630,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         <div className="rec-confirm-panel">
           <div className="modaltitle">Record Stem</div>
           <div style={{fontSize:13,color:'var(--muted)',marginBottom:10}}>Record your part over "{s.title}"</div>
-          <div style={{fontSize:12,color:'var(--muted)',marginBottom:12,lineHeight:1.5}}>Your instruments ({MY_INSTRS.length?MY_INSTRS.map(id=>(INSTR.find(i=>i.id===id)||{label:id}).label).join(', '):'none set'}) will be muted while all other stems play. Your microphone recording will be saved as a personal stem recording.</div>
+          <div style={{fontSize:12,color:'var(--muted)',marginBottom:12,lineHeight:1.5}}>Your instruments ({MY_INSTRS.length?MY_INSTRS.map(id=>(INSTR.find(i=>i.id===id)||{label:id}).label).join(', '):'none set'}) will be muted while all other stems play. You'll hear a short beep (count-in), then the stems start about a second later. Your microphone recording will be saved as a personal stem recording.</div>
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6,padding:'8px 10px',background:'var(--surface-2)',borderRadius:8,cursor:'pointer'}} onClick={()=>setStemRecHpPersist(!stemRecHp)}>
             <span style={{width:36,height:20,borderRadius:10,background:stemRecHp?'var(--ok)':'var(--line-2)',position:'relative',flexShrink:0,transition:'background .15s'}}>
               <span style={{position:'absolute',top:2,left:stemRecHp?18:2,width:16,height:16,borderRadius:'50%',background:'#fff',transition:'left .15s'}}/>
@@ -2570,6 +2642,12 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             <button className="btn ghost" onClick={()=>setStemRecPrompt(false)}>Cancel</button>
             <button className="btn" style={{background:'var(--drums)'}} disabled={!MY_INSTRS.length} onClick={()=>{setStemRecPrompt(false);startStemRec();}}>Start</button>
           </div>
+        </div>
+      </div>}
+      {stemRecState==='preparing' && <div className="rec-confirm">
+        <div className="rec-confirm-panel" style={{textAlign:'center'}}>
+          <div className="modaltitle">Preparing…</div>
+          <div style={{fontSize:12,color:'var(--muted)'}}>Loading backing stems</div>
         </div>
       </div>}
       {stemRecState==='recording' && <div className="rec-confirm">
