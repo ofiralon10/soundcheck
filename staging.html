@@ -342,7 +342,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.219';
+const VERSION='0.220';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -1989,6 +1989,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const stemRecBlobRef=useRef(null);
   const stemRecPreMixRef=useRef(null);
   const stemRecSyncRef=useRef(0);
+  const stemRecSyncMethodRef=useRef('');
   const stemRecRestoreMix=()=>{
     const pm=stemRecPreMixRef.current;
     if(!pm)return;
@@ -2048,13 +2049,13 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       ))).filter(Boolean);
       if(!backing.length) throw new Error('no-backing');
       // Offline-render count-in + stems into one buffer at fixed positions:
-      // beeps on beats 1-4 (user answers "Ta" on silent beats 5-8),
-      // stems enter on beat 9.
-      const BEAT=0.5,B0=0.5,R_LEAD=B0+8*BEAT;
+      // beeps on beats 1-8 (user answers "Ta" on silent beats 9-12),
+      // stems enter on beat 13.
+      const BEAT=0.5,B0=0.5,R_LEAD=B0+12*BEAT;
       const rsr=44100;
       const maxDur=Math.max(...backing.map(b=>b.buf.duration));
       const oc=new OfflineAudioContext(2,Math.ceil((R_LEAD+maxDur)*rsr),rsr);
-      for(let k=0;k<4;k++){
+      for(let k=0;k<8;k++){
         const tb=B0+k*BEAT;
         const osc=oc.createOscillator();osc.frequency.value=1000;
         const cg=oc.createGain();
@@ -2086,30 +2087,30 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         clearInterval(stemRecTimerRef.current);
         const blob=new Blob(stemRecChunksRef.current,{type:mr.mimeType||'audio/webm'});
         if(blob.size<100){actx.close().catch(()=>{});setStemRecState(null);setStemRecTime(0);stemRecRestoreMix();return;}
-        // Sync = where in the recording song-time 0 sits. Priority:
-        // 1) first count-in beep found acoustically (speaker/leaky phones)
-        // 2) user's "Ta" answers on beats 5-8 measure the output delay
-        //    (works on Bluetooth: the voice reaches the mic directly)
-        // 3) remembered Ta calibration from a previous take
-        // 4) plain element-clock estimate
+        // Sync = where in the recording song-time 0 sits. Ta calibration is
+        // FORCED for now (beep detection disabled): the user's "Ta" answers
+        // on beats 9-12 measure the output delay they actually hear.
+        // Fallbacks: remembered Ta calibration, then plain clock estimate.
         const D=stemRecDRef.current;
         let sync=(D!=null?D:0.15)+R_LEAD;
+        let method='clock estimate only';
         try{
           const rec=await actx.decodeAudioData(await blob.arrayBuffer());
-          const p=detectSyncClick(rec,Math.min(7,rec.duration));
-          if(p!=null){sync=p+(R_LEAD-B0);}
-          else if(D!=null){
-            const taBeats=[4,5,6,7].map(k=>B0+k*BEAT);
+          if(D!=null){
+            const taBeats=[8,9,10,11].map(k=>B0+k*BEAT);
             const dv=detectTaOnsets(rec,D,taBeats);
             if(dv!=null&&dv>-0.06&&dv<0.6){
               sync=D+R_LEAD+dv;
+              method='Ta detected · delay '+(dv>=0?'+':'')+Math.round(dv*1000)+'ms';
               try{localStorage.setItem('sc_sync_out',String(Math.round(dv*1000)));}catch(_){}
             }else{
               let cal=NaN;try{cal=parseInt(localStorage.getItem('sc_sync_out'));}catch(_){}
-              if(!isNaN(cal)) sync=D+R_LEAD+cal/1000;
+              if(!isNaN(cal)){sync=D+R_LEAD+cal/1000;method='Ta NOT detected · using saved '+(cal>=0?'+':'')+cal+'ms';}
+              else method='Ta NOT detected · clock estimate';
             }
           }
         }catch(_){}
+        stemRecSyncMethodRef.current=method;
         actx.close().catch(()=>{});
         stemRecSyncRef.current=Math.round(Math.max(0,sync)*1000)/1000;
         stemRecBlobRef.current=blob;
@@ -2766,7 +2767,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         <div className="rec-confirm-panel">
           <div className="modaltitle">Record Stem</div>
           <div style={{fontSize:13,color:'var(--muted)',marginBottom:10}}>Record your part over "{s.title}"</div>
-          <div style={{fontSize:12,color:'var(--muted)',marginBottom:12,lineHeight:1.5}}>Your instruments ({MY_INSTRS.length?MY_INSTRS.map(id=>(INSTR.find(i=>i.id===id)||{label:id}).label).join(', '):'none set'}) will be muted while all other stems play. Count-in: 4 beeps, then you answer "Ta" on the 4 silent beats (calibrates your delay), then the stems start. Your microphone recording will be saved as a personal stem recording.</div>
+          <div style={{fontSize:12,color:'var(--muted)',marginBottom:12,lineHeight:1.5}}>Your instruments ({MY_INSTRS.length?MY_INSTRS.map(id=>(INSTR.find(i=>i.id===id)||{label:id}).label).join(', '):'none set'}) will be muted while all other stems play. Count-in: 8 beeps, then you answer "Ta" on the 4 silent beats (calibrates your delay), then the stems start. Your microphone recording will be saved as a personal stem recording.</div>
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6,padding:'8px 10px',background:'var(--surface-2)',borderRadius:8,cursor:'pointer'}} onClick={()=>setStemRecHpPersist(!stemRecHp)}>
             <span style={{width:36,height:20,borderRadius:10,background:stemRecHp?'var(--ok)':'var(--line-2)',position:'relative',flexShrink:0,transition:'background .15s'}}>
               <span style={{position:'absolute',top:2,left:stemRecHp?18:2,width:16,height:16,borderRadius:'50%',background:'#fff',transition:'left .15s'}}/>
@@ -2789,7 +2790,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       {stemRecState==='ready' && <div className="rec-confirm">
         <div className="rec-confirm-panel" style={{textAlign:'center'}}>
           <div className="modaltitle">Ready</div>
-          <div style={{fontSize:12,color:'var(--muted)',marginBottom:14,lineHeight:1.5}}>Tap GO — you'll hear <b>4 beeps</b>. Keep the pulse going out loud: say <b>"Ta" on the next 4 silent beats</b> (this calibrates your delay). The stems start right after.</div>
+          <div style={{fontSize:12,color:'var(--muted)',marginBottom:14,lineHeight:1.5}}>Tap GO — you'll hear <b>8 beeps</b>. Keep the pulse going out loud: say <b>"Ta" on the next 4 silent beats</b> (this calibrates your delay). The stems start right after.</div>
           <button className="btn" style={{background:'var(--drums)',fontSize:16,padding:'12px 36px'}} onClick={beginStemRec}>🎙 GO</button>
           <div style={{marginTop:12}}><button className="btn ghost sm" onClick={cancelStemRecReady}>Cancel</button></div>
         </div>
@@ -2798,14 +2799,15 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         <div className="rec-confirm-panel" style={{textAlign:'center'}}>
           <div className="modaltitle" style={{color:'var(--drums)'}}>🎙 Recording…</div>
           <div style={{fontFamily:'var(--mono)',fontSize:28,fontWeight:700,margin:'12px 0'}}>{fmtSecs(stemRecTime)}</div>
-          <div style={{fontSize:12,color:'var(--muted)',marginBottom:16}}>4 beeps → say "Ta" ×4 → stems play · your instruments muted</div>
+          <div style={{fontSize:12,color:'var(--muted)',marginBottom:16}}>8 beeps → say "Ta" ×4 → stems play · your instruments muted</div>
           <button className="btn" style={{background:'var(--drums)'}} onClick={stopStemRec}>Stop Recording</button>
         </div>
       </div>}
       {stemRecConfirm && <div className="rec-confirm">
         <div className="rec-confirm-panel">
           <div className="modaltitle">Save stem recording?</div>
-          <div style={{fontSize:13,color:'var(--muted)',marginBottom:18}}>{fmtSecs(stemRecTime)} recorded for "{s.title}"</div>
+          <div style={{fontSize:13,color:'var(--muted)',marginBottom:6}}>{fmtSecs(stemRecTime)} recorded for "{s.title}"</div>
+          {stemRecSyncMethodRef.current && <div style={{fontSize:11,fontFamily:'var(--mono)',color:stemRecSyncMethodRef.current.indexOf('Ta detected')===0?'var(--ok)':'var(--warn)',marginBottom:14}}>Sync: {stemRecSyncMethodRef.current}</div>}
           <div className="btnrow">
             <button className="btn danger" onClick={abandonStemRec}>Discard</button>
             <button className="btn" onClick={uploadStemRec}>{busy==='stemrec'?'Saving…':'Save'}</button>
