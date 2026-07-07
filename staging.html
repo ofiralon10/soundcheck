@@ -342,7 +342,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.220';
+const VERSION='0.221';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -822,13 +822,18 @@ function detectTaOnsets(buffer,dEst,beats){
     if(nH<10)return null;
     const env=new Float32Array(nH);
     for(let i=0;i<nH;i++){let sum=0;const off=i*hop;for(let j=0;j<hop;j++){const v=d[off+j]||0;sum+=v*v;}env[i]=Math.sqrt(sum/hop);}
-    const sortedEnv=[...env].sort((a,b)=>a-b);
-    const noise=sortedEnv[Math.floor(nH*0.3)]||1e-6;
-    const thr=Math.max(noise*5,1e-4);
+    // noise floor from the count-in region only — the rest of the take is
+    // full of singing, which would inflate a whole-take percentile
+    const preEnd=Math.max(10,Math.min(nH,Math.floor((dEst+beats[0]-0.3)/hopS)));
+    const pre=[...env.slice(0,preEnd)].sort((a,b)=>a-b);
+    const noise=pre[Math.floor(pre.length*0.3)]||1e-6;
     const delays=[];
     beats.forEach(tb=>{
-      const from=Math.max(0,Math.floor((dEst+tb-0.15)/hopS));
+      const from=Math.max(0,Math.floor((dEst+tb-0.2)/hopS));
       const to=Math.min(nH-2,Math.floor((dEst+tb+0.45)/hopS));
+      let peak=0;for(let i=from;i<=to;i++)if(env[i]>peak)peak=env[i];
+      const thr=Math.max(noise*4,peak*0.35,1e-4);
+      if(peak<noise*4)return;
       for(let i=from;i<=to;i++){
         if(env[i]>thr&&env[i+1]>thr){delays.push(i*hopS-(dEst+tb));break;}
       }
@@ -1990,6 +1995,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const stemRecPreMixRef=useRef(null);
   const stemRecSyncRef=useRef(0);
   const stemRecSyncMethodRef=useRef('');
+  const [stemRecTaUi,setStemRecTaUi]=useState(null);
+  const stemRecLiveRef=useRef(null);
   const stemRecRestoreMix=()=>{
     const pm=stemRecPreMixRef.current;
     if(!pm)return;
@@ -2029,6 +2036,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     let actx=null,stream=null;
     try{
       setStemRecState('preparing');
+      setStemRecTaUi(null);
       stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:!stemRecHp,noiseSuppression:false,autoGainControl:false,sampleRate:48000}});
       actx=new (window.AudioContext||window.webkitAudioContext)({sampleRate:48000});
       if(actx.state==='suspended') await actx.resume();
@@ -2075,6 +2083,50 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       const outUrl=URL.createObjectURL(new Blob([encodeWav(mix)],{type:'audio/wav'}));
       const out=new Audio();
       out.src=outUrl;out.preload='auto';
+      // Live Ta detection: tap the mic graph and find voice onsets in the
+      // expected beat windows while recording — no dependency on decoding
+      // the finished take, and gives real-time UI feedback.
+      const live={armed:false,noise:[],dctx:[],taHits:[],taDone:{}};
+      stemRecLiveRef.current=live;
+      const taBeatTimes=[8,9,10,11].map(k=>B0+k*BEAT);
+      const sp=actx.createScriptProcessor(2048,1,1);
+      const spMute=actx.createGain();spMute.gain.value=0;
+      hp.connect(sp);sp.connect(spMute);spMute.connect(actx.destination);
+      sp.onaudioprocess=(e)=>{
+        try{
+          const data=e.inputBuffer.getChannelData(0);
+          const bl=data.length,bsr=actx.sampleRate;
+          const blockEnd=actx.currentTime,blockStart=blockEnd-bl/bsr;
+          let sum=0;for(let i=0;i<bl;i++){const v=data[i];sum+=v*v;}
+          const rms=Math.sqrt(sum/bl);
+          if(!live.armed){if(live.noise.length<400)live.noise.push(rms);return;}
+          if(!out.paused&&out.currentTime>0.05){live.dctx.push(blockEnd-out.currentTime);if(live.dctx.length>40)live.dctx.shift();}
+          if(!live.dctx.length)return;
+          const dc=[...live.dctx].sort((a,b)=>a-b)[Math.floor(live.dctx.length/2)];
+          const ns=[...live.noise].sort((a,b)=>a-b);
+          const noise=ns.length?ns[Math.floor(ns.length/2)]:1e-5;
+          const thr=Math.max(noise*4,0.004);
+          // collect quiet blocks before the first Ta window as extra noise refs
+          if(out.currentTime<taBeatTimes[0]-0.4){if(live.noise.length<400)live.noise.push(rms);}
+          taBeatTimes.forEach((tb,ix)=>{
+            if(live.taDone[ix])return;
+            const exp=dc+tb;
+            if(blockEnd<exp-0.2)return;
+            if(blockStart>exp+0.45){live.taDone[ix]='miss';setStemRecTaUi({hits:live.taHits.length,seen:Object.keys(live.taDone).length,dv:live.taHits.length?median(live.taHits):null});return;}
+            if(rms>thr){
+              // refine onset inside the block in 5ms steps
+              const w=Math.floor(bsr*0.005);let onAt=blockStart;
+              for(let o=0;o+w<=bl;o+=w){let s2=0;for(let i=o;i<o+w;i++){const v=data[i];s2+=v*v;}if(Math.sqrt(s2/w)>thr){onAt=blockStart+o/bsr;break;}}
+              const dv=onAt-exp;
+              if(dv>-0.2&&dv<0.5){
+                live.taHits.push(dv);live.taDone[ix]='hit';
+                setStemRecTaUi({hits:live.taHits.length,seen:Object.keys(live.taDone).length,dv:median(live.taHits)});
+              }
+            }
+          });
+        }catch(_){}
+      };
+      const median=(arr)=>{const s=[...arr].sort((a,b)=>a-b);return s[Math.floor(s.length/2)];};
       const mr=new MediaRecorder(dest.stream,{audioBitsPerSecond:256000});
       stemRecChunksRef.current=[];
       mr.ondataavailable=(e)=>{if(e.data.size>0) stemRecChunksRef.current.push(e.data);};
@@ -2082,34 +2134,39 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       mr.onstart=()=>{recCap0=performance.now();};
       mr.onstop=async()=>{
         stream.getTracks().forEach(t=>t.stop());
+        try{sp.disconnect();spMute.disconnect();}catch(_){}
         try{out.pause();out.src='';}catch(_){}
         URL.revokeObjectURL(outUrl);
         clearInterval(stemRecTimerRef.current);
         const blob=new Blob(stemRecChunksRef.current,{type:mr.mimeType||'audio/webm'});
         if(blob.size<100){actx.close().catch(()=>{});setStemRecState(null);setStemRecTime(0);stemRecRestoreMix();return;}
         // Sync = where in the recording song-time 0 sits. Ta calibration is
-        // FORCED for now (beep detection disabled): the user's "Ta" answers
-        // on beats 9-12 measure the output delay they actually hear.
-        // Fallbacks: remembered Ta calibration, then plain clock estimate.
+        // FORCED (beep detection disabled). Priority: live Ta hits from the
+        // mic graph -> offline Ta analysis of the take -> remembered Ta
+        // calibration -> plain clock estimate.
         const D=stemRecDRef.current;
         let sync=(D!=null?D:0.15)+R_LEAD;
         let method='clock estimate only';
-        try{
-          const rec=await actx.decodeAudioData(await blob.arrayBuffer());
-          if(D!=null){
-            const taBeats=[8,9,10,11].map(k=>B0+k*BEAT);
-            const dv=detectTaOnsets(rec,D,taBeats);
-            if(dv!=null&&dv>-0.06&&dv<0.6){
-              sync=D+R_LEAD+dv;
-              method='Ta detected · delay '+(dv>=0?'+':'')+Math.round(dv*1000)+'ms';
-              try{localStorage.setItem('sc_sync_out',String(Math.round(dv*1000)));}catch(_){}
-            }else{
-              let cal=NaN;try{cal=parseInt(localStorage.getItem('sc_sync_out'));}catch(_){}
-              if(!isNaN(cal)){sync=D+R_LEAD+cal/1000;method='Ta NOT detected · using saved '+(cal>=0?'+':'')+cal+'ms';}
-              else method='Ta NOT detected · clock estimate';
+        let dv=null,how='';
+        if(live.taHits.length>=2){dv=median(live.taHits);how='live ✓'+live.taHits.length+'/4';}
+        if(dv==null){
+          try{
+            const rec=await actx.decodeAudioData(await blob.arrayBuffer());
+            if(D!=null){
+              const odv=detectTaOnsets(rec,D,taBeatTimes);
+              if(odv!=null&&odv>-0.06&&odv<0.6){dv=odv;how='offline';}
             }
-          }
-        }catch(_){}
+          }catch(_){}
+        }
+        if(dv!=null&&D!=null){
+          sync=D+R_LEAD+dv;
+          method='Ta '+how+' · delay '+(dv>=0?'+':'')+Math.round(dv*1000)+'ms';
+          try{localStorage.setItem('sc_sync_out',String(Math.round(dv*1000)));}catch(_){}
+        }else if(D!=null){
+          let cal=NaN;try{cal=parseInt(localStorage.getItem('sc_sync_out'));}catch(_){}
+          if(!isNaN(cal)){sync=D+R_LEAD+cal/1000;method='Ta NOT detected · using saved '+(cal>=0?'+':'')+cal+'ms';}
+          else method='Ta NOT detected · clock estimate';
+        }
         stemRecSyncMethodRef.current=method;
         actx.close().catch(()=>{});
         stemRecSyncRef.current=Math.round(Math.max(0,sync)*1000)/1000;
@@ -2140,6 +2197,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       mr.start(100);
       stemRecRef.current=mr;
       out.currentTime=0;
+      setStemRecTaUi({hits:0,seen:0,dv:null});
+      if(stemRecLiveRef.current)stemRecLiveRef.current.armed=true;
       out.play().catch(()=>{
         setFileMsg('Playback was blocked by the browser — try again.');
         try{mr.stop();}catch(_){}
@@ -2799,7 +2858,11 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         <div className="rec-confirm-panel" style={{textAlign:'center'}}>
           <div className="modaltitle" style={{color:'var(--drums)'}}>🎙 Recording…</div>
           <div style={{fontFamily:'var(--mono)',fontSize:28,fontWeight:700,margin:'12px 0'}}>{fmtSecs(stemRecTime)}</div>
-          <div style={{fontSize:12,color:'var(--muted)',marginBottom:16}}>8 beeps → say "Ta" ×4 → stems play · your instruments muted</div>
+          <div style={{fontSize:12,color:'var(--muted)',marginBottom:8}}>8 beeps → say "Ta" ×4 → stems play · your instruments muted</div>
+          {stemRecTaUi && <div style={{fontSize:13,fontFamily:'var(--mono)',marginBottom:14,color:stemRecTaUi.hits>=2?'var(--ok)':'var(--muted)'}}>
+            Ta: {Array.from({length:4},(_,i)=>i<stemRecTaUi.hits?'✓':(i<stemRecTaUi.seen?'✗':'·')).join(' ')}
+            {stemRecTaUi.dv!=null?' · ~'+Math.round(stemRecTaUi.dv*1000)+'ms':''}
+          </div>}
           <button className="btn" style={{background:'var(--drums)'}} onClick={stopStemRec}>Stop Recording</button>
         </div>
       </div>}
