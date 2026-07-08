@@ -347,7 +347,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.227';
+const VERSION='0.228';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -492,29 +492,46 @@ function InstrBadge({id,size=28}){
   );
 }
 const DISC=(<g><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></g>);
-function SlideViewer({children}){
+function SlideViewer({children,autoView,autoOn,captureRef}){
   const ref=useRef(null);
+  const inner=useRef(null);
   const st=useRef({scale:1,tx:0,ty:0,dragging:false,startX:0,startY:0,startTx:0,startTy:0,pinchDist:0});
-  const apply=()=>{const el=ref.current;if(el){const c=el.firstElementChild;if(c)c.style.transform='translate('+st.current.tx+'px,'+st.current.ty+'px) scale('+st.current.scale+')';el.classList.toggle('dragging',st.current.dragging);}};
-  const clampScale=(s)=>Math.max(0.5,Math.min(s,5));
+  const pr=useRef({});pr.current={autoView,autoOn};
+  const apply=(anim)=>{const c=inner.current;if(c){c.style.transition=anim?'transform .4s ease':'none';c.style.transform='translate('+st.current.tx+'px,'+st.current.ty+'px) scale('+st.current.scale+')';}const el=ref.current;if(el)el.classList.toggle('dragging',st.current.dragging);};
+  const clampScale=(s)=>Math.max(0.5,Math.min(s,8));
+  // Apply the stored view for the active keyframe (normalized translate so it
+  // survives container resize / file replacement). null view = full/no zoom.
+  const applyAutoView=(anim)=>{
+    const el=ref.current;if(!el)return;const v=pr.current.autoView;const W=el.clientWidth||1,H=el.clientHeight||1;
+    if(!v){st.current.scale=1;st.current.tx=0;st.current.ty=0;}
+    else{st.current.scale=v.scale;st.current.tx=(v.nx||0)*W;st.current.ty=(v.ny||0)*H;}
+    apply(anim);
+  };
+  useEffect(()=>{ if(pr.current.autoOn) applyAutoView(true); },[autoOn,autoView?autoView.scale:-1,autoView?autoView.nx:-2,autoView?autoView.ny:-3]);
+  useEffect(()=>{
+    if(!captureRef)return;
+    captureRef.current=()=>{const el=ref.current;const W=el?el.clientWidth||1:1,H=el?el.clientHeight||1:1;return {scale:st.current.scale,nx:st.current.tx/W,ny:st.current.ty/H};};
+    return ()=>{if(captureRef)captureRef.current=null;};
+  },[captureRef]);
   useEffect(()=>{
     const el=ref.current;if(!el)return;
-    const onWheel=(e)=>{if(!e.ctrlKey&&!e.metaKey)return;e.preventDefault();const d=e.deltaY>0?0.9:1.1;const r=el.getBoundingClientRect();const ox=e.clientX-r.left-r.width/2;const oy=e.clientY-r.top-r.height/2;const ns=clampScale(st.current.scale*d);const f=ns/st.current.scale;st.current.tx=ox-(ox-st.current.tx)*f;st.current.ty=oy-(oy-st.current.ty)*f;st.current.scale=ns;apply();};
-    const onMD=(e)=>{if(e.button!==0)return;st.current.dragging=true;st.current.startX=e.clientX;st.current.startY=e.clientY;st.current.startTx=st.current.tx;st.current.startTy=st.current.ty;apply();};
-    const onMM=(e)=>{if(!st.current.dragging)return;st.current.tx=st.current.startTx+(e.clientX-st.current.startX);st.current.ty=st.current.startTy+(e.clientY-st.current.startY);apply();};
+    const locked=()=>pr.current.autoOn;
+    const onWheel=(e)=>{if(locked())return;if(!e.ctrlKey&&!e.metaKey)return;e.preventDefault();const d=e.deltaY>0?0.9:1.1;const r=el.getBoundingClientRect();const ox=e.clientX-r.left-r.width/2;const oy=e.clientY-r.top-r.height/2;const ns=clampScale(st.current.scale*d);const f=ns/st.current.scale;st.current.tx=ox-(ox-st.current.tx)*f;st.current.ty=oy-(oy-st.current.ty)*f;st.current.scale=ns;apply();};
+    const onMD=(e)=>{if(locked())return;if(e.button!==0)return;st.current.dragging=true;st.current.startX=e.clientX;st.current.startY=e.clientY;st.current.startTx=st.current.tx;st.current.startTy=st.current.ty;apply();};
+    const onMM=(e)=>{if(locked()||!st.current.dragging)return;st.current.tx=st.current.startTx+(e.clientX-st.current.startX);st.current.ty=st.current.startTy+(e.clientY-st.current.startY);apply();};
     const onMU=()=>{st.current.dragging=false;apply();};
     const dist=(t)=>Math.hypot(t[1].clientX-t[0].clientX,t[1].clientY-t[0].clientY);
-    const onTS=(e)=>{if(e.touches.length===2){st.current.pinchDist=dist(e.touches);}else if(e.touches.length===1){st.current.dragging=true;st.current.startX=e.touches[0].clientX;st.current.startY=e.touches[0].clientY;st.current.startTx=st.current.tx;st.current.startTy=st.current.ty;}};
-    const onTM=(e)=>{if(e.touches.length===2){e.preventDefault();const nd=dist(e.touches);const f=nd/st.current.pinchDist;const ns=clampScale(st.current.scale*f);st.current.scale=ns;st.current.pinchDist=nd;apply();}else if(e.touches.length===1&&st.current.dragging){st.current.tx=st.current.startTx+(e.touches[0].clientX-st.current.startX);st.current.ty=st.current.startTy+(e.touches[0].clientY-st.current.startY);apply();}};
+    const onTS=(e)=>{if(locked())return;if(e.touches.length===2){st.current.pinchDist=dist(e.touches);}else if(e.touches.length===1){st.current.dragging=true;st.current.startX=e.touches[0].clientX;st.current.startY=e.touches[0].clientY;st.current.startTx=st.current.tx;st.current.startTy=st.current.ty;}};
+    const onTM=(e)=>{if(locked())return;if(e.touches.length===2){e.preventDefault();const nd=dist(e.touches);const f=nd/st.current.pinchDist;const ns=clampScale(st.current.scale*f);st.current.scale=ns;st.current.pinchDist=nd;apply();}else if(e.touches.length===1&&st.current.dragging){st.current.tx=st.current.startTx+(e.touches[0].clientX-st.current.startX);st.current.ty=st.current.startTy+(e.touches[0].clientY-st.current.startY);apply();}};
     const onTE=()=>{st.current.dragging=false;apply();};
-    const onDbl=(e)=>{e.preventDefault();st.current.scale=1;st.current.tx=0;st.current.ty=0;apply();};
+    const onDbl=(e)=>{if(locked())return;e.preventDefault();st.current.scale=1;st.current.tx=0;st.current.ty=0;apply();};
     el.addEventListener('wheel',onWheel,{passive:false});
     el.addEventListener('mousedown',onMD);window.addEventListener('mousemove',onMM);window.addEventListener('mouseup',onMU);
     el.addEventListener('touchstart',onTS,{passive:true});el.addEventListener('touchmove',onTM,{passive:false});el.addEventListener('touchend',onTE);
     el.addEventListener('dblclick',onDbl);
     return()=>{el.removeEventListener('wheel',onWheel);el.removeEventListener('mousedown',onMD);window.removeEventListener('mousemove',onMM);window.removeEventListener('mouseup',onMU);el.removeEventListener('touchstart',onTS);el.removeEventListener('touchmove',onTM);el.removeEventListener('touchend',onTE);el.removeEventListener('dblclick',onDbl);};
   },[]);
-  return <div ref={ref} className="practice-slide"><div style={{width:'100%',height:'100%',transformOrigin:'center center',willChange:'transform'}}>{children}</div></div>;
+  return <div ref={ref} className="practice-slide"><div ref={inner} style={{width:'100%',height:'100%',transformOrigin:'center center',willChange:'transform'}}>{children}</div></div>;
 }
 function CoverThumb({src,size=46,radius=10,title}){
   if(src) return <img src={src} alt="" title={title||''} className="cover-thumb" style={{width:size,height:size,borderRadius:radius}}/>;
@@ -656,6 +673,7 @@ function migrate(s){
   if(!Array.isArray(s.songs)) s.songs=[];
   s.songs.forEach(song=>{
     if(song.cover===undefined) song.cover='';
+    if(!Array.isArray(song.zoomPlan)) song.zoomPlan=[];
     if(!Array.isArray(song.files)) song.files=[];
     song.files.forEach(f=>{if(f.cat==='other'&&f.stem&&/metronome|click|tick/i.test(f.name||'')) f.cat='metronome';});
     song.files=(function(ff){var seen={};return ff.filter(function(f){if(!f.stem)return true;var k=f.cat||'other';if(seen[k])return false;seen[k]=true;return true;});})(song.files);
@@ -1802,6 +1820,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [stemCfg,setStemCfg]=useState(false);
   const [stemBarH,setStemBarH]=useState(150);
   const stemBarRef=useRef(null);
+  const viewCapRef=useRef(null);
+  const [zoomMsg,setZoomMsg]=useState('');
   const [stemPlaying,setStemPlaying]=useState(false);
   const [stemTime,setStemTime]=useState(0);
   const [stemDur,setStemDur]=useState(0);
@@ -2034,6 +2054,30 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     let ro;try{ro=new ResizeObserver(upd);ro.observe(el);}catch(_){}
     return ()=>{try{ro&&ro.disconnect();}catch(_){}};
   },[stemOpen,stemRecState,stemRecPlayback]);
+
+  // Zoom/pan plan: per-song list of {t, scale, nx, ny}. Capture the current
+  // manual view at the playhead; during playback the view snaps to the latest
+  // keyframe whose time has passed (full/no-zoom before the first).
+  const zoomPlan=(s.zoomPlan||[]);
+  const zoomSorted=[...zoomPlan].sort((a,b)=>a.t-b.t);
+  const activeKf=(()=>{let r=null;for(const k of zoomSorted){if(k.t<=stemTime+0.02)r=k;else break;}return r;})();
+  const zoomAutoOn=stemPlaying&&zoomSorted.length>0;
+  const captureZoom=()=>{
+    const fn=viewCapRef.current;if(!fn){return;}
+    const v=fn();
+    update(st=>{const so=st.songs.find(x=>x.id===s.id);if(!so)return st;
+      so.zoomPlan=(so.zoomPlan||[]).filter(k=>Math.abs(k.t-stemTime)>0.25);
+      so.zoomPlan.push({t:Math.round(stemTime*100)/100,scale:+v.scale.toFixed(3),nx:+v.nx.toFixed(4),ny:+v.ny.toFixed(4)});
+      so.zoomPlan.sort((a,b)=>a.t-b.t);
+      return st;});
+    setZoomMsg('Zoom set @ '+fmtSecs(Math.floor(stemTime)));
+    clearTimeout(window.__zoomMsgT);window.__zoomMsgT=setTimeout(()=>setZoomMsg(''),1800);
+  };
+  const resetZoom=()=>{
+    update(st=>{const so=st.songs.find(x=>x.id===s.id);if(so)so.zoomPlan=[];return st;});
+    setZoomMsg('Zoom plan cleared');
+    clearTimeout(window.__zoomMsgT);window.__zoomMsgT=setTimeout(()=>setZoomMsg(''),1800);
+  };
 
   const [stemRecPrompt,setStemRecPrompt]=useState(false);
   const [stemRecHp,setStemRecHp]=useState(()=>{try{return localStorage.getItem('sc_rec_hp')==='1';}catch(_){return false;}});
@@ -2813,7 +2857,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         </div>
       </div>}
       {stemOpen && <div className="practice-full" style={{bottom:stemBarH}}>
-        <SlideViewer>
+        {zoomMsg && <div style={{position:'absolute',top:10,left:'50%',transform:'translateX(-50%)',zIndex:6,background:'rgba(21,20,27,.9)',border:'1px solid var(--line-2)',borderRadius:20,padding:'5px 14px',fontSize:12,fontFamily:'var(--mono)',color:'var(--keys)'}}>{zoomMsg}</div>}
+        <SlideViewer autoView={activeKf?{scale:activeKf.scale,nx:activeKf.nx,ny:activeKf.ny}:null} autoOn={zoomAutoOn} captureRef={viewCapRef}>
           {(()=>{const slides=(s.files||[]).filter(f=>(f.cat==='slide')&&f.url);
             if(!slides.length) return <div className="practice-no-slide">No slide uploaded</div>;
             const isImg=f=>/\.(jpe?g|png|webp|gif|bmp|svg)$/i.test(f.name||'');
@@ -2868,6 +2913,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           <div className="stem-btns">
             <button className="stem-play" onClick={stemPlay} disabled={!stemDur}>PLAY</button>
             <button onClick={stemPauseOrStop} disabled={!stemDur}>PAUSE/STOP</button>
+            {!stemRecPlayback && <button style={{background:'var(--keys)',color:'#fff',border:'none',borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap'}} onClick={captureZoom} disabled={!stemDur} title="Set this zoom/pan view at the current time">⛶ Zoom{zoomSorted.length?' ('+zoomSorted.length+')':''}</button>}
+            {!stemRecPlayback && zoomSorted.length>0 && <button className="btn ghost sm" style={{fontSize:13,padding:'4px 9px'}} onClick={resetZoom} title="Clear zoom plan">⟲</button>}
             {!stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>CONFIG</button>}
             {!stemRecPlayback && <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>{setStemRecPrompt(true);prefetchBackingStems();}} disabled={!!stemRecState}>🎙 StemRec</button>}
             {stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>CONFIG</button>}
