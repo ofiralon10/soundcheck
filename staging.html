@@ -342,7 +342,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.221';
+const VERSION='0.222';
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -2770,7 +2770,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           })()}
         </SlideViewer>
       </div>}
-      {stemOpen && <div className="stem-player">
+      {stemOpen && stemRecState!=='recording' && <div className="stem-player">
         <div className="stem-title-bar">
           <span className="stitle">{s.title}{stemRecPlayback?' — StemRec Player':''}</span>
           <button className="btn ghost sm" style={{fontSize:13,padding:'4px 12px',marginLeft:8}} onClick={()=>{closeStemPlayer();setFilesOpen(true);}}>Files</button>
@@ -2854,16 +2854,15 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           <div style={{marginTop:12}}><button className="btn ghost sm" onClick={cancelStemRecReady}>Cancel</button></div>
         </div>
       </div>}
-      {stemRecState==='recording' && <div className="rec-confirm">
-        <div className="rec-confirm-panel" style={{textAlign:'center'}}>
-          <div className="modaltitle" style={{color:'var(--drums)'}}>🎙 Recording…</div>
-          <div style={{fontFamily:'var(--mono)',fontSize:28,fontWeight:700,margin:'12px 0'}}>{fmtSecs(stemRecTime)}</div>
-          <div style={{fontSize:12,color:'var(--muted)',marginBottom:8}}>8 beeps → say "Ta" ×4 → stems play · your instruments muted</div>
-          {stemRecTaUi && <div style={{fontSize:13,fontFamily:'var(--mono)',marginBottom:14,color:stemRecTaUi.hits>=2?'var(--ok)':'var(--muted)'}}>
-            Ta: {Array.from({length:4},(_,i)=>i<stemRecTaUi.hits?'✓':(i<stemRecTaUi.seen?'✗':'·')).join(' ')}
-            {stemRecTaUi.dv!=null?' · ~'+Math.round(stemRecTaUi.dv*1000)+'ms':''}
-          </div>}
-          <button className="btn" style={{background:'var(--drums)'}} onClick={stopStemRec}>Stop Recording</button>
+      {stemRecState==='recording' && <div className="stem-player" style={{padding:'10px 14px 14px'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:14,flexWrap:'wrap'}}>
+          <span style={{color:'var(--drums)',fontFamily:'var(--display)',fontSize:14,fontWeight:700,animation:'pulse 1.2s infinite'}}>🎙 REC</span>
+          <span style={{fontFamily:'var(--mono)',fontSize:22,fontWeight:700}}>{fmtSecs(stemRecTime)}</span>
+          {stemRecTaUi && <span style={{fontSize:13,fontFamily:'var(--mono)',color:stemRecTaUi.hits>=2?'var(--ok)':'var(--muted)'}}>
+            Ta {Array.from({length:4},(_,i)=>i<stemRecTaUi.hits?'✓':(i<stemRecTaUi.seen?'✗':'·')).join(' ')}
+            {stemRecTaUi.dv!=null?' ~'+Math.round(stemRecTaUi.dv*1000)+'ms':''}
+          </span>}
+          <button className="btn" style={{background:'var(--drums)'}} onClick={stopStemRec}>Stop</button>
         </div>
       </div>}
       {stemRecConfirm && <div className="rec-confirm">
