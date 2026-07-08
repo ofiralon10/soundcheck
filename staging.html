@@ -22,7 +22,8 @@
   @media(min-width:900px){#root{max-width:1200px}}
   /* Tablet simulation on PC: ?tablet=1 (portrait 800x1280) / ?tablet=land (1280x800) */
   body.simbody{overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center;height:100vh}
-  #root.simframe{overflow-y:auto;overflow-x:hidden;position:relative;flex:none;min-height:0;transform-origin:center center;border:3px solid #3a3745;border-radius:18px;box-shadow:0 0 60px rgba(0,0,0,.85);max-width:none!important;background:var(--bg)}
+  .simframe{flex:none;position:relative;transform-origin:center center;border:3px solid #3a3745;border-radius:18px;overflow:hidden;box-shadow:0 0 60px rgba(0,0,0,.85);background:var(--bg)}
+  #root.siminner{width:100%!important;height:100%;max-width:none!important;margin:0;min-height:0;overflow-y:auto;overflow-x:hidden}
   body.simport .stem-channels{grid-template-columns:1fr 1fr!important}
   .md{display:flex;gap:16px;height:calc(100vh - 200px);min-height:400px}
   .md-list{width:380px;flex-shrink:0;overflow-y:auto;padding-right:4px}
@@ -346,7 +347,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.224';
+const VERSION='0.225';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -366,9 +367,16 @@ if(window.__SIM){
   document.body.classList.add('simbody');
   if(SIM.w<900)document.body.classList.add('simport');
   const rt=document.getElementById('root');
-  rt.classList.add('simframe');
-  rt.style.width=SIM.w+'px';rt.style.height=SIM.h+'px';
-  const fit=()=>{const k=Math.min((window.innerWidth-28)/SIM.w,(window.innerHeight-28)/SIM.h,1);window.__SIMK=k;rt.style.transform='scale('+k+')';};
+  // Scale an OUTER wrapper (not #root) so #root can be the scroll container
+  // while position:fixed bars pin to the non-scrolling frame. Putting the
+  // transform on #root itself makes its fixed children scroll with content.
+  const frame=document.createElement('div');
+  frame.className='simframe';
+  rt.parentNode.insertBefore(frame,rt);
+  frame.appendChild(rt);
+  rt.classList.add('siminner');
+  frame.style.width=SIM.w+'px';frame.style.height=SIM.h+'px';
+  const fit=()=>{const k=Math.min((window.innerWidth-28)/SIM.w,(window.innerHeight-28)/SIM.h,1);window.__SIMK=k;frame.style.transform='scale('+k+')';};
   fit();window.addEventListener('resize',fit);
 }
 function scScrollTop(){const r=window.__SIM?document.getElementById('root'):null;if(r)r.scrollTo({top:0,behavior:'smooth'});else window.scrollTo({top:0,behavior:'smooth'});}
