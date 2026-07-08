@@ -20,6 +20,10 @@
   body{background:var(--bg);color:var(--text);font-family:var(--body);-webkit-font-smoothing:antialiased;line-height:1.45}
   #root{max-width:540px;margin:0 auto;min-height:100vh;position:relative}
   @media(min-width:900px){#root{max-width:1200px}}
+  /* Tablet simulation on PC: ?tablet=1 (portrait 800x1280) / ?tablet=land (1280x800) */
+  body.simbody{overflow:hidden;background:#000;display:flex;align-items:center;justify-content:center;height:100vh}
+  #root.simframe{overflow-y:auto;overflow-x:hidden;position:relative;flex:none;min-height:0;transform-origin:center center;border:3px solid #3a3745;border-radius:18px;box-shadow:0 0 60px rgba(0,0,0,.85);max-width:none!important;background:var(--bg)}
+  body.simport .stem-channels{grid-template-columns:1fr 1fr!important}
   .md{display:flex;gap:16px;height:calc(100vh - 200px);min-height:400px}
   .md-list{width:380px;flex-shrink:0;overflow-y:auto;padding-right:4px}
   .md-detail{flex:1;overflow-y:auto;min-width:0;padding:0 4px}
@@ -342,7 +346,29 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.222';
+const VERSION='0.223';
+
+/* Tablet simulation on PC: open with ?tablet=1 (portrait 800x1280) or
+   ?tablet=land (landscape 1280x800). The app renders in a scaled frame
+   with tablet-sized logical viewport; useWide() follows the frame width. */
+window.__SIM=(()=>{try{const p=new URLSearchParams(location.search).get('tablet');if(!p)return null;return /^(land|l)/i.test(p)?{w:1280,h:800}:{w:800,h:1280};}catch(_){return null;}})();
+if(window.__SIM){
+  const SIM=window.__SIM;
+  document.body.classList.add('simbody');
+  if(SIM.w<900)document.body.classList.add('simport');
+  const rt=document.getElementById('root');
+  rt.classList.add('simframe');
+  rt.style.width=SIM.w+'px';rt.style.height=SIM.h+'px';
+  const fit=()=>{const k=Math.min((window.innerWidth-28)/SIM.w,(window.innerHeight-28)/SIM.h,1);window.__SIMK=k;rt.style.transform='scale('+k+')';};
+  fit();window.addEventListener('resize',fit);
+}
+function scScrollTop(){const r=window.__SIM?document.getElementById('root'):null;if(r)r.scrollTo({top:0,behavior:'smooth'});else window.scrollTo({top:0,behavior:'smooth'});}
+function scScrollToEl(el,offPx){
+  if(!window.__SIM){const y=el.getBoundingClientRect().top+window.scrollY-offPx;window.scrollTo({top:y,behavior:'smooth'});return;}
+  const rt=document.getElementById('root');const k=window.__SIMK||1;
+  const y=(el.getBoundingClientRect().top-rt.getBoundingClientRect().top)/k+rt.scrollTop-offPx/k;
+  rt.scrollTo({top:y,behavior:'smooth'});
+}
 const CHANGELOG={
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -391,7 +417,7 @@ const CHANGELOG={
     'Smarter auto-naming for recordings and photos',
   ],
 };
-function useWide(bp=900){ const [w,setW]=useState(()=>window.innerWidth>=bp); useEffect(()=>{ const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
+function useWide(bp=900){ const [w,setW]=useState(()=>(window.__SIM?window.__SIM.w:window.innerWidth)>=bp); useEffect(()=>{ if(window.__SIM)return; const mq=window.matchMedia('(min-width:'+bp+'px)'); const h=e=>setW(e.matches); mq.addEventListener('change',h); return ()=>mq.removeEventListener('change',h); },[bp]); return w; }
 
 /* ============================================================
    ▼▼▼  PASTE YOUR FIREBASE CONFIG HERE  ▼▼▼
@@ -1648,7 +1674,7 @@ function Setlist({state,update,goSongId,clearGoSong,showId,pickShow}){
     </React.Fragment>);
 
   const addBar = (!reorder && !adding && show && <div className="add-bar" style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-    <button className="btn ghost" onClick={()=>{setAdding(true);window.scrollTo({top:0,behavior:'smooth'});}}>+ New song</button>
+    <button className="btn ghost" onClick={()=>{setAdding(true);scScrollTop();}}>+ New song</button>
     {poolSongsNotInShow.length>0 && <button className="btn ghost" onClick={()=>setAddExisting(true)}>+ Add existing</button>}
   </div>);
 
@@ -2285,7 +2311,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     clearInterval(timerRef.current);
     if(audioRef.current) audioRef.current.pause();
   },[]);
-  useEffect(()=>{ if(scrollInto&&rowRef.current){ const tb=document.querySelector('.topbar'); const off=tb?tb.getBoundingClientRect().height+6:80; const y=rowRef.current.getBoundingClientRect().top+window.scrollY-off; window.scrollTo({top:y,behavior:'smooth'}); } },[scrollInto]);
+  useEffect(()=>{ if(scrollInto&&rowRef.current){ const tb=document.querySelector('.topbar'); const off=tb?tb.getBoundingClientRect().height+6:80; scScrollToEl(rowRef.current,off); } },[scrollInto]);
   const setField=(k,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);if(so) so[k]=v;return st;});
   const setRole=(iid,v)=>update(st=>{const sh=getShow(st,showId);const entry=getEntry(sh,s.id);if(entry) entry.parts[iid]=v;return st;});
   const addGuest=()=>update(st=>{const sh=getShow(st,showId);const entry=getEntry(sh,s.id);if(entry&&entry.guests.length<MAX_GUESTS) entry.guests.push({id:uid(),name:'',status:'todo'});return st;});
@@ -2983,7 +3009,7 @@ function Rehearsals({state,update,goSong}){
       {upcoming.length===0 && !adding &&
         <div className="empty"><div className="big">No rehearsals booked</div><div className="sm">Schedule a session and pick which songs to focus on.</div></div>}
       {upcoming.map(r=><RehCard key={r.id} r={r} state={state} patch={patch} del={del} update={update} goSong={goSong}/>)}
-      {!adding && <div className="add-bar"><button className="btn ghost" onClick={()=>{setAdding(true);window.scrollTo({top:0,behavior:'smooth'});}}>+ Schedule rehearsal</button></div>}
+      {!adding && <div className="add-bar"><button className="btn ghost" onClick={()=>{setAdding(true);scScrollTop();}}>+ Schedule rehearsal</button></div>}
       {past.length>0 && <React.Fragment>
         <div className="section-h">Done · {past.length}</div>
         {past.map(r=><RehCard key={r.id} r={r} state={state} patch={patch} del={del} update={update} goSong={goSong}/>)}
@@ -3228,7 +3254,7 @@ function Setup({state,update,user,onSignOut,onSwitch}){
 /* ---------- crop modal ---------- */
 let cropDrag=null;
 function CropModal({src,onCancel,onDone}){
-  const V=Math.min(280,(window.innerWidth||360)-64), OUT=220;
+  const V=Math.min(280,((window.__SIM?window.__SIM.w:window.innerWidth)||360)-64), OUT=220;
   const [nat,setNat]=useState(null);
   const [zoom,setZoom]=useState(1);
   const [off,setOff]=useState({x:0,y:0});
