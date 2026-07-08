@@ -347,7 +347,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.228';
+const VERSION='0.229';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -673,7 +673,8 @@ function migrate(s){
   if(!Array.isArray(s.songs)) s.songs=[];
   s.songs.forEach(song=>{
     if(song.cover===undefined) song.cover='';
-    if(!Array.isArray(song.zoomPlan)) song.zoomPlan=[];
+    if(!song.zoomPlans||typeof song.zoomPlans!=='object'||Array.isArray(song.zoomPlans)) song.zoomPlans={};
+    if(Array.isArray(song.zoomPlan)){ if(song.zoomPlan.length&&!song.zoomPlans.wide) song.zoomPlans.wide=song.zoomPlan; delete song.zoomPlan; }
     if(!Array.isArray(song.files)) song.files=[];
     song.files.forEach(f=>{if(f.cat==='other'&&f.stem&&/metronome|click|tick/i.test(f.name||'')) f.cat='metronome';});
     song.files=(function(ff){var seen={};return ff.filter(function(f){if(!f.stem)return true;var k=f.cat||'other';if(seen[k])return false;seen[k]=true;return true;});})(song.files);
@@ -2058,7 +2059,9 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   // Zoom/pan plan: per-song list of {t, scale, nx, ny}. Capture the current
   // manual view at the playhead; during playback the view snaps to the latest
   // keyframe whose time has passed (full/no-zoom before the first).
-  const zoomPlan=(s.zoomPlan||[]);
+  const devKey=wide?'wide':'narrow';
+  const devLabel=wide?'tablet':'phone';
+  const zoomPlan=((s.zoomPlans||{})[devKey])||[];
   const zoomSorted=[...zoomPlan].sort((a,b)=>a.t-b.t);
   const activeKf=(()=>{let r=null;for(const k of zoomSorted){if(k.t<=stemTime+0.02)r=k;else break;}return r;})();
   const zoomAutoOn=stemPlaying&&zoomSorted.length>0;
@@ -2066,16 +2069,18 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     const fn=viewCapRef.current;if(!fn){return;}
     const v=fn();
     update(st=>{const so=st.songs.find(x=>x.id===s.id);if(!so)return st;
-      so.zoomPlan=(so.zoomPlan||[]).filter(k=>Math.abs(k.t-stemTime)>0.25);
-      so.zoomPlan.push({t:Math.round(stemTime*100)/100,scale:+v.scale.toFixed(3),nx:+v.nx.toFixed(4),ny:+v.ny.toFixed(4)});
-      so.zoomPlan.sort((a,b)=>a.t-b.t);
+      if(!so.zoomPlans||typeof so.zoomPlans!=='object'||Array.isArray(so.zoomPlans)) so.zoomPlans={};
+      const arr=(so.zoomPlans[devKey]||[]).filter(k=>Math.abs(k.t-stemTime)>0.25);
+      arr.push({t:Math.round(stemTime*100)/100,scale:+v.scale.toFixed(3),nx:+v.nx.toFixed(4),ny:+v.ny.toFixed(4)});
+      arr.sort((a,b)=>a.t-b.t);
+      so.zoomPlans[devKey]=arr;
       return st;});
-    setZoomMsg('Zoom set @ '+fmtSecs(Math.floor(stemTime)));
+    setZoomMsg('Zoom set @ '+fmtSecs(Math.floor(stemTime))+' ('+devLabel+')');
     clearTimeout(window.__zoomMsgT);window.__zoomMsgT=setTimeout(()=>setZoomMsg(''),1800);
   };
   const resetZoom=()=>{
-    update(st=>{const so=st.songs.find(x=>x.id===s.id);if(so)so.zoomPlan=[];return st;});
-    setZoomMsg('Zoom plan cleared');
+    update(st=>{const so=st.songs.find(x=>x.id===s.id);if(so){if(!so.zoomPlans||typeof so.zoomPlans!=='object'||Array.isArray(so.zoomPlans)) so.zoomPlans={};so.zoomPlans[devKey]=[];}return st;});
+    setZoomMsg(devLabel+' zoom plan cleared');
     clearTimeout(window.__zoomMsgT);window.__zoomMsgT=setTimeout(()=>setZoomMsg(''),1800);
   };
 
@@ -2913,7 +2918,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           <div className="stem-btns">
             <button className="stem-play" onClick={stemPlay} disabled={!stemDur}>PLAY</button>
             <button onClick={stemPauseOrStop} disabled={!stemDur}>PAUSE/STOP</button>
-            {!stemRecPlayback && <button style={{background:'var(--keys)',color:'#fff',border:'none',borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap'}} onClick={captureZoom} disabled={!stemDur} title="Set this zoom/pan view at the current time">⛶ Zoom{zoomSorted.length?' ('+zoomSorted.length+')':''}</button>}
+            {!stemRecPlayback && <button style={{background:'var(--keys)',color:'#fff',border:'none',borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap'}} onClick={captureZoom} disabled={!stemDur} title={'Set this zoom/pan view at the current time ('+devLabel+' plan)'}>⛶ Zoom{zoomSorted.length?' ('+zoomSorted.length+')':''}</button>}
             {!stemRecPlayback && zoomSorted.length>0 && <button className="btn ghost sm" style={{fontSize:13,padding:'4px 9px'}} onClick={resetZoom} title="Clear zoom plan">⟲</button>}
             {!stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>CONFIG</button>}
             {!stemRecPlayback && <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>{setStemRecPrompt(true);prefetchBackingStems();}} disabled={!!stemRecState}>🎙 StemRec</button>}
