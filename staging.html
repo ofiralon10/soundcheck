@@ -346,12 +346,21 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.223';
+const VERSION='0.224';
 
-/* Tablet simulation on PC: open with ?tablet=1 (portrait 800x1280) or
-   ?tablet=land (landscape 1280x800). The app renders in a scaled frame
-   with tablet-sized logical viewport; useWide() follows the frame width. */
-window.__SIM=(()=>{try{const p=new URLSearchParams(location.search).get('tablet');if(!p)return null;return /^(land|l)/i.test(p)?{w:1280,h:800}:{w:800,h:1280};}catch(_){return null;}})();
+/* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
+   renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
+   matches the tablet. Real phones/tablets render natively (no frame).
+   Override via URL: ?tablet=land / ?tablet=port / ?tablet=off. */
+window.__SIM=(()=>{try{
+  const p=new URLSearchParams(location.search).get('tablet');
+  if(p&&/^(off|0|no|n)/i.test(p))return null;
+  if(p&&/^(port|p)/i.test(p))return{w:1080,h:1440};
+  if(p&&/^(land|l)/i.test(p))return{w:1440,h:1080};
+  const finePtr=window.matchMedia&&window.matchMedia('(pointer:fine)').matches;
+  const bigScreen=window.innerWidth>=1024&&Math.min(window.innerWidth,window.innerHeight)>=720;
+  return (finePtr&&bigScreen)?{w:1440,h:1080}:null;
+}catch(_){return null;}})();
 if(window.__SIM){
   const SIM=window.__SIM;
   document.body.classList.add('simbody');
