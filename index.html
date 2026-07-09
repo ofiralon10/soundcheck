@@ -263,9 +263,11 @@
   .stem-scrub input[type=range]{flex:1;-webkit-appearance:none;height:4px;border-radius:2px;background:var(--line-2);outline:none}
   .stem-scrub input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--ok);cursor:pointer;box-shadow:0 0 4px rgba(0,0,0,.4)}
   .stem-time{font-family:var(--mono);font-size:11px;color:var(--muted);min-width:38px;text-align:center}
-  .stem-btns{display:flex;gap:8px}
+  .stem-btns{display:flex;gap:8px;flex-wrap:wrap}
   .stem-btns>span{flex:1;display:flex;position:relative}
   .stem-btns>span>button{flex:1}
+  /* narrow phones: wrap to rows of three so labels stay readable */
+  @media(max-width:640px){ .stem-btns>button,.stem-btns>span{flex:1 1 calc(33.333% - 6px)} }
   .stem-btns button{flex:1;min-width:0;height:42px;padding:0 6px;border-radius:10px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);font-family:var(--display);font-size:12px;font-weight:700;letter-spacing:.04em;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .stem-btns button:disabled{opacity:.5}
   .stem-btns button.stem-play{background:var(--ok);border-color:var(--ok);color:#fff}
@@ -356,7 +358,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.245';
+const VERSION='0.246';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
