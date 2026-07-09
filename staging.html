@@ -347,7 +347,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.233';
+const VERSION='0.234';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -820,6 +820,99 @@ function fmtSize(b){ if(!b) return ''; if(b<1024) return b+' B'; if(b<1048576) r
 function fmtSecs(s){ return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
 function encodeWav(audioBuffer){const nc=audioBuffer.numberOfChannels,sr=audioBuffer.sampleRate,len=audioBuffer.length;const interleaved=new Float32Array(len*nc);for(let ch=0;ch<nc;ch++){const d=audioBuffer.getChannelData(ch);for(let i=0;i<len;i++)interleaved[i*nc+ch]=d[i];}const buf=new ArrayBuffer(44+interleaved.length*2);const v=new DataView(buf);const ws=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};ws(0,'RIFF');v.setUint32(4,36+interleaved.length*2,true);ws(8,'WAVE');ws(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);v.setUint16(22,nc,true);v.setUint32(24,sr,true);v.setUint32(28,sr*nc*2,true);v.setUint16(32,nc*2,true);v.setUint16(34,16,true);ws(36,'data');v.setUint32(40,interleaved.length*2,true);for(let i=0;i<interleaved.length;i++){const s=Math.max(-1,Math.min(1,interleaved[i]));v.setInt16(44+i*2,s<0?s*0x8000:s*0x7FFF,true);}return buf;}
 function loadScript(src){return new Promise((res,rej)=>{if(document.querySelector('script[src="'+src+'"]')&&window.lamejs)return res();const sc=document.createElement('script');sc.src=src;sc.onload=res;sc.onerror=()=>rej(new Error('Failed to load '+src));document.head.appendChild(sc);});}
+
+/* ============================================================================
+   SETLIST FILES UPDATE — self-contained, removable feature (v0.234)
+   Bulk-updates song files from a chosen folder (one subfolder per song).
+   TO REMOVE: delete this block, the "Setlist Files" button + hidden input in
+   Setlist(), the runSetlistFilesUpdate handler, and the SFU feedback modal.
+   ========================================================================== */
+const SFU_ENABLED=true;
+const SFU_PPTX=true; // best-effort in-browser .pptx -> jpeg (jQuery+PPTXjs+html2canvas)
+const _sfuLoaded={};
+function sfuLoadScriptOnce(src){return _sfuLoaded[src]||(_sfuLoaded[src]=new Promise((res,rej)=>{const sc=document.createElement('script');sc.src=src;sc.onload=res;sc.onerror=()=>{delete _sfuLoaded[src];rej(new Error('load failed: '+src));};document.head.appendChild(sc);}));}
+function sfuLoadStyleOnce(href){if(_sfuLoaded[href])return;_sfuLoaded[href]=true;const l=document.createElement('link');l.rel='stylesheet';l.href=href;document.head.appendChild(l);}
+function sfuDelay(ms){return new Promise(r=>setTimeout(r,ms));}
+async function sfuWaitFor(fn,timeout){const t0=Date.now();while(Date.now()-t0<timeout){if(fn())return true;await sfuDelay(150);}return false;}
+function sfuNormTitle(s){return (s||'').trim().toLowerCase().replace(/\s+/g,' ');}
+function sfuCatFromName(name){
+  const n=(name||'').toLowerCase();
+  const instrs=[['vocals',['vocal','vox',' voc','שיר','זמר']],['drums',['drum','תופ']],['bass',['bass','באס']],['guitar',['guitar','gtr','גיטר']],['keys',['keys',' key','piano','synth','קליד']]];
+  for(const g of instrs){ if(g[1].some(k=>n.includes(k))) return g[0]; }
+  if(n.includes('other')) return 'other';
+  return 'slide'; // default: slides/documents with no instrument name
+}
+async function sfuImageToJpeg(file){
+  const url=URL.createObjectURL(file);
+  try{
+    const img=await new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>rej(new Error('image decode failed'));i.src=url;});
+    const c=document.createElement('canvas');c.width=img.naturalWidth||img.width;c.height=img.naturalHeight||img.height;
+    c.getContext('2d').drawImage(img,0,0);
+    return await new Promise(r=>c.toBlob(r,'image/jpeg',0.9));
+  } finally { URL.revokeObjectURL(url); }
+}
+async function sfuStackCanvases(canvases){
+  const w=Math.max(...canvases.map(c=>c.width));
+  const heights=canvases.map(c=>Math.round(c.height*(w/c.width)));
+  const h=heights.reduce((a,b)=>a+b,0);
+  const out=document.createElement('canvas');out.width=w;out.height=h;
+  const ctx=out.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);
+  let y=0;canvases.forEach((c,i)=>{ctx.drawImage(c,0,y,w,heights[i]);y+=heights[i];});
+  return await new Promise(r=>out.toBlob(r,'image/jpeg',0.85));
+}
+async function sfuPdfToTallJpeg(arrayBuffer){
+  await sfuLoadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+  const lib=window.pdfjsLib;
+  lib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const pdf=await lib.getDocument({data:arrayBuffer}).promise;
+  const canvases=[];
+  for(let p=1;p<=pdf.numPages;p++){
+    const page=await pdf.getPage(p);
+    const vp=page.getViewport({scale:2});
+    const c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;
+    await page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;
+    canvases.push(c);
+  }
+  return {blob:await sfuStackCanvases(canvases),pages:pdf.numPages};
+}
+async function sfuPptxToTallJpeg(file){
+  await sfuLoadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.4/jquery.min.js');
+  await sfuLoadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
+  sfuLoadStyleOnce('https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@master/css/pptxjs.css');
+  await sfuLoadScriptOnce('https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@master/js/filereader.js');
+  await sfuLoadScriptOnce('https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@master/js/divsToSlides.min.js');
+  await sfuLoadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+  const $=window.jQuery;
+  const url=URL.createObjectURL(file);
+  const holder=document.createElement('div');
+  holder.id='sfuPptx'+Math.floor(performance.now());
+  holder.style.cssText='position:fixed;left:-99999px;top:0;width:1024px;background:#fff;';
+  document.body.appendChild(holder);
+  try{
+    $('#'+holder.id).pptxToHtml({pptxFileUrl:url,slidesScale:'100%',slideMode:false,keyBoardShortCut:false});
+    const ok=await sfuWaitFor(()=>holder.querySelectorAll('.slide').length>0,12000);
+    if(!ok) throw new Error('pptx render timeout');
+    await sfuDelay(700);
+    const slides=[...holder.querySelectorAll('.slide')];
+    const canvases=[];
+    for(const sl of slides){ const c=await window.html2canvas(sl,{scale:1.5,backgroundColor:'#ffffff',logging:false,useCORS:true}); canvases.push(c); }
+    if(!canvases.length) throw new Error('no slides rendered');
+    return {blob:await sfuStackCanvases(canvases),pages:canvases.length};
+  } finally { try{document.body.removeChild(holder);}catch(_){} URL.revokeObjectURL(url); }
+}
+// Returns {blob,ext,mime,type,note} or null (unsupported / skip)
+async function sfuFileToBlob(file){
+  const name=file.name||'';
+  const ext=(name.split('.').pop()||'').toLowerCase();
+  if(ext==='jpg'||ext==='jpeg') return {blob:file,ext:'jpg',mime:'image/jpeg',type:'image',note:''};
+  if(['png','webp','gif','bmp'].includes(ext)){ const b=await sfuImageToJpeg(file); return {blob:b,ext:'jpg',mime:'image/jpeg',type:'image',note:ext+'→jpg'}; }
+  if(ext==='pdf'){ const r=await sfuPdfToTallJpeg(await file.arrayBuffer()); return {blob:r.blob,ext:'jpg',mime:'image/jpeg',type:'image',note:'pdf→jpg '+r.pages+'p'}; }
+  if(ext==='pptx'){ if(!SFU_PPTX) return null; const r=await sfuPptxToTallJpeg(file); return {blob:r.blob,ext:'jpg',mime:'image/jpeg',type:'image',note:'pptx→jpg '+r.pages+'p (best-effort)'}; }
+  if(ext==='ppt') return null;
+  if(['mp3','wav','m4a','ogg','webm','aac','flac','aif','aiff'].includes(ext)) return {blob:file,ext,mime:file.type||'audio/mpeg',type:'audio',note:''};
+  return null;
+}
+/* ===================== END SETLIST FILES UPDATE helpers ==================== */
 function encodeMp3(audioBuffer,kbps){
   const nc=Math.min(2,audioBuffer.numberOfChannels);
   const sr=audioBuffer.sampleRate;
@@ -1591,6 +1684,65 @@ function Setlist({state,update,goSongId,clearGoSong,showId,pickShow}){
   const showRehearsals = state.rehearsals.filter(r=>r.showId===showId);
   useEffect(()=>{ if(goSongId){ setOpen(goSongId); if(clearGoSong) clearGoSong(); } },[goSongId]);
 
+  /* ----- Setlist Files Update (removable feature, see helpers block) ----- */
+  const sfuInputRef=useRef(null);
+  const [sfuOpen,setSfuOpen]=useState(false);
+  const [sfuBusy,setSfuBusy]=useState(false);
+  const [sfuLog,setSfuLog]=useState([]);
+  const closeSfu=useCallback(()=>{ if(!sfuBusy) setSfuOpen(false); },[sfuBusy]);
+  useBackHandler(sfuOpen,closeSfu);
+  const runSetlistFilesUpdate=async(files)=>{
+    if(!files||!files.length) return;
+    const catCol={slide:'#F4A93C',vocals:'#EC6FA9',drums:'#F2545B',bass:'#2DD4BF',guitar:'#F4A93C',keys:'#8B7CF6',other:'#5BC0EB'};
+    const catLabel=(c)=>({slide:'Slide',vocals:'Vocals',drums:'Drums',bass:'Bass',guitar:'Guitar',keys:'Keys',other:'Other'}[c]||c);
+    setSfuOpen(true);setSfuBusy(true);
+    const log=[]; const push=(e)=>{ log.push(e); setSfuLog(log.slice()); };
+    push({t:'info',m:'Reading folder…'});
+    // group files by the per-song subfolder (root/song/file)
+    const groups={};
+    files.forEach(f=>{ const parts=(f.webkitRelativePath||f.name).split('/'); if(parts.length<3) return; const key=parts[1]; (groups[key]=groups[key]||[]).push({f,depth:parts.length}); });
+    const folderKeys=Object.keys(groups);
+    push({t:'info',m:folderKeys.length+' song folder(s) found · '+active.length+' song(s) in setlist'});
+    let changed=0,skipped=0,errors=0;
+    for(const song of active){
+      const norm=sfuNormTitle(song.title);
+      const fk=folderKeys.find(k=>sfuNormTitle(k)===norm);
+      if(!fk){ push({t:'skipsong',song:song.title,m:'no matching folder'}); continue; }
+      const direct=groups[fk].filter(x=>x.depth===3).map(x=>x.f); // files directly in the song folder
+      push({t:'song',song:song.title,m:direct.length+' file(s)'});
+      // one file per category (first wins)
+      const byCat={};
+      direct.forEach(f=>{ const c=sfuCatFromName(f.name); if(byCat[c]) push({t:'skipfile',song:song.title,file:f.name,m:'extra '+catLabel(c)+' file — ignored'}); else byCat[c]=f; });
+      for(const cat of Object.keys(byCat)){
+        const f=byCat[cat];
+        try{
+          const conv=await sfuFileToBlob(f);
+          if(!conv){ skipped++; push({t:'skipfile',song:song.title,file:f.name,m:'unsupported (e.g. .ppt) — export to PDF'}); continue; }
+          const so=state.songs.find(x=>x.id===song.id);
+          const inCat=(so.files||[]).filter(x=>(x.cat==='original'?'other':x.cat||'other')===cat);
+          if(inCat.some(x=>x.size===conv.blob.size)){ skipped++; push({t:'same',song:song.title,file:f.name,cat,m:catLabel(cat)+' unchanged (same size) — kept'}); continue; }
+          const fid=uid();
+          const nm=song.title+' '+catLabel(cat)+'.'+conv.ext;
+          const path='files/'+BOARD+'/'+fid+'-sfu.'+conv.ext;
+          const ref=storage.ref().child(path);
+          await ref.put(conv.blob,{contentType:conv.mime});
+          const url=await ref.getDownloadURL();
+          const wasThere=inCat.length>0;
+          update(st=>{ const s2=st.songs.find(x=>x.id===song.id); if(!s2)return st;
+            const old=(s2.files||[]).filter(x=>(x.cat==='original'?'other':x.cat||'other')===cat);
+            old.forEach(x=>{ if(x.kind==='upload'&&x.path) deleteStoragePath(x.path); });
+            s2.files=(s2.files||[]).filter(x=>(x.cat==='original'?'other':x.cat||'other')!==cat);
+            s2.files.push({id:fid,name:nm,kind:'upload',url,path,size:conv.blob.size,type:conv.type,cat});
+            return st; });
+          changed++;
+          push({t:'ok',song:song.title,file:f.name,cat,m:(wasThere?'replaced':'added')+' → '+catLabel(cat)+(conv.note?' · '+conv.note:'')});
+        }catch(err){ errors++; push({t:'err',song:song.title,file:f.name,m:(err&&err.message)||'error'}); }
+      }
+    }
+    push({t:'done',m:changed+' changed · '+skipped+' skipped · '+errors+' error(s)'});
+    setSfuBusy(false);
+  };
+
   const addSong=(data)=>{ update(s=>{
     const song={id:uid(),files:[],cover:'',notes:'',...data};
     s.songs.push(song);
@@ -1655,13 +1807,15 @@ function Setlist({state,update,goSongId,clearGoSong,showId,pickShow}){
 
   const toolbar = (active.length>0 && !adding) ? (
     <div className="setlist-ctrl">
-      {active.length>1 &&
-        <div className="setlist-tools">
+      <div className="setlist-tools" style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+        {active.length>1 &&
           <button className={'reorder-btn'+(reorder?' on':'')} onClick={()=>{ setReorder(v=>!v); setRoleFilter(null); setOpen(null); }}>
             {reorder?'✓ Done':'⇅ Reorder'}
-          </button>
-          {reorder && <span className="ro-hint">↑ ↓ set play order · ★ marks an encore · ⊘ moves a song out</span>}
-        </div>}
+          </button>}
+        {reorder && <span className="ro-hint">↑ ↓ set play order · ★ marks an encore · ⊘ moves a song out</span>}
+        {SFU_ENABLED && !reorder && <button className="reorder-btn" style={{marginLeft:'auto'}} disabled={sfuBusy} onClick={()=>sfuInputRef.current&&sfuInputRef.current.click()} title="Bulk-update files from a folder (one subfolder per song)">⤓ Setlist Files</button>}
+        {SFU_ENABLED && <input ref={el=>{if(el){el.webkitdirectory=true;el.directory=true;sfuInputRef.current=el;}}} type="file" multiple style={{display:'none'}} onChange={e=>{const fl=Array.from(e.target.files||[]);e.target.value='';runSetlistFilesUpdate(fl);}}/>}
+      </div>
       {!reorder &&
         <div className="filterbar">
           <button className={'chip'+(roleFilter===null?' on':'')} onClick={()=>setRoleFilter(null)}>All songs</button>
@@ -1672,6 +1826,28 @@ function Setlist({state,update,goSongId,clearGoSong,showId,pickShow}){
           ))}
         </div>}
       {!reorder && roleFilter && <div className="filterhint">Songs where {roleLabel} still needs work · {shown.length}</div>}
+    </div>
+  ) : null;
+
+  const sfuColor=(t)=>({ok:'var(--ok)',err:'var(--drums)',skipsong:'var(--warn)',skipfile:'var(--warn)',same:'var(--muted)',song:'var(--text)',done:'var(--text)'}[t]||'var(--muted)');
+  const sfuModal = SFU_ENABLED && sfuOpen ? (
+    <div className="files-modal" onClick={e=>{if(e.target===e.currentTarget)closeSfu();}}>
+      <div className="files-panel" onClick={e=>e.stopPropagation()}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+          <div className="modaltitle" style={{margin:0}}>Setlist Files Update{sfuBusy?' — working…':''}</div>
+          <button onClick={closeSfu} disabled={sfuBusy} style={{background:'none',border:'none',color:'var(--muted)',fontSize:22,cursor:sfuBusy?'default':'pointer',opacity:sfuBusy?0.4:1,padding:'0 4px'}}>×</button>
+        </div>
+        <div style={{maxHeight:'60vh',overflowY:'auto',padding:'4px 2px',fontFamily:'var(--mono)',fontSize:12,lineHeight:1.5}}>
+          {sfuLog.map((e,i)=>(
+            <div key={i} style={{padding:'3px 6px',borderBottom:'1px solid var(--line)',color:sfuColor(e.t),fontWeight:(e.t==='song'||e.t==='done')?700:400}} dir="auto">
+              {e.t==='ok'?'✓ ':e.t==='err'?'✕ ':e.t==='same'?'= ':(e.t==='skipfile'||e.t==='skipsong')?'⤫ ':e.t==='song'?'▸ ':''}
+              {e.song?<b style={{direction:'ltr',display:'inline-block'}}>{e.song}</b>:''}{e.file?' · '+e.file:''}{(e.song||e.file)?' — ':''}{e.m}
+            </div>
+          ))}
+          {sfuBusy && <div style={{padding:'8px 6px',color:'var(--muted)'}}>…</div>}
+        </div>
+        <div className="btnrow"><button className="btn" onClick={closeSfu} disabled={sfuBusy}>{sfuBusy?'Working…':'Close'}</button></div>
+      </div>
     </div>
   ) : null;
 
@@ -1755,6 +1931,7 @@ function Setlist({state,update,goSongId,clearGoSong,showId,pickShow}){
             <div className="btnrow"><button className="btn" onClick={()=>setAddExisting(false)}>Done</button></div>
           </div>
         </div>}
+        {sfuModal}
       </div>
     );
   }
@@ -1787,6 +1964,7 @@ function Setlist({state,update,goSongId,clearGoSong,showId,pickShow}){
           <div className="btnrow"><button className="btn" onClick={()=>setAddExisting(false)}>Done</button></div>
         </div>
       </div>}
+      {sfuModal}
       {active.length>0 && !reorder &&
         <div className="legend">
           <span><i className="lg" style={{borderColor:'var(--line-2)'}}></i>to do</span>
