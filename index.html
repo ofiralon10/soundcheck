@@ -347,7 +347,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.232';
+const VERSION='0.233';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -2938,8 +2938,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             <span className="stem-time">{stemDur?fmtSecs(Math.floor(stemDur)):'-:--'}</span>
           </div>
           <div className="stem-btns">
-            <button className="stem-play" onClick={stemPlay} disabled={!stemDur}>PLAY</button>
-            <button onClick={stemPauseOrStop} disabled={!stemDur}>PAUSE/STOP</button>
+            <button className="stem-play" style={{fontSize:15,lineHeight:1}} onClick={stemPlaying?stemPause:stemPlay} disabled={!stemDur} title={stemPlaying?'Pause':'Play'}>{stemPlaying?'⏸':'▶'}</button>
+            <button style={{fontSize:15,lineHeight:1}} onClick={stemStop} disabled={!stemDur} title="Stop — reset to start">⏹</button>
             {!stemRecPlayback && <span style={{position:'relative',display:'inline-flex'}}>
               {zoomMenu && <div style={{position:'absolute',bottom:'100%',left:0,marginBottom:6,display:'flex',flexDirection:'column',gap:4,zIndex:70}}>
                 <button style={{background:'var(--keys)',color:'#fff',border:'none',borderRadius:8,padding:'7px 14px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:92}} onClick={()=>{captureZoom();setZoomMenu(false);}}>Set</button>
