@@ -347,7 +347,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.234';
+const VERSION='0.235';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -835,12 +835,15 @@ function sfuLoadStyleOnce(href){if(_sfuLoaded[href])return;_sfuLoaded[href]=true
 function sfuDelay(ms){return new Promise(r=>setTimeout(r,ms));}
 async function sfuWaitFor(fn,timeout){const t0=Date.now();while(Date.now()-t0<timeout){if(fn())return true;await sfuDelay(150);}return false;}
 function sfuNormTitle(s){return (s||'').trim().toLowerCase().replace(/\s+/g,' ');}
+// Category is taken from a leading [Tag] prefix in the file name:
+// [Slide] [Bass] [Vocals] [Guitar] [Keys] [Drums] (also [Other]).
+// [Ignore] -> 'ignore' (skip file). No/unknown tag -> null (skip file).
 function sfuCatFromName(name){
-  const n=(name||'').toLowerCase();
-  const instrs=[['vocals',['vocal','vox',' voc','שיר','זמר']],['drums',['drum','תופ']],['bass',['bass','באס']],['guitar',['guitar','gtr','גיטר']],['keys',['keys',' key','piano','synth','קליד']]];
-  for(const g of instrs){ if(g[1].some(k=>n.includes(k))) return g[0]; }
-  if(n.includes('other')) return 'other';
-  return 'slide'; // default: slides/documents with no instrument name
+  const m=(name||'').match(/^\s*\[\s*([a-zA-Z]+)\s*\]/);
+  if(!m) return null;
+  const tag=m[1].toLowerCase();
+  if(tag==='ignore') return 'ignore';
+  return ['slide','bass','vocals','guitar','keys','drums','other'].includes(tag)?tag:null;
 }
 async function sfuImageToJpeg(file){
   const url=URL.createObjectURL(file);
@@ -1712,7 +1715,12 @@ function Setlist({state,update,goSongId,clearGoSong,showId,pickShow}){
       push({t:'song',song:song.title,m:direct.length+' file(s)'});
       // one file per category (first wins)
       const byCat={};
-      direct.forEach(f=>{ const c=sfuCatFromName(f.name); if(byCat[c]) push({t:'skipfile',song:song.title,file:f.name,m:'extra '+catLabel(c)+' file — ignored'}); else byCat[c]=f; });
+      direct.forEach(f=>{
+        const c=sfuCatFromName(f.name);
+        if(c==='ignore'){ push({t:'skipfile',song:song.title,file:f.name,m:'[Ignore] — skipped'}); return; }
+        if(!c){ push({t:'skipfile',song:song.title,file:f.name,m:'no [Tag] prefix — skipped'}); return; }
+        if(byCat[c]) push({t:'skipfile',song:song.title,file:f.name,m:'extra '+catLabel(c)+' file — ignored'}); else byCat[c]=f;
+      });
       for(const cat of Object.keys(byCat)){
         const f=byCat[cat];
         try{
