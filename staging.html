@@ -347,7 +347,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.230';
+const VERSION='0.231';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -492,22 +492,20 @@ function InstrBadge({id,size=28}){
   );
 }
 const DISC=(<g><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></g>);
-function SlideViewer({children,autoView,autoOn,captureRef}){
+function SlideViewer({children,autoOn,navMode,applyRef,captureRef,onTap}){
   const ref=useRef(null);
   const inner=useRef(null);
-  const st=useRef({scale:1,tx:0,ty:0,dragging:false,startX:0,startY:0,startTx:0,startTy:0,pinchDist:0});
-  const pr=useRef({});pr.current={autoView,autoOn};
+  const st=useRef({scale:1,tx:0,ty:0,dragging:false,startX:0,startY:0,startTx:0,startTy:0,pinchDist:0,tapT:0,tapX:0,tapY:0,tapMoved:false});
+  const pr=useRef({});pr.current={autoOn,navMode,onTap};
   const apply=(anim)=>{const c=inner.current;if(c){c.style.transition=anim?'transform .4s ease':'none';c.style.transform='translate('+st.current.tx+'px,'+st.current.ty+'px) scale('+st.current.scale+')';}const el=ref.current;if(el)el.classList.toggle('dragging',st.current.dragging);};
   const clampScale=(s)=>Math.max(0.5,Math.min(s,8));
-  // Apply the stored view for the active keyframe (normalized translate so it
-  // survives container resize / file replacement). null view = full/no zoom.
-  const applyAutoView=(anim)=>{
-    const el=ref.current;if(!el)return;const v=pr.current.autoView;const W=el.clientWidth||1,H=el.clientHeight||1;
-    if(!v){st.current.scale=1;st.current.tx=0;st.current.ty=0;}
-    else{st.current.scale=v.scale;st.current.tx=(v.nx||0)*W;st.current.ty=(v.ny||0)*H;}
-    apply(anim);
-  };
-  useEffect(()=>{ if(pr.current.autoOn) applyAutoView(true); },[autoOn,autoView?autoView.scale:-1,autoView?autoView.nx:-2,autoView?autoView.ny:-3]);
+  // Imperative view application: normalized translate survives container
+  // resize / file replacement. null view = full/no zoom.
+  useEffect(()=>{
+    if(!applyRef)return;
+    applyRef.current=(view,anim)=>{const el=ref.current;if(!el)return;const W=el.clientWidth||1,H=el.clientHeight||1;if(!view){st.current.scale=1;st.current.tx=0;st.current.ty=0;}else{st.current.scale=view.scale;st.current.tx=(view.nx||0)*W;st.current.ty=(view.ny||0)*H;}apply(anim);};
+    return ()=>{if(applyRef)applyRef.current=null;};
+  },[applyRef]);
   useEffect(()=>{
     if(!captureRef)return;
     captureRef.current=()=>{const el=ref.current;const W=el?el.clientWidth||1:1,H=el?el.clientHeight||1:1;return {scale:st.current.scale,nx:st.current.tx/W,ny:st.current.ty/H};};
@@ -516,15 +514,19 @@ function SlideViewer({children,autoView,autoOn,captureRef}){
   useEffect(()=>{
     const el=ref.current;if(!el)return;
     const locked=()=>pr.current.autoOn;
+    const TAP=8;
+    const startTap=(x,y)=>{st.current.tapT=Date.now();st.current.tapX=x;st.current.tapY=y;st.current.tapMoved=false;};
+    const moveTap=(x,y)=>{if(Math.abs(x-st.current.tapX)>TAP||Math.abs(y-st.current.tapY)>TAP)st.current.tapMoved=true;};
+    const endTap=(allUp)=>{if(allUp&&!st.current.tapMoved&&(Date.now()-st.current.tapT)<350&&pr.current.onTap)pr.current.onTap();};
     const onWheel=(e)=>{if(locked())return;if(!e.ctrlKey&&!e.metaKey)return;e.preventDefault();const d=e.deltaY>0?0.9:1.1;const r=el.getBoundingClientRect();const ox=e.clientX-r.left-r.width/2;const oy=e.clientY-r.top-r.height/2;const ns=clampScale(st.current.scale*d);const f=ns/st.current.scale;st.current.tx=ox-(ox-st.current.tx)*f;st.current.ty=oy-(oy-st.current.ty)*f;st.current.scale=ns;apply();};
-    const onMD=(e)=>{if(locked())return;if(e.button!==0)return;st.current.dragging=true;st.current.startX=e.clientX;st.current.startY=e.clientY;st.current.startTx=st.current.tx;st.current.startTy=st.current.ty;apply();};
-    const onMM=(e)=>{if(locked()||!st.current.dragging)return;st.current.tx=st.current.startTx+(e.clientX-st.current.startX);st.current.ty=st.current.startTy+(e.clientY-st.current.startY);apply();};
-    const onMU=()=>{st.current.dragging=false;apply();};
+    const onMD=(e)=>{if(e.button!==0)return;startTap(e.clientX,e.clientY);if(locked())return;st.current.dragging=true;st.current.startX=e.clientX;st.current.startY=e.clientY;st.current.startTx=st.current.tx;st.current.startTy=st.current.ty;apply();};
+    const onMM=(e)=>{moveTap(e.clientX,e.clientY);if(locked()||!st.current.dragging)return;st.current.tx=st.current.startTx+(e.clientX-st.current.startX);st.current.ty=st.current.startTy+(e.clientY-st.current.startY);apply();};
+    const onMU=()=>{const dr=st.current.dragging;st.current.dragging=false;if(dr)apply();endTap(true);};
     const dist=(t)=>Math.hypot(t[1].clientX-t[0].clientX,t[1].clientY-t[0].clientY);
-    const onTS=(e)=>{if(locked())return;if(e.touches.length===2){st.current.pinchDist=dist(e.touches);}else if(e.touches.length===1){st.current.dragging=true;st.current.startX=e.touches[0].clientX;st.current.startY=e.touches[0].clientY;st.current.startTx=st.current.tx;st.current.startTy=st.current.ty;}};
-    const onTM=(e)=>{if(locked())return;if(e.touches.length===2){e.preventDefault();const nd=dist(e.touches);const f=nd/st.current.pinchDist;const ns=clampScale(st.current.scale*f);st.current.scale=ns;st.current.pinchDist=nd;apply();}else if(e.touches.length===1&&st.current.dragging){st.current.tx=st.current.startTx+(e.touches[0].clientX-st.current.startX);st.current.ty=st.current.startTy+(e.touches[0].clientY-st.current.startY);apply();}};
-    const onTE=()=>{st.current.dragging=false;apply();};
-    const onDbl=(e)=>{if(locked())return;e.preventDefault();st.current.scale=1;st.current.tx=0;st.current.ty=0;apply();};
+    const onTS=(e)=>{if(e.touches.length===2){st.current.pinchDist=dist(e.touches);st.current.tapMoved=true;}else if(e.touches.length===1){startTap(e.touches[0].clientX,e.touches[0].clientY);if(!locked()){st.current.dragging=true;st.current.startX=e.touches[0].clientX;st.current.startY=e.touches[0].clientY;st.current.startTx=st.current.tx;st.current.startTy=st.current.ty;}}};
+    const onTM=(e)=>{if(e.touches.length===1)moveTap(e.touches[0].clientX,e.touches[0].clientY);if(locked())return;if(e.touches.length===2){e.preventDefault();const nd=dist(e.touches);const f=nd/st.current.pinchDist;const ns=clampScale(st.current.scale*f);st.current.scale=ns;st.current.pinchDist=nd;apply();}else if(e.touches.length===1&&st.current.dragging){st.current.tx=st.current.startTx+(e.touches[0].clientX-st.current.startX);st.current.ty=st.current.startTy+(e.touches[0].clientY-st.current.startY);apply();}};
+    const onTE=(e)=>{st.current.dragging=false;apply();endTap(e.touches.length===0);};
+    const onDbl=(e)=>{if(locked()||pr.current.navMode)return;e.preventDefault();st.current.scale=1;st.current.tx=0;st.current.ty=0;apply();};
     el.addEventListener('wheel',onWheel,{passive:false});
     el.addEventListener('mousedown',onMD);window.addEventListener('mousemove',onMM);window.addEventListener('mouseup',onMU);
     el.addEventListener('touchstart',onTS,{passive:true});el.addEventListener('touchmove',onTM,{passive:false});el.addEventListener('touchend',onTE);
@@ -1822,8 +1824,10 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [stemBarH,setStemBarH]=useState(150);
   const stemBarRef=useRef(null);
   const viewCapRef=useRef(null);
+  const zoomApplyRef=useRef(null);
   const [zoomMsg,setZoomMsg]=useState('');
   const [zoomMenu,setZoomMenu]=useState(false);
+  const [zoomIdx,setZoomIdx]=useState(-1);
   const [stemPlaying,setStemPlaying]=useState(false);
   const [stemTime,setStemTime]=useState(0);
   const [stemDur,setStemDur]=useState(0);
@@ -1945,7 +1949,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       try{const saved=JSON.parse(localStorage.getItem(stemStorageKey));if(saved&&saved.length)return stemDefaultChans().map(d=>{const sv=saved.find(x=>x.id===d.id);return sv?{...d,vol:sv.vol,muted:sv.muted,soloed:sv.soloed,custom:!!sv.custom}:d;});}catch(_){}
       return stemDefaultChans();
     });
-    setStemDur(0);setStemTime(0);setStemCfg(false);setStemOpen(true);
+    setStemDur(0);setStemTime(0);setStemCfg(false);setZoomIdx(-1);setStemOpen(true);
     const files=s.files||[];
     STEM_CATS.forEach(cat=>{
       const af=files.filter(f=>(f.cat==='original'?'other':f.cat||'other')===cat.id&&f.type==='audio');
@@ -1965,7 +1969,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       try{const saved=JSON.parse(localStorage.getItem(stemRecStorageKey));if(saved&&saved.length)return stemRecDefaultChans().map(d=>{const sv=saved.find(x=>x.id===d.id);return sv?{...d,vol:sv.vol,muted:sv.muted,soloed:sv.soloed,custom:!!sv.custom}:d;});}catch(_){}
       return stemRecDefaultChans();
     });
-    setStemDur(0);setStemTime(0);setStemCfg(false);setStemOpen(true);
+    setStemDur(0);setStemTime(0);setStemCfg(false);setZoomIdx(-1);setStemOpen(true);
     stemLoadUrl('mystem',recFile.url,recFile.name);
     const files=s.files||[];
     const otherCats=STEM_CATS.filter(c=>!MY_INSTRS.includes(c.id)&&c.id!=='metronome');
@@ -2065,23 +2069,31 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const devLabel=wide?'tablet':'phone';
   const zoomPlan=((s.zoomPlans||{})[devKey])||[];
   const zoomSorted=[...zoomPlan].sort((a,b)=>a.t-b.t);
-  const activeKf=(()=>{let r=null;for(const k of zoomSorted){if(k.t<=stemTime+0.02)r=k;else break;}return r;})();
   const zoomAutoOn=stemPlaying&&zoomSorted.length>0;
+  const viewOf=(kf)=>kf?{scale:kf.scale,nx:kf.nx,ny:kf.ny}:null;
+  // Apply the current position's view whenever the index (or the player) changes.
+  useEffect(()=>{ if(!stemOpen)return; const kf=(zoomIdx>=0&&zoomIdx<zoomSorted.length)?zoomSorted[zoomIdx]:null; if(zoomApplyRef.current)zoomApplyRef.current(viewOf(kf),true); },[zoomIdx,stemOpen]);
+  // During playback, drive the index from time (auto transitions).
+  useEffect(()=>{ if(!stemPlaying||zoomSorted.length===0)return; let idx=-1;for(let i=0;i<zoomSorted.length;i++){if(zoomSorted[i].t<=stemTime+0.02)idx=i;else break;} setZoomIdx(prev=>prev===idx?prev:idx); },[stemTime,stemPlaying]);
+  // Tap on the slide advances to the next position (wraps last -> first).
+  const zoomTap=()=>{ const m=zoomSorted.length; if(m===0)return; setZoomIdx(i=>(i+1>=m?0:i+1)); };
   const captureZoom=()=>{
     const fn=viewCapRef.current;if(!fn){return;}
     const v=fn();
+    const t=Math.round(stemTime*100)/100;
+    const kf={t,scale:+v.scale.toFixed(3),nx:+v.nx.toFixed(4),ny:+v.ny.toFixed(4)};
+    const newArr=[...zoomSorted.filter(k=>Math.abs(k.t-stemTime)>0.25),kf].sort((a,b)=>a.t-b.t);
     update(st=>{const so=st.songs.find(x=>x.id===s.id);if(!so)return st;
       if(!so.zoomPlans||typeof so.zoomPlans!=='object'||Array.isArray(so.zoomPlans)) so.zoomPlans={};
-      const arr=(so.zoomPlans[devKey]||[]).filter(k=>Math.abs(k.t-stemTime)>0.25);
-      arr.push({t:Math.round(stemTime*100)/100,scale:+v.scale.toFixed(3),nx:+v.nx.toFixed(4),ny:+v.ny.toFixed(4)});
-      arr.sort((a,b)=>a.t-b.t);
-      so.zoomPlans[devKey]=arr;
+      so.zoomPlans[devKey]=newArr;
       return st;});
+    setZoomIdx(newArr.indexOf(kf));
     setZoomMsg('Zoom set @ '+fmtSecs(Math.floor(stemTime))+' ('+devLabel+')');
     clearTimeout(window.__zoomMsgT);window.__zoomMsgT=setTimeout(()=>setZoomMsg(''),1800);
   };
   const resetZoom=()=>{
     update(st=>{const so=st.songs.find(x=>x.id===s.id);if(so){if(!so.zoomPlans||typeof so.zoomPlans!=='object'||Array.isArray(so.zoomPlans)) so.zoomPlans={};so.zoomPlans[devKey]=[];}return st;});
+    setZoomIdx(-1);
     setZoomMsg(devLabel+' zoom plan cleared');
     clearTimeout(window.__zoomMsgT);window.__zoomMsgT=setTimeout(()=>setZoomMsg(''),1800);
   };
@@ -2865,7 +2877,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       </div>}
       {stemOpen && <div className="practice-full" style={{bottom:stemBarH}}>
         {zoomMsg && <div style={{position:'absolute',top:10,left:'50%',transform:'translateX(-50%)',zIndex:6,background:'rgba(21,20,27,.9)',border:'1px solid var(--line-2)',borderRadius:20,padding:'5px 14px',fontSize:12,fontFamily:'var(--mono)',color:'var(--keys)'}}>{zoomMsg}</div>}
-        <SlideViewer autoView={activeKf?{scale:activeKf.scale,nx:activeKf.nx,ny:activeKf.ny}:null} autoOn={zoomAutoOn} captureRef={viewCapRef}>
+        <SlideViewer autoOn={zoomAutoOn} navMode={zoomSorted.length>0} applyRef={zoomApplyRef} captureRef={viewCapRef} onTap={zoomTap}>
           {(()=>{const slides=(s.files||[]).filter(f=>(f.cat==='slide')&&f.url);
             if(!slides.length) return <div className="practice-no-slide">No slide uploaded</div>;
             const isImg=f=>/\.(jpe?g|png|webp|gif|bmp|svg)$/i.test(f.name||'');
@@ -2926,7 +2938,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
                 <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'7px 14px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:92}} onClick={()=>{resetZoom();setZoomMenu(false);}}>Clear</button>
                 <button style={{background:'var(--surface-2)',color:'var(--text)',border:'1px solid var(--line-2)',borderRadius:8,padding:'7px 14px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:92}} onClick={()=>setZoomMenu(false)}>Cancel</button>
               </div>}
-              <button style={{background:zoomMenu?'var(--muted-2)':'var(--keys)',color:zoomMenu?'#15141B':'#fff',border:'none',borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>setZoomMenu(v=>!v)} disabled={!stemDur} title={'Zoom/pan plan ('+devLabel+')'}>⛶ Zoom{zoomSorted.length?' ('+zoomSorted.length+')':''}</button>
+              <button style={{background:zoomMenu?'var(--muted-2)':'var(--keys)',color:zoomMenu?'#15141B':'#fff',border:'none',borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>setZoomMenu(v=>!v)} disabled={!stemDur} title={'Zoom/pan plan ('+devLabel+') — tap the slide to step positions'}>⛶ {zoomSorted.length?((zoomIdx>=0?zoomIdx+1:0)+'/'+zoomSorted.length):'Zoom'}</button>
             </span>}
             {!stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>CONFIG</button>}
             {!stemRecPlayback && <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>{setStemRecPrompt(true);prefetchBackingStems();}} disabled={!!stemRecState}>🎙 StemRec</button>}
