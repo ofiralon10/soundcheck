@@ -347,7 +347,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.236';
+const VERSION='0.237';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -835,6 +835,25 @@ function sfuLoadStyleOnce(href){if(_sfuLoaded[href])return;_sfuLoaded[href]=true
 function sfuDelay(ms){return new Promise(r=>setTimeout(r,ms));}
 async function sfuWaitFor(fn,timeout){const t0=Date.now();while(Date.now()-t0<timeout){if(fn())return true;await sfuDelay(150);}return false;}
 function sfuNormTitle(s){return (s||'').trim().toLowerCase().replace(/\s+/g,' ');}
+// Fuzzy folder<->song matching: folders may add the singer/artist and be
+// spelled a bit differently. Match on the song's title words appearing in the
+// folder name (extra folder words like the artist are ignored), tolerating
+// punctuation, spacing and small typos.
+function sfuNorm(s){return (s||'').toLowerCase().replace(/[\[\]\(\)_\-–—.,:;'"`!?/\\|]+/g,' ').replace(/\s+/g,' ').trim();}
+function sfuTokens(s){return sfuNorm(s).split(' ').filter(t=>t.length>1);}
+function sfuLev(a,b){const m=a.length,n=b.length;if(!m)return n;if(!n)return m;let prev=Array.from({length:n+1},(_,j)=>j),cur=new Array(n+1);for(let i=1;i<=m;i++){cur[0]=i;for(let j=1;j<=n;j++){cur[j]=Math.min(prev[j]+1,cur[j-1]+1,prev[j-1]+(a[i-1]===b[j-1]?0:1));}const t=prev;prev=cur;cur=t;}return prev[n];}
+function sfuTokMatch(t,ft){return ft.some(x=>x===t||(x.length>=3&&t.length>=3&&(x.includes(t)||t.includes(x)))||(t.length>=4&&sfuLev(t,x)<=1)||(t.length>=7&&sfuLev(t,x)<=2));}
+function sfuScore(title,artist,folderName){
+  const tt=sfuTokens(title);if(!tt.length)return 0;
+  // whole-title containment (handles titles run together without separators)
+  const tj=sfuNorm(title).replace(/ /g,''),fj=sfuNorm(folderName).replace(/ /g,'');
+  if(tj.length>=4&&fj.includes(tj))return 1;
+  const ft=sfuTokens(folderName);if(!ft.length)return 0;
+  let matched=0;tt.forEach(t=>{if(sfuTokMatch(t,ft))matched++;});
+  let score=matched/tt.length;
+  const at=sfuTokens(artist);if(at.length){const am=at.filter(t=>sfuTokMatch(t,ft)).length;if(am)score+=0.08*(am/at.length);}
+  return score;
+}
 // Category is taken from a leading [Tag] prefix in the file name:
 // [Slide] [Bass] [Vocals] [Guitar] [Keys] [Drums] (also [Other]).
 // [Ignore] -> 'ignore' (skip file). No/unknown tag -> null (skip file).
@@ -1706,11 +1725,18 @@ function Setlist({state,update,goSongId,clearGoSong,showId,pickShow}){
     files.forEach(f=>{ const parts=(f.webkitRelativePath||f.name).split('/'); if(parts.length<3) return; const key=parts[1]; if(sfuNormTitle(key)==='ignore') return; (groups[key]=groups[key]||[]).push({f,depth:parts.length}); });
     const folderKeys=Object.keys(groups);
     push({t:'info',m:folderKeys.length+' song folder(s) found · '+active.length+' song(s) in setlist'});
+    // Greedy best-match: score every song/folder pair, assign highest first,
+    // each folder and song used at most once.
+    const pairs=[];
+    active.forEach(song=>{ folderKeys.forEach(fk=>{ const sc=sfuScore(song.title,song.artist,fk); if(sc>=0.6) pairs.push({songId:song.id,fk,sc}); }); });
+    pairs.sort((a,b)=>b.sc-a.sc);
+    const songToFolder={},usedFolder={};
+    pairs.forEach(p=>{ if(songToFolder[p.songId]!==undefined||usedFolder[p.fk])return; songToFolder[p.songId]=p.fk; usedFolder[p.fk]=true; });
     let changed=0,skipped=0,errors=0;
     for(const song of active){
-      const norm=sfuNormTitle(song.title);
-      const fk=folderKeys.find(k=>sfuNormTitle(k)===norm);
+      const fk=songToFolder[song.id];
       if(!fk){ push({t:'skipsong',song:song.title,m:'no matching folder'}); continue; }
+      if(sfuNormTitle(fk)!==sfuNormTitle(song.title)) push({t:'info',song:song.title,m:'matched folder "'+fk+'"'});
       const direct=groups[fk].filter(x=>x.depth===3).map(x=>x.f); // files directly in the song folder
       push({t:'song',song:song.title,m:direct.length+' file(s)'});
       // one file per category (first wins)
