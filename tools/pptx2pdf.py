@@ -8,7 +8,8 @@ PowerPoint, but it turns PDFs into slide images cleanly. Run this once over
 your setlist folder, then run the update in the app.
 
 Usage:
-    python pptx2pdf.py [FOLDER]        # defaults to the current folder
+    Double-click this file  -> converts the folder the script sits in.
+    python pptx2pdf.py [FOLDER]          # or point it at another folder
     python pptx2pdf.py [FOLDER] --force  # reconvert even if PDF is newer
 
 Conversion backend (auto-detected, in order):
@@ -90,11 +91,19 @@ def convert_with_powerpoint(files):
     return ok
 
 
+def script_dir():
+    try:
+        return os.path.dirname(os.path.abspath(__file__))
+    except Exception:
+        return os.getcwd()
+
+
 def main():
     args = [a for a in sys.argv[1:]]
     force = "--force" in args
     args = [a for a in args if a != "--force"]
-    root = args[0] if args else os.getcwd()
+    # No folder given (e.g. double-clicked) -> use the folder this script is in.
+    root = args[0] if args else script_dir()
     if not os.path.isdir(root):
         print("Not a folder:", root)
         sys.exit(1)
@@ -138,4 +147,13 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # When double-clicked (no folder argument) keep the window open at the end.
+    _interactive = not [a for a in sys.argv[1:] if a != "--force"]
+    try:
+        main()
+    finally:
+        if _interactive:
+            try:
+                input("\nPress Enter to close…")
+            except Exception:
+                pass

@@ -15,12 +15,18 @@ Plus **Python 3** (already on most machines; <https://www.python.org>).
 
 ## Run it
 
+Put a copy of `pptx2pdf.py` in your setlist folder and **double-click it** — it
+converts the folder it sits in (and all subfolders). The window stays open so
+you can read the results.
+
+Or point it at any folder:
+
 ```
 python pptx2pdf.py "C:\path\to\Setlist Folder"
 ```
 
-Or on Windows, **drag your folder onto `pptx2pdf.bat`** (or double-click it to
-convert the folder it's in).
+(`pptx2pdf.bat` also works — drag a folder onto it, or double-click to convert
+its own folder.)
 
 - Recurses into every subfolder (one per song).
 - Writes `SongName.pdf` next to each `SongName.pptx`.
