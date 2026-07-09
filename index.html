@@ -358,7 +358,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.246';
+const VERSION='0.247';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -687,7 +687,15 @@ function migrate(s){
   s.songs.forEach(song=>{
     if(song.cover===undefined) song.cover='';
     if(!song.zoomPlans||typeof song.zoomPlans!=='object'||Array.isArray(song.zoomPlans)) song.zoomPlans={};
-    if(Array.isArray(song.zoomPlan)){ if(song.zoomPlan.length&&!song.zoomPlans.wide) song.zoomPlans.wide=song.zoomPlan; delete song.zoomPlan; }
+    if(Array.isArray(song.zoomPlan)){ if(song.zoomPlan.length) song.zoomPlans.wide=song.zoomPlan; delete song.zoomPlan; }
+    // zoomPlans went from device-keyed ({wide,narrow}) to per-section
+    // ({slide:{wide,narrow}, vocals:{...}}). Move old device-keyed data to slide.
+    if(Array.isArray(song.zoomPlans.wide)||Array.isArray(song.zoomPlans.narrow)){
+      const mv={};
+      if(Array.isArray(song.zoomPlans.wide)){mv.wide=song.zoomPlans.wide;delete song.zoomPlans.wide;}
+      if(Array.isArray(song.zoomPlans.narrow)){mv.narrow=song.zoomPlans.narrow;delete song.zoomPlans.narrow;}
+      song.zoomPlans.slide=Object.assign(song.zoomPlans.slide||{},mv);
+    }
     if(!Array.isArray(song.files)) song.files=[];
     song.files.forEach(f=>{if(f.cat==='other'&&f.stem&&/metronome|click|tick/i.test(f.name||'')) f.cat='metronome';});
     song.files=(function(ff){var seen={};return ff.filter(function(f){if(!f.stem)return true;var k=f.cat||'other';if(seen[k])return false;seen[k]=true;return true;});})(song.files);
@@ -2265,50 +2273,6 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     return ()=>{try{ro&&ro.disconnect();}catch(_){}};
   },[stemOpen,stemRecState,stemRecPlayback]);
 
-  // Zoom/pan plan: per-song list of {t, scale, nx, ny}. Capture the current
-  // manual view at the playhead; during playback the view snaps to the latest
-  // keyframe whose time has passed (full/no-zoom before the first).
-  const devKey=wide?'wide':'narrow';
-  const devLabel=wide?'tablet':'phone';
-  const zoomPlan=((s.zoomPlans||{})[devKey])||[];
-  const zoomSorted=[...zoomPlan].sort((a,b)=>a.t-b.t);
-  const zoomAutoOn=stemPlaying&&zoomSorted.length>0;
-  const viewOf=(kf)=>kf?{scale:kf.scale,nx:kf.nx,ny:kf.ny}:null;
-  // Apply the current position's view whenever the index (or the player) changes.
-  useEffect(()=>{ if(!stemOpen)return; const kf=(zoomIdx>=0&&zoomIdx<zoomSorted.length)?zoomSorted[zoomIdx]:null; if(zoomApplyRef.current)zoomApplyRef.current(viewOf(kf),true); },[zoomIdx,stemOpen]);
-  // During playback, drive the index from time — but only on an actual
-  // keyframe crossing, so a manual tap in between isn't instantly reverted.
-  const lastAutoIdxRef=useRef(-2);
-  useEffect(()=>{ if(!stemPlaying||zoomSorted.length===0)return; let idx=-1;for(let i=0;i<zoomSorted.length;i++){if(zoomSorted[i].t<=stemTime+0.02)idx=i;else break;} if(idx!==lastAutoIdxRef.current){lastAutoIdxRef.current=idx;setZoomIdx(idx);} },[stemTime,stemPlaying]);
-  // Tap right half of the slide -> next position, left half -> previous (both cyclic).
-  const zoomTap=(dir)=>{
-    const m=zoomSorted.length; if(m===0)return;
-    let n; if(zoomIdx<0) n=dir>0?0:m-1; else { n=zoomIdx+dir; if(n<0)n=m-1; if(n>=m)n=0; }
-    setZoomIdx(n);
-    setZoomMsg((dir>0?'▶ ':'◀ ')+(n+1)+'/'+m);
-    clearTimeout(window.__zoomMsgT);window.__zoomMsgT=setTimeout(()=>setZoomMsg(''),1200);
-  };
-  const captureZoom=()=>{
-    const fn=viewCapRef.current;if(!fn){return;}
-    const v=fn();
-    const t=Math.round(stemTime*100)/100;
-    const kf={t,scale:+v.scale.toFixed(3),nx:+v.nx.toFixed(4),ny:+v.ny.toFixed(4)};
-    const newArr=[...zoomSorted.filter(k=>Math.abs(k.t-stemTime)>0.25),kf].sort((a,b)=>a.t-b.t);
-    update(st=>{const so=st.songs.find(x=>x.id===s.id);if(!so)return st;
-      if(!so.zoomPlans||typeof so.zoomPlans!=='object'||Array.isArray(so.zoomPlans)) so.zoomPlans={};
-      so.zoomPlans[devKey]=newArr;
-      return st;});
-    setZoomIdx(newArr.indexOf(kf));
-    setZoomMsg('Zoom set @ '+fmtSecs(Math.floor(stemTime))+' ('+devLabel+')');
-    clearTimeout(window.__zoomMsgT);window.__zoomMsgT=setTimeout(()=>setZoomMsg(''),1800);
-  };
-  const resetZoom=()=>{
-    update(st=>{const so=st.songs.find(x=>x.id===s.id);if(so){if(!so.zoomPlans||typeof so.zoomPlans!=='object'||Array.isArray(so.zoomPlans)) so.zoomPlans={};so.zoomPlans[devKey]=[];}return st;});
-    setZoomIdx(-1);
-    setZoomMsg(devLabel+' zoom plan cleared');
-    clearTimeout(window.__zoomMsgT);window.__zoomMsgT=setTimeout(()=>setZoomMsg(''),1800);
-  };
-
   // Practice view files: the slide first, then any viewable (image/pdf) files
   // in the user's own instrument sections. The Files button cycles through them.
   const _catOf=f=>(f.cat==='original'?'other':f.cat||'other');
@@ -2322,7 +2286,54 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     fs.forEach(f=>viewFiles.push({sec,label:_secLabel[sec]||sec,file:f}));
   });
   const curView=viewFiles.length?viewFiles[Math.min(viewIdx,viewFiles.length-1)]:null;
-  const toggleView=()=>{ if(viewFiles.length>1) setViewIdx(i=>(i+1)%viewFiles.length); };
+
+  // Zoom/pan plan: per shown FILE (keyed by its section) + device, list of
+  // {t, scale, nx, ny}. Capture the current manual view at the playhead; during
+  // playback the view snaps to the latest keyframe whose time has passed.
+  const devKey=wide?'wide':'narrow';
+  const devLabel=wide?'tablet':'phone';
+  const viewKey=curView?curView.sec:'slide';
+  const zoomPlan=(((s.zoomPlans||{})[viewKey]||{})[devKey])||[];
+  const zoomSorted=[...zoomPlan].sort((a,b)=>a.t-b.t);
+  const zoomAutoOn=stemPlaying&&zoomSorted.length>0;
+  const viewOf=(kf)=>kf?{scale:kf.scale,nx:kf.nx,ny:kf.ny}:null;
+  const lastAutoIdxRef=useRef(-2);
+  // Switching files resets to full and re-applies that file's plan.
+  const toggleView=()=>{ if(viewFiles.length>1){ lastAutoIdxRef.current=-2; setZoomIdx(-1); setViewIdx(i=>(i+1)%viewFiles.length); } };
+  // Apply the current position's view whenever the index, file, or player changes.
+  useEffect(()=>{ if(!stemOpen)return; const kf=(zoomIdx>=0&&zoomIdx<zoomSorted.length)?zoomSorted[zoomIdx]:null; if(zoomApplyRef.current)zoomApplyRef.current(viewOf(kf),true); },[zoomIdx,stemOpen,viewIdx]);
+  // During playback, drive the index from time — but only on an actual
+  // keyframe crossing, so a manual tap in between isn't instantly reverted.
+  useEffect(()=>{ if(!stemPlaying||zoomSorted.length===0)return; let idx=-1;for(let i=0;i<zoomSorted.length;i++){if(zoomSorted[i].t<=stemTime+0.02)idx=i;else break;} if(idx!==lastAutoIdxRef.current){lastAutoIdxRef.current=idx;setZoomIdx(idx);} },[stemTime,stemPlaying]);
+  // Tap right half of the slide -> next position, left half -> previous (both cyclic).
+  const zoomTap=(dir)=>{
+    const m=zoomSorted.length; if(m===0)return;
+    let n; if(zoomIdx<0) n=dir>0?0:m-1; else { n=zoomIdx+dir; if(n<0)n=m-1; if(n>=m)n=0; }
+    setZoomIdx(n);
+    setZoomMsg((dir>0?'▶ ':'◀ ')+(n+1)+'/'+m);
+    clearTimeout(window.__zoomMsgT);window.__zoomMsgT=setTimeout(()=>setZoomMsg(''),1200);
+  };
+  const zoomEnsureSec=(so)=>{
+    if(!so.zoomPlans||typeof so.zoomPlans!=='object'||Array.isArray(so.zoomPlans)) so.zoomPlans={};
+    if(!so.zoomPlans[viewKey]||typeof so.zoomPlans[viewKey]!=='object'||Array.isArray(so.zoomPlans[viewKey])) so.zoomPlans[viewKey]={};
+  };
+  const captureZoom=()=>{
+    const fn=viewCapRef.current;if(!fn){return;}
+    const v=fn();
+    const t=Math.round(stemTime*100)/100;
+    const kf={t,scale:+v.scale.toFixed(3),nx:+v.nx.toFixed(4),ny:+v.ny.toFixed(4)};
+    const newArr=[...zoomSorted.filter(k=>Math.abs(k.t-stemTime)>0.25),kf].sort((a,b)=>a.t-b.t);
+    update(st=>{const so=st.songs.find(x=>x.id===s.id);if(!so)return st; zoomEnsureSec(so); so.zoomPlans[viewKey][devKey]=newArr; return st;});
+    setZoomIdx(newArr.indexOf(kf));
+    setZoomMsg('Zoom set @ '+fmtSecs(Math.floor(stemTime))+' ('+(curView?curView.label+' · ':'')+devLabel+')');
+    clearTimeout(window.__zoomMsgT);window.__zoomMsgT=setTimeout(()=>setZoomMsg(''),1800);
+  };
+  const resetZoom=()=>{
+    update(st=>{const so=st.songs.find(x=>x.id===s.id);if(so){ zoomEnsureSec(so); so.zoomPlans[viewKey][devKey]=[]; }return st;});
+    setZoomIdx(-1);
+    setZoomMsg((curView?curView.label+' ':'')+devLabel+' zoom plan cleared');
+    clearTimeout(window.__zoomMsgT);window.__zoomMsgT=setTimeout(()=>setZoomMsg(''),1800);
+  };
 
   const [stemRecPrompt,setStemRecPrompt]=useState(false);
   const [stemRecHp,setStemRecHp]=useState(()=>{try{return localStorage.getItem('sc_rec_hp')==='1';}catch(_){return false;}});
