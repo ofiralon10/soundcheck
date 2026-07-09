@@ -347,7 +347,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.235';
+const VERSION='0.236';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -1703,7 +1703,7 @@ function Setlist({state,update,goSongId,clearGoSong,showId,pickShow}){
     push({t:'info',m:'Reading folder…'});
     // group files by the per-song subfolder (root/song/file)
     const groups={};
-    files.forEach(f=>{ const parts=(f.webkitRelativePath||f.name).split('/'); if(parts.length<3) return; const key=parts[1]; (groups[key]=groups[key]||[]).push({f,depth:parts.length}); });
+    files.forEach(f=>{ const parts=(f.webkitRelativePath||f.name).split('/'); if(parts.length<3) return; const key=parts[1]; if(sfuNormTitle(key)==='ignore') return; (groups[key]=groups[key]||[]).push({f,depth:parts.length}); });
     const folderKeys=Object.keys(groups);
     push({t:'info',m:folderKeys.length+' song folder(s) found · '+active.length+' song(s) in setlist'});
     let changed=0,skipped=0,errors=0;
