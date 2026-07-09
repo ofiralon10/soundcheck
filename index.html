@@ -347,7 +347,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.243';
+const VERSION='0.244';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -2599,7 +2599,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   useEffect(()=>()=>{
     if(recorderRef.current&&recorderRef.current.state!=='inactive') try{recorderRef.current.stream.getTracks().forEach(t=>t.stop());}catch(_){}
     clearInterval(timerRef.current);
-    if(audioRef.current) audioRef.current.pause();
+    if(audioRef.current) try{audioRef.current.pause();}catch(_){}
+    if(waRef.current){ try{waRef.current.source&&waRef.current.source.stop();}catch(_){} try{waRef.current.ctx.close();}catch(_){} }
   },[]);
   useEffect(()=>{ if(scrollInto&&rowRef.current){ const tb=document.querySelector('.topbar'); const off=tb?tb.getBoundingClientRect().height+6:80; scScrollToEl(rowRef.current,off); } },[scrollInto]);
   const setField=(k,v)=>update(st=>{const so=st.songs.find(x=>x.id===s.id);if(so) so[k]=v;return st;});
@@ -2776,14 +2777,50 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [playerDur,setPlayerDur]=useState(0);
   const [playerVol,setPlayerVol]=useState(1);
   const playerTimerRef=useRef(null);
-  const openPlayer=(f)=>{
-    if(audioRef.current){ audioRef.current.pause(); clearInterval(playerTimerRef.current); }
+  // Web Audio playback (waRef) is used for webm/ogg recordings: MediaRecorder
+  // blobs are cue-less, so an <audio> element can't seek them (silence after a
+  // jump) and reports Infinity duration. Decoding to a buffer gives an accurate
+  // duration and perfect seeking. Other files use the <audio> element.
+  const waRef=useRef(null);
+  const waPos=()=>{ const w=waRef.current; if(!w)return 0; return w.playing?Math.min(w.dur,w.offset+(w.ctx.currentTime-w.startAt)):w.offset; };
+  const waStop=()=>{ const w=waRef.current; if(w&&w.source){ try{ w.source._manual=true; w.source.onended=null; w.source.stop(); }catch(_){} w.source=null; } };
+  const waStartAt=(off)=>{
+    const w=waRef.current; if(!w)return;
+    waStop();
+    try{ w.ctx.resume(); }catch(_){}
+    const src=w.ctx.createBufferSource(); src.buffer=w.buffer; src.connect(w.gain);
+    src.onended=()=>{ if(src._manual)return; w.playing=false; w.offset=w.dur; setPlayerPlaying(false); setPlayerTime(w.dur); clearInterval(playerTimerRef.current); };
+    const start=Math.max(0,Math.min(off,w.dur-0.01));
+    src.start(0,start);
+    w.source=src; w.offset=start; w.startAt=w.ctx.currentTime; w.playing=true;
+    setPlayerPlaying(true);
+    clearInterval(playerTimerRef.current);
+    playerTimerRef.current=setInterval(()=>setPlayerTime(waPos()),200);
+  };
+  const stopAllPlayback=()=>{
+    if(audioRef.current){ try{audioRef.current.pause();}catch(_){} audioRef.current=null; }
+    if(waRef.current){ waStop(); try{waRef.current.ctx.close();}catch(_){} waRef.current=null; }
+    clearInterval(playerTimerRef.current);
+  };
+  const openPlayer=async(f)=>{
+    stopAllPlayback();
+    setPlayerFile(f); setPlayerTime(0); setPlayerDur(0); setPlayerPlaying(false);
+    if(/\.(webm|ogg)$/i.test(f.name||'')){
+      const ctx=new (window.AudioContext||window.webkitAudioContext)();
+      try{ ctx.resume(); }catch(_){}
+      try{
+        const ab=await fetch(f.url).then(r=>{ if(!r.ok) throw new Error('http '+r.status); return r.arrayBuffer(); });
+        const buffer=await ctx.decodeAudioData(ab);
+        const gain=ctx.createGain(); gain.gain.value=playerVol; gain.connect(ctx.destination);
+        waRef.current={ctx,buffer,gain,source:null,offset:0,startAt:0,playing:false,dur:buffer.duration};
+        setPlayerDur(buffer.duration);
+        waStartAt(0);
+      }catch(err){ try{ctx.close();}catch(_){} setFileMsg('Could not play this recording — '+((err&&err.message)||'decode failed')); setPlayerFile(null); }
+      return;
+    }
     const a=new Audio();
     a.preload='auto';
     a.volume=playerVol;
-    // MediaRecorder blobs (band/stem recordings) report duration=Infinity until
-    // seeked to the end. Force the browser to compute it, THEN start from 0 —
-    // seeking while playing can blip or fire 'ended' prematurely.
     let forcedDur=false,started=false;
     const startPlay=()=>{ if(started)return; started=true; a.play().catch(()=>setFileMsg('Playback failed.')); };
     a.onloadedmetadata=()=>{
@@ -2799,24 +2836,24 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     a.onended=()=>{ if(forcedDur)return; setPlayerPlaying(false); setPlayerTime(a.duration||0); clearInterval(playerTimerRef.current); };
     a.onerror=()=>{ setPlayerFile(null); setPlayerPlaying(false); clearInterval(playerTimerRef.current); setFileMsg('Could not play this file.'); };
     a.src=f.url;
-    // Safety: if duration never resolves, start anyway so playback isn't stuck.
     setTimeout(()=>{ if(started)return; if(forcedDur){ forcedDur=false; try{ a.currentTime=0; }catch(_){} setPlayerTime(0); } startPlay(); },2500);
     audioRef.current=a;
-    setPlayerFile(f);
     setPlayerPlaying(true);
-    setPlayerTime(0);
-    setPlayerDur(0);
     clearInterval(playerTimerRef.current);
     playerTimerRef.current=setInterval(()=>{ if(a&&!a.paused&&!forcedDur) setPlayerTime(a.currentTime); },250);
   };
   const togglePlay=()=>{
+    if(waRef.current){ const w=waRef.current; if(w.playing){ const p=waPos(); waStop(); w.offset=p; w.playing=false; setPlayerPlaying(false); clearInterval(playerTimerRef.current); } else { waStartAt(w.offset>=w.dur-0.05?0:w.offset); } return; }
     if(!audioRef.current) return;
     if(audioRef.current.paused){ audioRef.current.play(); setPlayerPlaying(true); playerTimerRef.current=setInterval(()=>setPlayerTime(audioRef.current.currentTime),250); }
     else{ audioRef.current.pause(); setPlayerPlaying(false); clearInterval(playerTimerRef.current); }
   };
-  const seekTo=(v)=>{ if(audioRef.current){ audioRef.current.currentTime=v; setPlayerTime(v); } };
-  const setVol=(v)=>{ setPlayerVol(v); if(audioRef.current) audioRef.current.volume=v; };
-  const closePlayer=()=>{ if(audioRef.current){ audioRef.current.pause(); audioRef.current=null; } clearInterval(playerTimerRef.current); setPlayerFile(null); setPlayerPlaying(false); setPlayerTime(0); };
+  const seekTo=(v)=>{
+    if(waRef.current){ const w=waRef.current; const wasPlaying=w.playing; waStop(); w.offset=Math.max(0,Math.min(v,w.dur)); w.playing=false; setPlayerTime(w.offset); if(wasPlaying) waStartAt(w.offset); return; }
+    if(audioRef.current){ audioRef.current.currentTime=v; setPlayerTime(v); }
+  };
+  const setVol=(v)=>{ setPlayerVol(v); if(waRef.current) waRef.current.gain.gain.value=v; if(audioRef.current) audioRef.current.volume=v; };
+  const closePlayer=()=>{ stopAllPlayback(); setPlayerFile(null); setPlayerPlaying(false); setPlayerTime(0); setPlayerDur(0); };
 
   const closeFiles=useCallback(()=>{setFilesOpen(false);setPickCat(null);setLinkMode(false);},[]);
   useBackHandler(filesOpen,closeFiles);
