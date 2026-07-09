@@ -347,7 +347,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.238';
+const VERSION='0.239';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -898,13 +898,18 @@ async function sfuPdfToTallJpeg(arrayBuffer){
   return {blob:await sfuStackCanvases(canvases),pages:pdf.numPages};
 }
 async function sfuPptxToTallJpeg(file){
+  const G='https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@master/';
   await sfuLoadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.4/jquery.min.js');
-  await sfuLoadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js');
-  sfuLoadStyleOnce('https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@master/css/pptxjs.css');
-  await sfuLoadScriptOnce('https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@master/js/filereader.js');
-  await sfuLoadScriptOnce('https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@master/js/divsToSlides.min.js');
+  await sfuLoadScriptOnce(G+'js/jszip.min.js');
+  await sfuLoadScriptOnce(G+'js/filereader.js');
+  await sfuLoadScriptOnce(G+'js/d3.min.js');
+  await sfuLoadScriptOnce(G+'js/nv.d3.min.js');
+  sfuLoadStyleOnce(G+'css/pptxjs.css');
+  await sfuLoadScriptOnce(G+'js/pptxjs.min.js');
+  await sfuLoadScriptOnce(G+'js/divs2slides.min.js');
   await sfuLoadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
   const $=window.jQuery;
+  if(!$||!$.fn||!$.fn.pptxToHtml) throw new Error('pptxjs failed to initialize');
   const url=URL.createObjectURL(file);
   const holder=document.createElement('div');
   holder.id='sfuPptx'+Math.floor(performance.now());
