@@ -347,7 +347,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.239';
+const VERSION='0.240';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -828,7 +828,8 @@ function loadScript(src){return new Promise((res,rej)=>{if(document.querySelecto
    Setlist(), the runSetlistFilesUpdate handler, and the SFU feedback modal.
    ========================================================================== */
 const SFU_ENABLED=true;
-const SFU_PPTX=true; // best-effort in-browser .pptx -> jpeg (jQuery+PPTXjs+html2canvas)
+// PPTX is NOT converted in-browser (rendering quality was poor). Convert
+// PowerPoint to PDF on the PC first with tools/pptx2pdf.py, then run this.
 const _sfuLoaded={};
 function sfuLoadScriptOnce(src){return _sfuLoaded[src]||(_sfuLoaded[src]=new Promise((res,rej)=>{const sc=document.createElement('script');sc.src=src;sc.onload=res;sc.onerror=()=>{delete _sfuLoaded[src];rej(new Error('load failed: '+src));};document.head.appendChild(sc);}));}
 function sfuLoadStyleOnce(href){if(_sfuLoaded[href])return;_sfuLoaded[href]=true;const l=document.createElement('link');l.rel='stylesheet';l.href=href;document.head.appendChild(l);}
@@ -897,36 +898,6 @@ async function sfuPdfToTallJpeg(arrayBuffer){
   }
   return {blob:await sfuStackCanvases(canvases),pages:pdf.numPages};
 }
-async function sfuPptxToTallJpeg(file){
-  const G='https://cdn.jsdelivr.net/gh/meshesha/PPTXjs@master/';
-  await sfuLoadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.4/jquery.min.js');
-  await sfuLoadScriptOnce(G+'js/jszip.min.js');
-  await sfuLoadScriptOnce(G+'js/filereader.js');
-  await sfuLoadScriptOnce(G+'js/d3.min.js');
-  await sfuLoadScriptOnce(G+'js/nv.d3.min.js');
-  sfuLoadStyleOnce(G+'css/pptxjs.css');
-  await sfuLoadScriptOnce(G+'js/pptxjs.min.js');
-  await sfuLoadScriptOnce(G+'js/divs2slides.min.js');
-  await sfuLoadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
-  const $=window.jQuery;
-  if(!$||!$.fn||!$.fn.pptxToHtml) throw new Error('pptxjs failed to initialize');
-  const url=URL.createObjectURL(file);
-  const holder=document.createElement('div');
-  holder.id='sfuPptx'+Math.floor(performance.now());
-  holder.style.cssText='position:fixed;left:-99999px;top:0;width:1024px;background:#fff;';
-  document.body.appendChild(holder);
-  try{
-    $('#'+holder.id).pptxToHtml({pptxFileUrl:url,slidesScale:'100%',slideMode:false,keyBoardShortCut:false});
-    const ok=await sfuWaitFor(()=>holder.querySelectorAll('.slide').length>0,12000);
-    if(!ok) throw new Error('pptx render timeout');
-    await sfuDelay(700);
-    const slides=[...holder.querySelectorAll('.slide')];
-    const canvases=[];
-    for(const sl of slides){ const c=await window.html2canvas(sl,{scale:1.5,backgroundColor:'#ffffff',logging:false,useCORS:true}); canvases.push(c); }
-    if(!canvases.length) throw new Error('no slides rendered');
-    return {blob:await sfuStackCanvases(canvases),pages:canvases.length};
-  } finally { try{document.body.removeChild(holder);}catch(_){} URL.revokeObjectURL(url); }
-}
 // Returns {blob,ext,mime,type,note} or null (unsupported / skip)
 async function sfuFileToBlob(file){
   const name=file.name||'';
@@ -934,8 +905,7 @@ async function sfuFileToBlob(file){
   if(ext==='jpg'||ext==='jpeg') return {blob:file,ext:'jpg',mime:'image/jpeg',type:'image',note:''};
   if(['png','webp','gif','bmp'].includes(ext)){ const b=await sfuImageToJpeg(file); return {blob:b,ext:'jpg',mime:'image/jpeg',type:'image',note:ext+'→jpg'}; }
   if(ext==='pdf'){ const r=await sfuPdfToTallJpeg(await file.arrayBuffer()); return {blob:r.blob,ext:'jpg',mime:'image/jpeg',type:'image',note:'pdf→jpg '+r.pages+'p'}; }
-  if(ext==='pptx'){ if(!SFU_PPTX) return null; const r=await sfuPptxToTallJpeg(file); return {blob:r.blob,ext:'jpg',mime:'image/jpeg',type:'image',note:'pptx→jpg '+r.pages+'p (best-effort)'}; }
-  if(ext==='ppt') return null;
+  if(ext==='ppt'||ext==='pptx') return null; // convert to PDF first (tools/pptx2pdf.py)
   if(['mp3','wav','m4a','ogg','webm','aac','flac','aif','aiff'].includes(ext)) return {blob:file,ext,mime:file.type||'audio/mpeg',type:'audio',note:''};
   return null;
 }
@@ -1757,7 +1727,7 @@ function Setlist({state,update,goSongId,clearGoSong,showId,pickShow}){
         const f=byCat[cat];
         try{
           const conv=await sfuFileToBlob(f);
-          if(!conv){ skipped++; push({t:'skipfile',song:song.title,file:f.name,m:'unsupported (e.g. .ppt) — export to PDF'}); continue; }
+          if(!conv){ skipped++; push({t:'skipfile',song:song.title,file:f.name,m:/\.pptx?$/i.test(f.name)?'PowerPoint — convert to PDF first (tools/pptx2pdf.py)':'unsupported file type'}); continue; }
           const so=state.songs.find(x=>x.id===song.id);
           const inCat=(so.files||[]).filter(x=>(x.cat==='original'?'other':x.cat||'other')===cat);
           if(inCat.some(x=>x.size===conv.blob.size)){ skipped++; push({t:'same',song:song.title,file:f.name,cat,m:catLabel(cat)+' unchanged (same size) — kept'}); continue; }
