@@ -264,10 +264,19 @@
   .stem-scrub input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--ok);cursor:pointer;box-shadow:0 0 4px rgba(0,0,0,.4)}
   .stem-time{font-family:var(--mono);font-size:11px;color:var(--muted);min-width:38px;text-align:center}
   .stem-btns{display:flex;gap:8px}
-  .stem-btns button{flex:1;height:42px;border-radius:10px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);font-family:var(--display);font-size:12px;font-weight:700;letter-spacing:.06em;cursor:pointer}
+  .stem-btns>span{flex:1;display:flex;position:relative}
+  .stem-btns>span>button{flex:1}
+  .stem-btns button{flex:1;min-width:0;height:42px;padding:0 6px;border-radius:10px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);font-family:var(--display);font-size:12px;font-weight:700;letter-spacing:.04em;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stem-btns button:disabled{opacity:.5}
   .stem-btns button.stem-play{background:var(--ok);border-color:var(--ok);color:#fff}
   .stem-btns button.stem-cfg-btn{background:none;color:var(--muted)}
   .stem-btns button.stem-cfg-btn.open{background:var(--muted-2);color:#15141B;border-color:var(--muted-2)}
+  .stem-btns button.sb-files{background:var(--surface-3);color:var(--text)}
+  .stem-btns button.sb-zoom{background:var(--keys);border-color:var(--keys);color:#fff}
+  .stem-btns button.sb-zoom.on{background:var(--muted-2);border-color:var(--muted-2);color:#15141B}
+  .stem-btns button.sb-rec{background:var(--drums);border-color:var(--drums);color:#fff}
+  .stem-btns button.sb-share{background:#2DD4BF;border-color:#2DD4BF;color:#000}
+  .stem-btns button.sb-send{background:var(--ok);border-color:var(--ok);color:#000}
   .stem-channels{position:absolute;left:0;right:0;bottom:100%;display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:46vh;overflow-y:auto;padding:10px 14px;background:rgba(21,20,27,.92);backdrop-filter:blur(3px);border-top:1px solid var(--line-2);opacity:.75}
   .stem-ch{background:var(--surface);border:1px solid var(--line-2);border-radius:10px;padding:6px 8px;position:relative;overflow:hidden}
   .stem-ch::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--line-2);transition:background .15s}
@@ -347,7 +356,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.244';
+const VERSION='0.245';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -2019,6 +2028,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [zoomMsg,setZoomMsg]=useState('');
   const [zoomMenu,setZoomMenu]=useState(false);
   const [zoomIdx,setZoomIdx]=useState(-1);
+  const [viewIdx,setViewIdx]=useState(0);
   const [stemPlaying,setStemPlaying]=useState(false);
   const [stemTime,setStemTime]=useState(0);
   const [stemDur,setStemDur]=useState(0);
@@ -2140,7 +2150,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       try{const saved=JSON.parse(localStorage.getItem(stemStorageKey));if(saved&&saved.length)return stemDefaultChans().map(d=>{const sv=saved.find(x=>x.id===d.id);return sv?{...d,vol:sv.vol,muted:sv.muted,soloed:sv.soloed,custom:!!sv.custom}:d;});}catch(_){}
       return stemDefaultChans();
     });
-    setStemDur(0);setStemTime(0);setStemCfg(false);setZoomIdx(-1);setStemOpen(true);
+    setStemDur(0);setStemTime(0);setStemCfg(false);setZoomIdx(-1);setViewIdx(0);setStemOpen(true);
     const files=s.files||[];
     STEM_CATS.forEach(cat=>{
       const af=files.filter(f=>(f.cat==='original'?'other':f.cat||'other')===cat.id&&f.type==='audio');
@@ -2160,7 +2170,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       try{const saved=JSON.parse(localStorage.getItem(stemRecStorageKey));if(saved&&saved.length)return stemRecDefaultChans().map(d=>{const sv=saved.find(x=>x.id===d.id);return sv?{...d,vol:sv.vol,muted:sv.muted,soloed:sv.soloed,custom:!!sv.custom}:d;});}catch(_){}
       return stemRecDefaultChans();
     });
-    setStemDur(0);setStemTime(0);setStemCfg(false);setZoomIdx(-1);setStemOpen(true);
+    setStemDur(0);setStemTime(0);setStemCfg(false);setZoomIdx(-1);setViewIdx(0);setStemOpen(true);
     stemLoadUrl('mystem',recFile.url,recFile.name);
     const files=s.files||[];
     const otherCats=STEM_CATS.filter(c=>!MY_INSTRS.includes(c.id)&&c.id!=='metronome');
@@ -2296,6 +2306,21 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     setZoomMsg(devLabel+' zoom plan cleared');
     clearTimeout(window.__zoomMsgT);window.__zoomMsgT=setTimeout(()=>setZoomMsg(''),1800);
   };
+
+  // Practice view files: the slide first, then any viewable (image/pdf) files
+  // in the user's own instrument sections. The Files button cycles through them.
+  const _catOf=f=>(f.cat==='original'?'other':f.cat||'other');
+  const _isImgF=f=>/\.(jpe?g|png|webp|gif|bmp|svg)$/i.test(f.name||'');
+  const _isPdfF=f=>f.type==='pdf'||/\.pdf$/i.test(f.name||'');
+  const _secLabel={slide:'Slide',vocals:'Vocals',drums:'Drums',bass:'Bass',guitar:'Guitar',keys:'Keys',other:'Other'};
+  const viewFiles=[];
+  ['slide',...MY_INSTRS.filter(x=>x!=='metronome')].forEach(sec=>{
+    const fs=(s.files||[]).filter(f=>f.url&&_catOf(f)===sec&&(_isImgF(f)||_isPdfF(f)));
+    fs.sort((a,b)=>(_isImgF(a)?0:1)-(_isImgF(b)?0:1)); // images before PDFs
+    fs.forEach(f=>viewFiles.push({sec,label:_secLabel[sec]||sec,file:f}));
+  });
+  const curView=viewFiles.length?viewFiles[Math.min(viewIdx,viewFiles.length-1)]:null;
+  const toggleView=()=>{ if(viewFiles.length>1) setViewIdx(i=>(i+1)%viewFiles.length); };
 
   const [stemRecPrompt,setStemRecPrompt]=useState(false);
   const [stemRecHp,setStemRecHp]=useState(()=>{try{return localStorage.getItem('sc_rec_hp')==='1';}catch(_){return false;}});
@@ -3130,13 +3155,11 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       {stemOpen && <div className="practice-full" style={{bottom:stemBarH}}>
         {zoomMsg && <div style={{position:'absolute',top:10,left:'50%',transform:'translateX(-50%)',zIndex:6,background:'rgba(21,20,27,.9)',border:'1px solid var(--line-2)',borderRadius:20,padding:'5px 14px',fontSize:12,fontFamily:'var(--mono)',color:'var(--keys)'}}>{zoomMsg}</div>}
         <SlideViewer autoOn={zoomAutoOn} navMode={zoomSorted.length>0} applyRef={zoomApplyRef} captureRef={viewCapRef} onTap={zoomTap}>
-          {(()=>{const slides=(s.files||[]).filter(f=>(f.cat==='slide')&&f.url);
-            if(!slides.length) return <div className="practice-no-slide">No slide uploaded</div>;
-            const isImg=f=>/\.(jpe?g|png|webp|gif|bmp|svg)$/i.test(f.name||'');
-            const isPdf=f=>f.type==='pdf'||/\.pdf$/i.test(f.name||'');
-            const slideFile=slides.find(isImg)||slides.find(isPdf)||slides[0];
-            if(isPdf(slideFile)){const mob=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);const src=mob?'https://docs.google.com/gview?embedded=true&url='+encodeURIComponent(slideFile.url):slideFile.url+'#toolbar=0';return <iframe src={src} title="Slide"/>;}
-            return <img src={slideFile.url} alt={slideFile.name||'Slide'}/>;
+          {(()=>{
+            if(!curView) return <div className="practice-no-slide">No slide or files</div>;
+            const vf=curView.file;
+            if(_isPdfF(vf)){const mob=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);const src=mob?'https://docs.google.com/gview?embedded=true&url='+encodeURIComponent(vf.url):vf.url+'#toolbar=0';return <iframe src={src} title={curView.label}/>;}
+            return <img src={vf.url} alt={vf.name||curView.label}/>;
           })()}
         </SlideViewer>
       </div>}
@@ -3184,19 +3207,20 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           <div className="stem-btns">
             <button className="stem-play" style={{fontSize:15,lineHeight:1}} onClick={stemPlaying?stemPause:stemPlay} disabled={!stemDur} title={stemPlaying?'Pause':'Play'}>{stemPlaying?'⏸':'▶'}</button>
             <button style={{fontSize:15,lineHeight:1}} onClick={stemStop} disabled={!stemDur} title="Stop — reset to start">⏹</button>
-            {!stemRecPlayback && <span style={{position:'relative',display:'inline-flex'}}>
+            {!stemRecPlayback && <button className="sb-files" onClick={toggleView} disabled={viewFiles.length<2} title="Switch the shown file (slide / my instruments)">{curView?curView.label:'Files'}{viewFiles.length>1?' '+(Math.min(viewIdx,viewFiles.length-1)+1)+'/'+viewFiles.length:''}</button>}
+            {!stemRecPlayback && <span>
               {zoomMenu && <div style={{position:'absolute',bottom:'100%',left:0,marginBottom:6,display:'flex',flexDirection:'column',gap:4,zIndex:70}}>
-                <button style={{background:'var(--keys)',color:'#fff',border:'none',borderRadius:8,padding:'7px 14px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:92}} onClick={()=>{captureZoom();setZoomMenu(false);}}>Set</button>
-                <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'7px 14px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:92}} onClick={()=>{resetZoom();setZoomMenu(false);}}>Clear</button>
-                <button style={{background:'var(--surface-2)',color:'var(--text)',border:'1px solid var(--line-2)',borderRadius:8,padding:'7px 14px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:92}} onClick={()=>setZoomMenu(false)}>Cancel</button>
+                <button style={{background:'var(--keys)',color:'#fff',border:'none',borderRadius:8,padding:'7px 14px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:92,height:'auto'}} onClick={()=>{captureZoom();setZoomMenu(false);}}>Set</button>
+                <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'7px 14px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:92,height:'auto'}} onClick={()=>{resetZoom();setZoomMenu(false);}}>Clear</button>
+                <button style={{background:'var(--surface-2)',color:'var(--text)',border:'1px solid var(--line-2)',borderRadius:8,padding:'7px 14px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:92,height:'auto'}} onClick={()=>setZoomMenu(false)}>Cancel</button>
               </div>}
-              <button style={{background:zoomMenu?'var(--muted-2)':'var(--keys)',color:zoomMenu?'#15141B':'#fff',border:'none',borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>setZoomMenu(v=>!v)} disabled={!stemDur} title={'Zoom/pan plan ('+devLabel+') — tap slide right = next, left = previous'}>⛶ {zoomSorted.length?((zoomIdx>=0?zoomIdx+1:0)+'/'+zoomSorted.length):'Zoom'}</button>
+              <button className={'sb-zoom'+(zoomMenu?' on':'')} onClick={()=>setZoomMenu(v=>!v)} disabled={!stemDur} title={'Zoom/pan plan ('+devLabel+') — tap slide right = next, left = previous'}>⛶ {zoomSorted.length?((zoomIdx>=0?zoomIdx+1:0)+'/'+zoomSorted.length):'Zoom'}</button>
             </span>}
             {!stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>CONFIG</button>}
-            {!stemRecPlayback && <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'4px 10px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap'}} onClick={()=>{setStemRecPrompt(true);prefetchBackingStems();}} disabled={!!stemRecState}>🎙 StemRec</button>}
+            {!stemRecPlayback && <button className="sb-rec" onClick={()=>{setStemRecPrompt(true);prefetchBackingStems();}} disabled={!!stemRecState}>🎙 Rec</button>}
             {stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>CONFIG</button>}
-            {stemRecPlayback && !stemShareReady && <button style={{background:'#2DD4BF',color:'#000',border:'none',borderRadius:8,padding:'4px 12px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',opacity:stemShareBusy?0.6:1}} onClick={stemShareMix} disabled={stemShareBusy}>{stemShareBusy?'Mixing…':'📤 Share'}</button>}
-            {stemRecPlayback && stemShareReady && <button style={{background:'var(--ok)',color:'#000',border:'none',borderRadius:8,padding:'4px 12px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',animation:'pulse 1s infinite'}} onClick={stemShareSend}>📤 Send</button>}
+            {stemRecPlayback && !stemShareReady && <button className="sb-share" onClick={stemShareMix} disabled={stemShareBusy}>{stemShareBusy?'Mixing…':'📤 Share'}</button>}
+            {stemRecPlayback && stemShareReady && <button className="sb-send" style={{animation:'pulse 1s infinite'}} onClick={stemShareSend}>📤 Send</button>}
           </div>
         </div>
       </div>}
