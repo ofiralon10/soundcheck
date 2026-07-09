@@ -347,7 +347,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.242';
+const VERSION='0.243';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -2778,20 +2778,36 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const playerTimerRef=useRef(null);
   const openPlayer=(f)=>{
     if(audioRef.current){ audioRef.current.pause(); clearInterval(playerTimerRef.current); }
-    const a=new Audio(f.url);
+    const a=new Audio();
+    a.preload='auto';
     a.volume=playerVol;
-    a.onloadedmetadata=()=>setPlayerDur(isFinite(a.duration)?a.duration:0);
-    a.ondurationchange=()=>{if(isFinite(a.duration)) setPlayerDur(a.duration);};
-    a.onended=()=>{ setPlayerPlaying(false); setPlayerTime(a.duration||0); clearInterval(playerTimerRef.current); };
+    // MediaRecorder blobs (band/stem recordings) report duration=Infinity until
+    // seeked to the end. Force the browser to compute it, THEN start from 0 —
+    // seeking while playing can blip or fire 'ended' prematurely.
+    let forcedDur=false,started=false;
+    const startPlay=()=>{ if(started)return; started=true; a.play().catch(()=>setFileMsg('Playback failed.')); };
+    a.onloadedmetadata=()=>{
+      if(isFinite(a.duration)&&a.duration>0){ setPlayerDur(a.duration); startPlay(); }
+      else if(!forcedDur){ forcedDur=true; try{ a.currentTime=1e101; }catch(_){ startPlay(); } }
+    };
+    a.ondurationchange=()=>{
+      if(isFinite(a.duration)&&a.duration>0){
+        setPlayerDur(a.duration);
+        if(forcedDur){ forcedDur=false; try{ a.currentTime=0; }catch(_){} setPlayerTime(0); startPlay(); }
+      }
+    };
+    a.onended=()=>{ if(forcedDur)return; setPlayerPlaying(false); setPlayerTime(a.duration||0); clearInterval(playerTimerRef.current); };
     a.onerror=()=>{ setPlayerFile(null); setPlayerPlaying(false); clearInterval(playerTimerRef.current); setFileMsg('Could not play this file.'); };
-    a.play().catch(()=>setFileMsg('Playback failed.'));
+    a.src=f.url;
+    // Safety: if duration never resolves, start anyway so playback isn't stuck.
+    setTimeout(()=>{ if(started)return; if(forcedDur){ forcedDur=false; try{ a.currentTime=0; }catch(_){} setPlayerTime(0); } startPlay(); },2500);
     audioRef.current=a;
     setPlayerFile(f);
     setPlayerPlaying(true);
     setPlayerTime(0);
     setPlayerDur(0);
     clearInterval(playerTimerRef.current);
-    playerTimerRef.current=setInterval(()=>{ if(a&&!a.paused) setPlayerTime(a.currentTime); },250);
+    playerTimerRef.current=setInterval(()=>{ if(a&&!a.paused&&!forcedDur) setPlayerTime(a.currentTime); },250);
   };
   const togglePlay=()=>{
     if(!audioRef.current) return;
