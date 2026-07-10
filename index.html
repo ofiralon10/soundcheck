@@ -267,7 +267,7 @@
   .stem-btns>span{flex:1;display:flex;position:relative}
   .stem-btns>span>button{flex:1}
   /* narrow phones: wrap to rows of three so labels stay readable */
-  @media(max-width:640px){ .stem-btns>button,.stem-btns>span{flex:1 1 calc(33.333% - 6px)} }
+  @media(max-width:640px){ .stem-btns>button,.stem-btns>span{flex:0 0 calc(33.333% - 6px)} }
   .stem-btns button{flex:1;min-width:0;height:42px;padding:0 6px;border-radius:10px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);font-family:var(--display);font-size:12px;font-weight:700;letter-spacing:.04em;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .stem-btns button:disabled{opacity:.5}
   .stem-btns button.stem-play{background:var(--ok);border-color:var(--ok);color:#fff}
@@ -279,7 +279,7 @@
   .stem-btns button.sb-rec{background:var(--drums);border-color:var(--drums);color:#fff}
   .stem-btns button.sb-share{background:#2DD4BF;border-color:#2DD4BF;color:#000}
   .stem-btns button.sb-send{background:var(--ok);border-color:var(--ok);color:#000}
-  .stem-channels{position:absolute;left:0;right:0;bottom:100%;display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:46vh;overflow-y:auto;padding:10px 14px;background:rgba(21,20,27,.92);backdrop-filter:blur(3px);border-top:1px solid var(--line-2);opacity:.75}
+  .stem-channels{position:absolute;left:0;right:0;bottom:100%;display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:46vh;overflow-y:auto;padding:10px 14px;background:var(--surface);border-top:1px solid var(--line-2)}
   .stem-ch{background:var(--surface);border:1px solid var(--line-2);border-radius:10px;padding:6px 8px;position:relative;overflow:hidden}
   .stem-ch::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--line-2);transition:background .15s}
   .stem-ch.loaded::before{background:var(--ok)}
@@ -358,7 +358,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.247';
+const VERSION='0.248';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -2262,6 +2262,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   };
   const stemSetMode=(id,mode)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,muted:mode==='mute'?!c.muted:false,soloed:mode==='solo'?!c.soloed:false,custom:mode==='custom'?!c.custom:false}:c);stemApplyMix(n);return n;});};
   const stemSetVol=(id,v)=>{setStemChans(prev=>{const n=prev.map(c=>c.id===id?{...c,vol:v}:c);stemApplyMix(n);return n;});};
+  const resetChans=()=>{ const d=stemRecPlayback?stemRecDefaultChans():stemDefaultChans(); setStemChans(prev=>{const n=prev.map(c=>{const dv=d.find(x=>x.id===c.id);return dv?{...c,vol:dv.vol,muted:dv.muted,soloed:dv.soloed,custom:false}:c;});stemApplyMix(n);return n;}); };
   useEffect(()=>{stemChansRef.current=stemChans;stemApplyMix(stemChans);if(!stemRecPreMixRef.current){try{localStorage.setItem(stemRecPlayback?stemRecStorageKey:stemStorageKey,JSON.stringify(stemChans.map(c=>({id:c.id,vol:c.vol,muted:c.muted,soloed:c.soloed,custom:c.custom}))));}catch(_){}}},[stemChans]);
   // Measure the playback bar so the slide fills exactly the area above it.
   // The CONFIG channel panel is an absolute overlay, so it isn't counted.
@@ -3180,10 +3181,10 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         <div className="stem-title-bar">
           <span className="stitle">{s.title}{stemRecPlayback?' — StemRec Player':''}</span>
           <button className="btn ghost sm" style={{fontSize:13,padding:'4px 12px',marginLeft:8}} onClick={()=>{closeStemPlayer();setFilesOpen(true);}}>Files</button>
-          <button className="btn ghost sm" style={{fontSize:13,padding:'4px 12px',marginLeft:8}} onClick={()=>{const d=stemRecPlayback?stemRecDefaultChans():stemDefaultChans();setStemChans(prev=>{const n=prev.map(c=>{const dv=d.find(x=>x.id===c.id);return dv?{...c,vol:dv.vol,muted:dv.muted,soloed:dv.soloed,custom:false}:c;});stemApplyMix(n);return n;});}}>Reset</button>
           <button className="btn ghost sm" style={{fontSize:13,padding:'4px 12px',marginLeft:8}} onClick={closeStemPlayer}>Close</button>
         </div>
         {stemCfg && <div className="stem-channels">
+          <button className="btn ghost sm" style={{gridColumn:'1/-1',fontSize:12,padding:'7px'}} onClick={resetChans}>↺ Reset channels</button>
           {stemChans.map(ch=>{
             const instrId=ch.id==='other'||ch.id==='metronome'?null:ch.id;
             const isMetNoFile=ch.id==='metronome'&&!ch.loaded;
