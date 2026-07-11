@@ -358,7 +358,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.250';
+const VERSION='0.251';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -2355,6 +2355,10 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const stemRecSyncMethodRef=useRef('');
   const [stemRecTaUi,setStemRecTaUi]=useState(null);
   const stemRecLiveRef=useRef(null);
+  const [stemRecLevel,setStemRecLevel]=useState(0);
+  const stemRecAnalyserRef=useRef(null);
+  const stemRecMeterRef=useRef(null);
+  const stemRecMeterStop=()=>{ clearInterval(stemRecMeterRef.current); stemRecMeterRef.current=null; stemRecAnalyserRef.current=null; setStemRecLevel(0); };
   const stemRecRestoreMix=()=>{
     const pm=stemRecPreMixRef.current;
     if(!pm)return;
@@ -2409,6 +2413,12 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       lim.threshold.value=-2;lim.knee.value=0;lim.ratio.value=20;lim.attack.value=0.001;lim.release.value=0.1;
       const dest=actx.createMediaStreamDestination();
       src.connect(hp);hp.connect(gain);gain.connect(comp);comp.connect(lim);lim.connect(dest);
+      // Mic level meter (taps the processed mic signal)
+      const analyser=actx.createAnalyser(); analyser.fftSize=512; comp.connect(analyser);
+      stemRecAnalyserRef.current=analyser;
+      const _mbuf=new Uint8Array(analyser.fftSize);
+      clearInterval(stemRecMeterRef.current);
+      stemRecMeterRef.current=setInterval(()=>{ const a=stemRecAnalyserRef.current; if(!a)return; a.getByteTimeDomainData(_mbuf); let peak=0; for(let i=0;i<_mbuf.length;i++){const v=Math.abs(_mbuf[i]-128); if(v>peak)peak=v;} setStemRecLevel(Math.min(1,peak/128)); },60);
       prefetchBackingStems();
       const backing=(await Promise.all(backingStemFiles().map(({cat,url})=>
         Promise.resolve(stemRecBufCacheRef.current[url]).then(buf=>buf?{cat,buf}:null).catch(()=>null)
@@ -2492,6 +2502,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       mr.onstart=()=>{recCap0=performance.now();};
       mr.onstop=async()=>{
         stream.getTracks().forEach(t=>t.stop());
+        stemRecMeterStop();
         try{sp.disconnect();spMute.disconnect();}catch(_){}
         try{out.pause();out.src='';}catch(_){}
         URL.revokeObjectURL(outUrl);
@@ -2540,6 +2551,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     }catch(e){
       if(stream)stream.getTracks().forEach(t=>t.stop());
       if(actx)actx.close().catch(()=>{});
+      stemRecMeterStop();
       setStemRecState(null);
       setFileMsg(e&&e.message==='no-backing'?'Could not load backing stems — check the stem files and network.':'Microphone not available — check browser permissions.');
       stemRecRestoreMix();
@@ -2578,6 +2590,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       setFileMsg('Could not start recording.');
       try{r.stream.getTracks().forEach(t=>t.stop());}catch(_){}
       try{r.actx.close();}catch(_){}
+      stemRecMeterStop();
       setStemRecState(null);
       stemRecRestoreMix();
     }
@@ -2589,6 +2602,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     try{r.actx.close();}catch(_){}
     try{r.out.pause();r.out.src='';}catch(_){}
     URL.revokeObjectURL(r.outUrl);
+    stemRecMeterStop();
     setStemRecState(null);
     stemRecRestoreMix();
   };
@@ -3282,6 +3296,12 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             {stemRecTaUi.dv!=null?' ~'+Math.round(stemRecTaUi.dv*1000)+'ms':''}
           </span>}
           <button className="btn" style={{background:'var(--drums)'}} onClick={stopStemRec}>Stop</button>
+        </div>
+        <div style={{marginTop:12,display:'flex',alignItems:'center',gap:10}}>
+          <span style={{fontSize:11,color:'var(--muted)',fontFamily:'var(--mono)',flexShrink:0}}>MIC</span>
+          <div style={{flex:1,height:14,borderRadius:7,background:'var(--surface-3)',overflow:'hidden'}}>
+            <div style={{height:'100%',width:Math.round(stemRecLevel*100)+'%',background:stemRecLevel>0.92?'var(--drums)':stemRecLevel>0.6?'var(--warn)':'var(--ok)',transition:'width .06s linear'}}/>
+          </div>
         </div>
       </div>}
       {stemRecConfirm && <div className="rec-confirm">
