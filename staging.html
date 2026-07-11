@@ -358,7 +358,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.248';
+const VERSION='0.249';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -2163,7 +2163,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     setStemDur(0);setStemTime(0);setStemCfg(false);setZoomIdx(-1);setViewIdx(0);setStemOpen(true);
     const files=s.files||[];
     STEM_CATS.forEach(cat=>{
-      const af=files.filter(f=>(f.cat==='original'?'other':f.cat||'other')===cat.id&&f.type==='audio');
+      const af=files.filter(f=>f.stem&&(f.cat==='original'?'other':f.cat||'other')===cat.id&&f.type==='audio');
       if(af.length>0) stemLoadUrl(cat.id,af[0].url,af[0].name);
     });
   };
@@ -2185,7 +2185,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     const files=s.files||[];
     const otherCats=STEM_CATS.filter(c=>!MY_INSTRS.includes(c.id)&&c.id!=='metronome');
     otherCats.forEach(cat=>{
-      const af=files.filter(f=>(f.cat==='original'?'other':f.cat||'other')===cat.id&&f.type==='audio');
+      const af=files.filter(f=>f.stem&&(f.cat==='original'?'other':f.cat||'other')===cat.id&&f.type==='audio');
       if(af.length>0) stemLoadUrl(cat.id,af[0].url,'backing stems','backing');
     });
   };
@@ -2365,7 +2365,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     const files=s.files||[];
     return STEM_CATS.map(cat=>{
       if(MY_INSTRS.includes(cat.id))return null;
-      const af=files.filter(f=>(f.cat==='original'?'other':f.cat||'other')===cat.id&&f.type==='audio');
+      const af=files.filter(f=>f.stem&&(f.cat==='original'?'other':f.cat||'other')===cat.id&&f.type==='audio');
       return af.length?{cat:cat.id,url:af[0].url}:null;
     }).filter(Boolean);
   };
