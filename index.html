@@ -358,7 +358,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.249';
+const VERSION='0.250';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -2303,6 +2303,9 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const toggleView=()=>{ if(viewFiles.length>1){ lastAutoIdxRef.current=-2; setZoomIdx(-1); setViewIdx(i=>(i+1)%viewFiles.length); } };
   // Apply the current position's view whenever the index, file, or player changes.
   useEffect(()=>{ if(!stemOpen)return; const kf=(zoomIdx>=0&&zoomIdx<zoomSorted.length)?zoomSorted[zoomIdx]:null; if(zoomApplyRef.current)zoomApplyRef.current(viewOf(kf),true); },[zoomIdx,stemOpen,viewIdx]);
+  // On opening / switching to a file that has positions (and not playing), start
+  // on its first position instead of the full view.
+  useEffect(()=>{ if(stemOpen&&!stemPlaying&&zoomSorted.length>0&&zoomIdx<0) setZoomIdx(0); },[stemOpen,viewIdx,zoomSorted.length]);
   // During playback, drive the index from time — but only on an actual
   // keyframe crossing, so a manual tap in between isn't instantly reverted.
   useEffect(()=>{ if(!stemPlaying||zoomSorted.length===0)return; let idx=-1;for(let i=0;i<zoomSorted.length;i++){if(zoomSorted[i].t<=stemTime+0.02)idx=i;else break;} if(idx!==lastAutoIdxRef.current){lastAutoIdxRef.current=idx;setZoomIdx(idx);} },[stemTime,stemPlaying]);
