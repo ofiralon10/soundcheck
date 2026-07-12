@@ -367,7 +367,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.254';
+const VERSION='0.255';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -3363,7 +3363,7 @@ function SongForm({onSave,onCancel}){
 function FocusTags({songs,learn,practice,onGoSong}){
   const row=(ids,color,label)=> ids && ids.length? (
     <div className="focus-tags" style={{marginTop:8}}>
-      <span className="ftag" style={{borderColor:color,color,background:'transparent'}}>{label}</span>
+      <span className="ftag" style={{borderColor:color,color:'#15141B',background:color,fontWeight:700}}>{label}</span>
       {ids.map(id=>{ const n=focusName(id,songs); return n?<span className="ftag" key={id} dir="auto" style={onGoSong?{cursor:'pointer'}:null} onClick={onGoSong?()=>onGoSong(id):undefined}>{n}</span>:null;})}
     </div>
   ):null;
