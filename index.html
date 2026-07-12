@@ -180,7 +180,13 @@
   .guest-edit .status-pills{margin-top:9px}
   .xbtn{width:36px;height:40px;border-radius:9px;border:1px solid var(--line);color:var(--muted);flex-shrink:0;font-size:18px}
   .addguest{margin-top:11px;font-size:12.5px;color:var(--guest);background:rgba(201,166,255,.08);border:1px dashed rgba(201,166,255,.4);border-radius:9px;padding:10px;width:100%}
+  .fileblock{position:relative}
   .fileitem{display:flex;align-items:center;gap:9px;padding:9px 0;border-top:1px solid var(--line)}
+  .file-open{flex:1;min-width:0;display:flex;align-items:center;gap:9px;background:none;border:none;color:var(--text);text-align:left;cursor:pointer;padding:0;font:inherit}
+  .fbtn.kebab{font-size:18px;line-height:1;padding:2px 10px;color:var(--muted);letter-spacing:0}
+  .file-menu{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 10px;justify-content:flex-end;align-items:center}
+  .file-menu button{font-size:12px;color:var(--text);background:var(--surface-2);border:1px solid var(--line);border-radius:7px;padding:7px 13px;cursor:pointer}
+  .file-menu button.danger{color:var(--drums);border-color:rgba(242,84,91,.4)}
   .ftype{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.02em;color:#15141B;padding:5px 0;border-radius:6px;flex-shrink:0;width:38px;text-align:center}
   .fver{font-family:var(--mono);font-size:9px;font-weight:700;color:var(--muted);flex-shrink:0;letter-spacing:.02em}
   .fname{flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -361,7 +367,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.253';
+const VERSION='0.254';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -2020,6 +2026,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [cropSrc,setCropSrc]=useState(null);
   const [busy,setBusy]=useState('');
   const [confirmDel,setConfirmDel]=useState(null);
+  const [fileMenu,setFileMenu]=useState(null);
   const [confirmRemove,setConfirmRemove]=useState(false);
   const [renameId,setRenameId]=useState(null);
   const [renameTxt,setRenameTxt]=useState('');
@@ -2785,6 +2792,59 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const removeFile=(f)=>{ if(f.kind==='upload'&&f.path) deleteStoragePath(f.path); update(st=>{const so=st.songs.find(x=>x.id===s.id);so.files=so.files.filter(x=>x.id!==f.id);logAct(st,'removed "'+f.name+'" from "'+so.title+'"');return st;}); };
   const renameFile=(fid,newName)=>{ if(!newName.trim()) return; update(st=>{const so=st.songs.find(x=>x.id===s.id);const f=so.files.find(x=>x.id===fid);if(f) f.name=newName.trim();return st;}); setRenameId(null); };
   const downloadFile=(f)=>{ const a=document.createElement('a'); a.href=f.url; a.download=f.name||'file'; a.target='_blank'; a.rel='noopener'; document.body.appendChild(a); a.click(); a.remove(); };
+  const shareFile=async(f)=>{
+    if(!f.url){ setFileMsg('Nothing to share'); return; }
+    try{
+      if(f.kind==='upload'){
+        try{
+          const blob=await fetch(f.url).then(r=>{if(!r.ok)throw new Error('fetch');return r.blob();});
+          const file=new File([blob],f.name||'file',{type:blob.type||'application/octet-stream'});
+          if(navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({title:f.name||'file',files:[file]}); return; }
+        }catch(_){}
+      }
+      if(navigator.share){ await navigator.share({title:f.name||'file',url:f.url}); return; }
+      try{ await navigator.clipboard.writeText(f.url); setFileMsg('Link copied to clipboard'); }
+      catch(_){ downloadFile(f); }
+    }catch(e){ if(e&&e.name==='AbortError')return; setFileMsg('Share failed'); }
+  };
+  // One file row: badges + name is the "open" area; ⋯ opens a Rename/Download/
+  // Share/Delete menu. onOpen(f) performs the open/play action for this section.
+  const fileRow=(f,onOpen)=>{
+    const playing=playerFile&&playerFile.id===f.id;
+    return (
+    <div className="fileblock" key={f.id}>
+      <div className="fileitem">
+        {renameId===f.id
+          ? <div style={{flex:1,display:'flex',gap:4,minWidth:0,alignItems:'center'}}>
+              <input className="inp" style={{flex:1,fontSize:12,padding:'4px 6px'}} value={renameTxt} onChange={e=>setRenameTxt(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter') renameFile(f.id,renameTxt);if(e.key==='Escape') setRenameId(null);}}/>
+              <button className="fbtn" onClick={()=>renameFile(f.id,renameTxt)}>OK</button>
+              <button className="fbtn" onClick={()=>setRenameId(null)}>✕</button>
+            </div>
+          : <React.Fragment>
+              <button className="file-open" onClick={()=>onOpen(f)} title="Open">
+                <span className="fver">v{String(f.ver||0).padStart(2,'0')}</span>
+                <span className="ftype" style={{background:KIND_COLOR[f.type]||'var(--muted)'}}>{badgeText(f)}</span>
+                <span className="fname" dir="auto">{playing?'▶ ':''}{f.name}{f.size?<span className="fsize"> · {fmtSize(f.size)}</span>:null}</span>
+              </button>
+              <button className="fbtn kebab" onClick={()=>{setFileMenu(fileMenu===f.id?null:f.id);setConfirmDel(null);}} aria-label="File options">⋯</button>
+            </React.Fragment>}
+      </div>
+      {fileMenu===f.id && renameId!==f.id && <div className="file-menu">
+        {confirmDel===f.id
+          ? <React.Fragment>
+              <span style={{alignSelf:'center',fontSize:12,color:'var(--muted)',marginRight:'auto'}}>Delete this file?</span>
+              <button className="danger" onClick={()=>{removeFile(f);setFileMenu(null);setConfirmDel(null);}}>Delete</button>
+              <button onClick={()=>setConfirmDel(null)}>Cancel</button>
+            </React.Fragment>
+          : <React.Fragment>
+              <button onClick={()=>{setRenameId(f.id);setRenameTxt(f.name||'');setFileMenu(null);}}>Rename</button>
+              {f.kind==='upload' && <button onClick={()=>{downloadFile(f);setFileMenu(null);}}>Download</button>}
+              <button onClick={()=>{shareFile(f);setFileMenu(null);}}>Share</button>
+              <button className="danger" onClick={()=>setConfirmDel(f.id)}>Delete</button>
+            </React.Fragment>}
+      </div>}
+    </div>);
+  };
   const autoName=(prefix)=>{ const d=new Date(); const dd=String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+String(d.getFullYear()).slice(-2); const files=s.files||[]; let maxN=0; files.forEach(f=>{ const m=(f.name||'').match(new RegExp(prefix+'-(\\d+)','i')); if(m) maxN=Math.max(maxN,parseInt(m[1],10)); }); return dd+' '+prefix+'-'+(maxN+1); };
   const pendingBlobRef=useRef(null);
   const pendingMimeRef=useRef('');
@@ -3036,31 +3096,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
                   <label className="fbtn" style={{cursor:'pointer',fontSize:11,opacity:busy==='file'?.5:1}}>+ Add<input type="file" hidden disabled={busy==='file'} onChange={e=>onUpload(e,cat.id)}/></label>
                 </div>
                 {catFiles.length===0 && <div className="files-na">N/A</div>}
-                {catFiles.map(f=>(
-                  <div className="fileitem" key={f.id}>
-                    <span className="fver">v{String(f.ver||0).padStart(2,'0')}</span><span className="ftype" style={{background:KIND_COLOR[f.type]||'var(--muted)'}}>{badgeText(f)}</span>
-                    {renameId===f.id
-                      ? <div style={{flex:1,display:'flex',gap:4,minWidth:0}}>
-                          <input className="inp" style={{flex:1,fontSize:12,padding:'4px 6px'}} value={renameTxt} onChange={e=>setRenameTxt(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter') renameFile(f.id,renameTxt);if(e.key==='Escape') setRenameId(null);}}/>
-                          <button className="fbtn" onClick={()=>renameFile(f.id,renameTxt)}>OK</button>
-                          <button className="fbtn" onClick={()=>setRenameId(null)}>✕</button>
-                        </div>
-                      : <div className="fname" dir="auto">{f.name}{f.size?<span className="fsize"> · {fmtSize(f.size)}</span>:null}</div>}
-                    {renameId!==f.id && <React.Fragment>
-                      {f.type==='audio'
-                        ? <button className="fbtn" style={playerFile&&playerFile.id===f.id?{color:'var(--keys)'}:null} onClick={()=>openPlayer(f)}>{playerFile&&playerFile.id===f.id?'Playing…':'Play'}</button>
-                        : <button className="fbtn" onClick={()=>openFile(f)}>Open</button>}
-                      {f.kind==='upload' && <button className="fbtn" onClick={()=>downloadFile(f)}>↓</button>}
-                      <button className="fbtn" onClick={()=>{setRenameId(f.id);setRenameTxt(f.name||'');}}>✎</button>
-                      {confirmDel===f.id
-                        ? <React.Fragment>
-                            <button className="fbtn" style={{color:'var(--drums)'}} onClick={()=>{removeFile(f);setConfirmDel(null);}}>Delete</button>
-                            <button className="fbtn" onClick={()=>setConfirmDel(null)}>Cancel</button>
-                          </React.Fragment>
-                        : <button className="xmini" onClick={()=>setConfirmDel(f.id)} aria-label="Remove file">×</button>}
-                    </React.Fragment>}
-                  </div>
-                ))}
+                {catFiles.map(f=>fileRow(f,ff=>ff.type==='audio'?openPlayer(ff):openFile(ff)))}
               </div>
             {recFiles && <div className="files-cat">
                 <div className="files-cat-h" style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
@@ -3071,20 +3107,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
                   {!recState && <button className="fbtn" style={{fontSize:11,color:'var(--drums)'}} onClick={()=>setRecPrompt(true)}>● Record</button>}
                 </div>
                 {recFiles.length===0 && <div className="files-na">N/A</div>}
-                {recFiles.map(f=>(
-                  <div className="fileitem" key={f.id}>
-                    <span className="fver">v{String(f.ver||0).padStart(2,'0')}</span><span className="ftype" style={{background:KIND_COLOR[f.type]||'var(--muted)'}}>{badgeText(f)}</span>
-                    <div className="fname" dir="auto">{f.name}{f.size?<span className="fsize"> · {fmtSize(f.size)}</span>:null}</div>
-                    <button className="fbtn" style={playerFile&&playerFile.id===f.id?{color:'var(--keys)'}:null} onClick={()=>openPlayer(f)}>{playerFile&&playerFile.id===f.id?'Playing…':'Play'}</button>
-                    {f.kind==='upload' && <button className="fbtn" onClick={()=>downloadFile(f)}>↓</button>}
-                    {confirmDel===f.id
-                      ? <React.Fragment>
-                          <button className="fbtn" style={{color:'var(--drums)'}} onClick={()=>{removeFile(f);setConfirmDel(null);}}>Delete</button>
-                          <button className="fbtn" onClick={()=>setConfirmDel(null)}>Cancel</button>
-                        </React.Fragment>
-                      : <button className="xmini" onClick={()=>setConfirmDel(f.id)} aria-label="Remove file">×</button>}
-                  </div>
-                ))}
+                {recFiles.map(f=>fileRow(f,openPlayer))}
               </div>}
             </React.Fragment>);
           })}
@@ -3097,20 +3120,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
                   My Stem Recordings
                 </div>
               </div>
-              {myRecs.map(f=>(
-                <div className="fileitem" key={f.id}>
-                  <span className="fver">v{String(f.ver||0).padStart(2,'0')}</span><span className="ftype" style={{background:KIND_COLOR[f.type]||'var(--muted)'}}>{badgeText(f)}</span>
-                  <div className="fname" dir="auto">{f.name}{f.size?<span className="fsize"> · {fmtSize(f.size)}</span>:null}</div>
-                  <button className="fbtn" style={{color:'var(--drums)'}} onClick={()=>{setFilesOpen(false);openStemRecPlayback(f);}}>▶ Play</button>
-                  {f.kind==='upload' && <button className="fbtn" onClick={()=>downloadFile(f)}>↓</button>}
-                  {confirmDel===f.id
-                    ? <React.Fragment>
-                        <button className="fbtn" style={{color:'var(--drums)'}} onClick={()=>{removeFile(f);setConfirmDel(null);}}>Delete</button>
-                        <button className="fbtn" onClick={()=>setConfirmDel(null)}>Cancel</button>
-                      </React.Fragment>
-                    : <button className="xmini" onClick={()=>setConfirmDel(f.id)} aria-label="Remove file">×</button>}
-                </div>
-              ))}
+              {myRecs.map(f=>fileRow(f,ff=>{setFilesOpen(false);openStemRecPlayback(ff);}))}
             </div>;
           })()}
           <div style={{marginTop:10}}>
