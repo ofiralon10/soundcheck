@@ -263,13 +263,16 @@
   .stem-scrub input[type=range]{flex:1;-webkit-appearance:none;height:4px;border-radius:2px;background:var(--line-2);outline:none}
   .stem-scrub input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--ok);cursor:pointer;box-shadow:0 0 4px rgba(0,0,0,.4)}
   .stem-time{font-family:var(--mono);font-size:11px;color:var(--muted);min-width:38px;text-align:center}
-  .stem-btns{display:flex;gap:8px;flex-wrap:wrap}
+  .stem-btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
   .stem-btns>span{flex:1;display:flex;position:relative}
   .stem-btns>span>button{flex:1}
-  /* narrow phones: wrap to rows of three so labels stay readable */
-  @media(max-width:640px){ .stem-btns>button,.stem-btns>span{flex:0 0 calc(33.333% - 6px)} }
-  .stem-btns button{flex:1;min-width:0;height:42px;padding:0 6px;border-radius:10px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);font-family:var(--display);font-size:12px;font-weight:700;letter-spacing:.04em;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* narrow phones: content-sized icon buttons (positions/zoom stays compact) */
+  @media(max-width:640px){ .stem-btns>button,.stem-btns>span{flex:0 0 auto;min-width:46px} }
+  .stem-btns button{flex:1;min-width:0;height:42px;padding:0 8px;border-radius:10px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);font-family:var(--display);font-size:12px;font-weight:700;letter-spacing:.04em;cursor:pointer;white-space:nowrap;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;gap:4px}
+  .stem-btns button svg{display:block}
   .stem-btns button:disabled{opacity:.5}
+  .stem-btns button.sb-stop{background:var(--drums);border-color:var(--drums);color:#fff}
+  .stem-btns .sb-square{width:13px;height:13px;background:#fff;border-radius:2px;display:inline-block}
   .stem-btns button.stem-play{background:var(--ok);border-color:var(--ok);color:#fff}
   .stem-btns button.stem-cfg-btn{background:none;color:var(--muted)}
   .stem-btns button.stem-cfg-btn.open{background:var(--muted-2);color:#15141B;border-color:var(--muted-2)}
@@ -358,7 +361,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.252';
+const VERSION='0.253';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -2287,6 +2290,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     fs.forEach(f=>viewFiles.push({sec,label:_secLabel[sec]||sec,file:f}));
   });
   const curView=viewFiles.length?viewFiles[Math.min(viewIdx,viewFiles.length-1)]:null;
+  const ICON_FILE=<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>;
+  const ICON_GEAR=<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>;
 
   // Zoom/pan plan: per shown FILE (keyed by its section) + device, list of
   // {t, scale, nx, ny}. Capture the current manual view at the playhead; during
@@ -3237,19 +3242,19 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           </div>
           <div className="stem-btns">
             <button className="stem-play" style={{fontSize:15,lineHeight:1}} onClick={stemPlaying?stemPause:stemPlay} disabled={!stemDur} title={stemPlaying?'Pause':'Play'}>{stemPlaying?'⏸':'▶'}</button>
-            <button style={{fontSize:15,lineHeight:1}} onClick={stemStop} disabled={!stemDur} title="Stop — reset to start">⏹</button>
-            {!stemRecPlayback && <button className="sb-files" onClick={toggleView} disabled={viewFiles.length<2} title="Switch the shown file (slide / my instruments)">{curView?curView.label:'Files'}{viewFiles.length>1?' '+(Math.min(viewIdx,viewFiles.length-1)+1)+'/'+viewFiles.length:''}</button>}
+            <button className="sb-stop" onClick={stemStop} disabled={!stemDur} title="Stop — reset to start"><span className="sb-square"/></button>
+            {!stemRecPlayback && <button className="sb-files" onClick={toggleView} disabled={viewFiles.length<2} title={'Switch shown file'+(curView?' — '+curView.label:'')}>{ICON_FILE}{viewFiles.length>1?<span style={{fontSize:10,fontFamily:'var(--mono)'}}>{Math.min(viewIdx,viewFiles.length-1)+1}/{viewFiles.length}</span>:null}</button>}
             {!stemRecPlayback && <span>
               {zoomMenu && <div style={{position:'absolute',bottom:'100%',left:0,marginBottom:6,display:'flex',flexDirection:'column',gap:4,zIndex:70}}>
                 <button style={{background:'var(--keys)',color:'#fff',border:'none',borderRadius:8,padding:'7px 14px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:92,height:'auto'}} onClick={()=>{captureZoom();setZoomMenu(false);}}>Set</button>
                 <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'7px 14px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:92,height:'auto'}} onClick={()=>{resetZoom();setZoomMenu(false);}}>Clear</button>
                 <button style={{background:'var(--surface-2)',color:'var(--text)',border:'1px solid var(--line-2)',borderRadius:8,padding:'7px 14px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:92,height:'auto'}} onClick={()=>setZoomMenu(false)}>Cancel</button>
               </div>}
-              <button className={'sb-zoom'+(zoomMenu?' on':'')} onClick={()=>setZoomMenu(v=>!v)} disabled={!stemDur} title={'Zoom/pan plan ('+devLabel+') — tap slide right = next, left = previous'}>⛶ {zoomSorted.length?((zoomIdx>=0?zoomIdx+1:0)+'/'+zoomSorted.length):'Zoom'}</button>
+              <button className={'sb-zoom'+(zoomMenu?' on':'')} onClick={()=>setZoomMenu(v=>!v)} disabled={!stemDur} title={'Zoom/pan plan ('+devLabel+') — tap slide right = next, left = previous'}>⛶{zoomSorted.length?<span style={{fontSize:10,fontFamily:'var(--mono)',marginLeft:3}}>{(zoomIdx>=0?zoomIdx+1:0)+'/'+zoomSorted.length}</span>:null}</button>
             </span>}
-            {!stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>CONFIG</button>}
-            {!stemRecPlayback && <button className="sb-rec" onClick={()=>{setStemRecPrompt(true);prefetchBackingStems();}} disabled={!!stemRecState}>🎙 Rec</button>}
-            {stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)}>CONFIG</button>}
+            {!stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)} title="Channel settings">{ICON_GEAR}</button>}
+            {!stemRecPlayback && <button className="sb-rec" onClick={()=>{setStemRecPrompt(true);prefetchBackingStems();}} disabled={!!stemRecState} title="Record your stem">🎙</button>}
+            {stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)} title="Channel settings">{ICON_GEAR}</button>}
             {stemRecPlayback && !stemShareReady && <button className="sb-share" onClick={stemShareMix} disabled={stemShareBusy}>{stemShareBusy?'Mixing…':'📤 Share'}</button>}
             {stemRecPlayback && stemShareReady && <button className="sb-send" style={{animation:'pulse 1s infinite'}} onClick={stemShareSend}>📤 Send</button>}
           </div>
