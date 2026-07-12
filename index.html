@@ -358,7 +358,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.251';
+const VERSION='0.252';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -3295,13 +3295,15 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             Ta {Array.from({length:4},(_,i)=>i<stemRecTaUi.hits?'✓':(i<stemRecTaUi.seen?'✗':'·')).join(' ')}
             {stemRecTaUi.dv!=null?' ~'+Math.round(stemRecTaUi.dv*1000)+'ms':''}
           </span>}
-          <button className="btn" style={{background:'var(--drums)'}} onClick={stopStemRec}>Stop</button>
         </div>
-        <div style={{marginTop:12,display:'flex',alignItems:'center',gap:10}}>
+        <div style={{marginTop:10,display:'flex',alignItems:'center',gap:10}}>
           <span style={{fontSize:11,color:'var(--muted)',fontFamily:'var(--mono)',flexShrink:0}}>MIC</span>
           <div style={{flex:1,height:14,borderRadius:7,background:'var(--surface-3)',overflow:'hidden'}}>
             <div style={{height:'100%',width:Math.round(stemRecLevel*100)+'%',background:stemRecLevel>0.92?'var(--drums)':stemRecLevel>0.6?'var(--warn)':'var(--ok)',transition:'width .06s linear'}}/>
           </div>
+        </div>
+        <div style={{marginTop:12,display:'flex',justifyContent:'center'}}>
+          <button className="btn" style={{background:'var(--drums)'}} onClick={stopStemRec}>Stop</button>
         </div>
       </div>}
       {stemRecConfirm && <div className="rec-confirm">
