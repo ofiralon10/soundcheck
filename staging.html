@@ -367,7 +367,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.259';
+const VERSION='0.260';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -537,21 +537,25 @@ function SlideViewer({children,autoOn,navMode,applyRef,captureRef,onTap}){
     const TAP=12;
     const startTap=(x,y)=>{st.current.tapT=Date.now();st.current.tapX=x;st.current.tapY=y;st.current.tapMoved=false;};
     const moveTap=(x,y)=>{if(Math.abs(x-st.current.tapX)>TAP||Math.abs(y-st.current.tapY)>TAP)st.current.tapMoved=true;};
-    const endTap=(allUp)=>{if(allUp&&!st.current.tapMoved&&(Date.now()-st.current.tapT)<500&&pr.current.onTap){const el2=ref.current;const r=el2.getBoundingClientRect();const dir=(st.current.tapX-r.left)<r.width/2?-1:1;pr.current.onTap(dir);}};
+    // Tap-to-switch fires on 'click' (fires reliably for both mouse and touch
+    // taps, and is suppressed by the browser after a real drag). tapMoved and
+    // the duration guard block pans/long-presses from switching.
+    const onClick=(e)=>{ if(st.current.tapMoved||(Date.now()-st.current.tapT)>700)return; if(!pr.current.onTap)return; const r=el.getBoundingClientRect(); pr.current.onTap((e.clientX-r.left)<r.width/2?-1:1); };
     const onWheel=(e)=>{if(locked())return;if(!e.ctrlKey&&!e.metaKey)return;e.preventDefault();const d=e.deltaY>0?0.9:1.1;const r=el.getBoundingClientRect();const ox=e.clientX-r.left-r.width/2;const oy=e.clientY-r.top-r.height/2;const ns=clampScale(st.current.scale*d);const f=ns/st.current.scale;st.current.tx=ox-(ox-st.current.tx)*f;st.current.ty=oy-(oy-st.current.ty)*f;st.current.scale=ns;apply();};
     const onMD=(e)=>{if(e.button!==0)return;startTap(e.clientX,e.clientY);if(locked())return;st.current.dragging=true;st.current.startX=e.clientX;st.current.startY=e.clientY;st.current.startTx=st.current.tx;st.current.startTy=st.current.ty;apply();};
     const onMM=(e)=>{moveTap(e.clientX,e.clientY);if(locked()||!st.current.dragging)return;st.current.tx=st.current.startTx+(e.clientX-st.current.startX);st.current.ty=st.current.startTy+(e.clientY-st.current.startY);apply();};
-    const onMU=()=>{const dr=st.current.dragging;st.current.dragging=false;if(dr)apply();endTap(true);};
+    const onMU=()=>{const dr=st.current.dragging;st.current.dragging=false;if(dr)apply();};
     const dist=(t)=>Math.hypot(t[1].clientX-t[0].clientX,t[1].clientY-t[0].clientY);
     const onTS=(e)=>{if(e.touches.length===2){st.current.pinchDist=dist(e.touches);st.current.tapMoved=true;}else if(e.touches.length===1){startTap(e.touches[0].clientX,e.touches[0].clientY);if(!locked()){st.current.dragging=true;st.current.startX=e.touches[0].clientX;st.current.startY=e.touches[0].clientY;st.current.startTx=st.current.tx;st.current.startTy=st.current.ty;}}};
     const onTM=(e)=>{if(e.touches.length===1)moveTap(e.touches[0].clientX,e.touches[0].clientY);if(locked())return;if(e.touches.length===2){e.preventDefault();const nd=dist(e.touches);const f=nd/st.current.pinchDist;const ns=clampScale(st.current.scale*f);st.current.scale=ns;st.current.pinchDist=nd;apply();}else if(e.touches.length===1&&st.current.dragging){st.current.tx=st.current.startTx+(e.touches[0].clientX-st.current.startX);st.current.ty=st.current.startTy+(e.touches[0].clientY-st.current.startY);apply();}};
-    const onTE=(e)=>{st.current.dragging=false;apply();endTap(e.touches.length===0);};
+    const onTE=(e)=>{st.current.dragging=false;apply();};
     const onDbl=(e)=>{if(locked()||pr.current.navMode)return;e.preventDefault();st.current.scale=1;st.current.tx=0;st.current.ty=0;apply();};
     el.addEventListener('wheel',onWheel,{passive:false});
     el.addEventListener('mousedown',onMD);window.addEventListener('mousemove',onMM);window.addEventListener('mouseup',onMU);
     el.addEventListener('touchstart',onTS,{passive:true});el.addEventListener('touchmove',onTM,{passive:false});el.addEventListener('touchend',onTE);
     el.addEventListener('dblclick',onDbl);
-    return()=>{el.removeEventListener('wheel',onWheel);el.removeEventListener('mousedown',onMD);window.removeEventListener('mousemove',onMM);window.removeEventListener('mouseup',onMU);el.removeEventListener('touchstart',onTS);el.removeEventListener('touchmove',onTM);el.removeEventListener('touchend',onTE);el.removeEventListener('dblclick',onDbl);};
+    el.addEventListener('click',onClick);
+    return()=>{el.removeEventListener('wheel',onWheel);el.removeEventListener('mousedown',onMD);window.removeEventListener('mousemove',onMM);window.removeEventListener('mouseup',onMU);el.removeEventListener('touchstart',onTS);el.removeEventListener('touchmove',onTM);el.removeEventListener('touchend',onTE);el.removeEventListener('dblclick',onDbl);el.removeEventListener('click',onClick);};
   },[]);
   return <div ref={ref} className="practice-slide"><div ref={inner} style={{width:'100%',height:'100%',transformOrigin:'center center',willChange:'transform'}}>{children}</div></div>;
 }
@@ -2479,6 +2483,12 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       const outUrl=URL.createObjectURL(new Blob([encodeWav(mix)],{type:'audio/wav'}));
       const out=new Audio();
       out.src=outUrl;out.preload='auto';
+      // Route the backing element THROUGH the recording AudioContext instead of
+      // playing it as standalone media. While the mic is open the OS is in
+      // "communication" audio mode and the volume keys control that stream — a
+      // standalone media element ignores them, but the AudioContext output rides
+      // the same stream, so the phone volume buttons work during recording.
+      try{ const outNode=actx.createMediaElementSource(out); const outGain=actx.createGain(); outNode.connect(outGain); outGain.connect(actx.destination); }catch(_){}
       // Live Ta detection: collect ALL voice onsets in the Ta region, then
       // (at stop) find the single global shift that best aligns them to the
       // expected beat grid — immune to locking onto the wrong beat.
@@ -2614,6 +2624,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     const {out,mr,getRecCap}=r;
     stemRecDRef.current=null;
     try{
+      try{ r.actx&&r.actx.resume(); }catch(_){}
       mr.start(100);
       stemRecRef.current=mr;
       out.currentTime=0;
@@ -3289,7 +3300,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             <span className="stem-time">{stemDur?fmtSecs(Math.floor(stemDur)):'-:--'}</span>
           </div>
           <div className="stem-btns">
-            <button className="stem-play" style={{fontSize:15,lineHeight:1}} onClick={stemPlaying?stemPause:stemPlay} disabled={!stemDur} title={stemPlaying?'Pause':'Play'}>{stemPlaying?'⏸':'▶'}</button>
+            <button className="stem-play" onClick={stemPlaying?stemPause:stemPlay} disabled={!stemDur} title={stemPlaying?'Pause':'Play'}>{stemPlaying?<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4.5" height="14" rx="1"/><rect x="13.5" y="5" width="4.5" height="14" rx="1"/></svg>:<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5v14l12-7z"/></svg>}</button>
             <button className="sb-stop" onClick={stemStop} disabled={!stemDur} title="Stop — reset to start"><span className="sb-square"/></button>
             {!stemRecPlayback && <button className="sb-files" onClick={toggleView} disabled={viewFiles.length<2} title={'Switch shown file'+(curView?' — '+curView.label:'')}>{ICON_FILE}{viewFiles.length>1?<span style={{fontSize:10,fontFamily:'var(--mono)'}}>{Math.min(viewIdx,viewFiles.length-1)+1}/{viewFiles.length}</span>:null}</button>}
             {!stemRecPlayback && <span>
