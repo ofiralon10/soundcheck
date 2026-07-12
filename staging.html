@@ -367,7 +367,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.258';
+const VERSION='0.259';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -2455,7 +2455,11 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       const rsr=44100;
       const maxDur=Math.max(...backing.map(b=>b.buf.duration));
       const oc=new OfflineAudioContext(2,Math.ceil((R_LEAD+maxDur)*rsr),rsr);
-      for(let k=0;k<4;k++){
+      // With headphones the beeps continue through the Ta beats (5-8) to help
+      // the user keep the pulse — they don't reach the mic. On speaker they
+      // stay silent so they can't contaminate the Ta onsets.
+      const nBeeps=stemRecHp?8:4;
+      for(let k=0;k<nBeeps;k++){
         const tb=B0+k*BEAT;
         const osc=oc.createOscillator();osc.frequency.value=1000;
         const cg=oc.createGain();
@@ -3297,7 +3301,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
               <button className={'sb-zoom'+(zoomMenu?' on':'')} onClick={()=>setZoomMenu(v=>!v)} disabled={!stemDur} title={'Zoom/pan plan ('+devLabel+') — tap slide right = next, left = previous'}>⛶{zoomSorted.length?<span style={{fontSize:10,fontFamily:'var(--mono)',marginLeft:3}}>{(zoomIdx>=0?zoomIdx+1:0)+'/'+zoomSorted.length}</span>:null}</button>
             </span>}
             {!stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)} title="Channel settings">{ICON_GEAR}</button>}
-            {!stemRecPlayback && <button className="sb-rec" onClick={()=>{setStemRecPrompt(true);prefetchBackingStems();}} disabled={!!stemRecState} title="Record your stem">🎙</button>}
+            {!stemRecPlayback && <button className="sb-rec" onClick={()=>{setStemRecPrompt(true);prefetchBackingStems();}} disabled={!!stemRecState} title="Record your stem"><span style={{width:11,height:11,borderRadius:'50%',background:'#fff',display:'inline-block',flexShrink:0}}/>{MY_INSTRS.slice(0,2).map(id=><InstrIcon key={id} id={id} size={16}/>)}</button>}
             {stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)} title="Channel settings">{ICON_GEAR}</button>}
             {stemRecPlayback && !stemShareReady && <button className="sb-share" onClick={stemShareMix} disabled={stemShareBusy}>{stemShareBusy?'Mixing…':'📤 Share'}</button>}
             {stemRecPlayback && stemShareReady && <button className="sb-send" style={{animation:'pulse 1s infinite'}} onClick={stemShareSend}>📤 Send</button>}
