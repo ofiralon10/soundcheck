@@ -39,7 +39,9 @@ You cannot run Firebase locally. To check a change before handing it off:
 - **Versioning.** There's a `const VERSION='x.yyy'` near the top of the script, rendered next
   to the SOUNDCHECK wordmark. **Every change bumps the right-hand number by 1** (0.103 → 0.104).
   Never change the left-hand number unless explicitly told. The owner uses the on-screen version
-  to confirm a deploy landed. Current version: **0.201**.
+  to confirm a deploy landed. Current version: **0.260**.
+  **This session ports to BOTH staging.html and index.html by default** (owner's standing
+  request); still apply the two index.html fixes below on every port.
 - **Edit staging.html first.** Don't touch `index.html` until the owner asks to port a tested change.
 - **Porting to index.html:** `cp staging.html index.html`, then apply two fixes in index.html:
   1. Change `/staging/i.test(location.pathname)` → `/staging\.html/i.test(location.pathname)`
@@ -52,6 +54,11 @@ You cannot run Firebase locally. To check a change before handing it off:
   `activity[]`, `album[]`, `access`, `memberEmails`, `_rev`, `_updatedAt`.
   Each show: `{id, name, date, venue, setlist[], readinessHistory[]}`.
   Each setlist entry: `{songId, parts:{}, guests:[], encore, excluded}`.
+  Each song: `{id, title, artist, cover, files[], notes, duration, songKey, tempo, zoomPlans}`.
+  Each file: `{id, name, kind:'upload'|'link', url, path, size, type, cat, stem?, by?, ver?,
+  srcName?, sync?}`. `stem:true` marks true stem files (from Get Stems); `ver`/`srcName` track
+  file versions from Setlist Files Update; `sync` (seconds) is the trim/offset on stem-rec files.
+  `song.zoomPlans` = per-section, per-device zoom keyframes (see Practice slide section).
   `defaultState()` creates it; `migrate()` defaults/normalizes on every load —
   **add new fields' defaults to `migrate()`** so old docs don't break.
 - **Saves** overwrite the whole doc (`boardRef.set(...)`), last-write-wins, real-time synced.
@@ -64,7 +71,7 @@ You cannot run Firebase locally. To check a change before handing it off:
 - **Changelog**: update the `CHANGELOG` object with entries for each version that ships to production.
   The "What's New" modal shows on first load when version changes.
 
-## Tabs & components (staging.html, v0.201)
+## Tabs & components (staging.html, v0.260)
 
 ### Stage tab
 - Show-readiness dashboard: overall %, tick visualization, song count, ready count, set length.
@@ -124,67 +131,132 @@ You cannot run Firebase locally. To check a change before handing it off:
 - **My Stem Recordings section**: shows files with `cat:'stem-rec'` and `by:MY_NAME`. Only
   visible to the recording author. Play button opens stem-rec playback mode. Appears above
   the Get Stems button.
-- Files can be played (audio player modal), opened, downloaded, or deleted with confirmation.
+- **File rows (v0.254)**: extracted into one `fileRow(f, onOpen)` helper used by all sections.
+  Tapping the badges + name **opens/plays** the file; a single **⋯** button reveals a menu with
+  **Rename / Download / Share / Delete** (inline delete confirm). `shareFile(f)` = native file
+  share (fetch blob → `navigator.share({files})`) → URL share → clipboard.
+- **Version badge (v0.241)**: each file shows `vNN` left of its type badge (`f.ver||0`, 2-digit).
+  Setlist Files Update bumps `ver` when the same source filename replaces a category's file, and
+  resets to 0 for a different source file.
 - **Known bug fixed (v0.159)**: `e.target.files` is a FileList reference — must copy to array
   via `Array.from()` before clearing input with `e.target.value=''`, or the FileList empties.
 
-### Stem player (Practice mode)
-- **Multi-stem audio player** with per-channel controls for: Vocals, Drums, Bass, Keys, Guitar,
-  Other, Metronome (7 channels total).
-- Uses plain `Audio` elements with `.volume` for mixing — **NOT Web Audio API** due to Firebase
-  Storage CORS restrictions (`fetch()` and `crossOrigin='anonymous'` both fail on storage URLs).
-  CORS has been configured on the bucket (`gsutil cors set cors.json gs://soundcheck-1f16b.firebasestorage.app`)
-  to allow `fetch()` for the Share/mix feature only.
-- **Per-channel controls**: volume slider (0–100%), Mute (M) button, Solo (S) button.
-  M and S are mutually exclusive: pressing M clears S, pressing S clears M.
-- **Metronome channel**: separate from Other, detected from filename (metronome/click/tick).
-  Muted by default. Not counted toward stem availability (6 core stems = green).
-  Greyed out when no file loaded.
-- **Transport**: PLAY (green), PAUSE/STOP (tap=pause/resume, double-tap=reset to beginning),
-  CONFIG (toggle channel visibility), StemRec (red, opens stem recording flow).
-- **Scrub bar**: draggable green thumb (18px) with time display.
-- **Config persistence**: volume/mute/solo saved per song in `localStorage` key `sc_stem_[songId]`.
-  Reset button in header restores defaults.
-- **Slide overlay**: when Practice is opened, the song's slide file (if any) displays above the
-  stem player on the remaining screen space (z-index 59, player at 60).
-  - **Slide selection priority**: images (jpg/png/webp/gif) first, then PDF, then any other format.
-    TIF files are not supported by browsers.
-  - **PDF slides on mobile**: uses Google Docs Viewer (`docs.google.com/gview?embedded=true`) as
-    mobile browsers can't render PDFs inline in iframes.
-  - **Zoom/pan controls** (`SlideViewer` component): pinch-to-zoom + finger pan on mobile,
-    Ctrl+scroll zoom + click-drag pan on PC. Double-tap/click resets to original view.
-- **Wide-screen layout** (≥900px): channels display horizontally left-to-right instead of
-  vertically stacked. Config panel defaults to open on wide screens.
-- **CSS**: `.stem-player` fixed at bottom, centered with `max-width:540px` (mobile) / `1200px` (wide).
-- **Stale closure fix (v0.200)**: `stemApplyMix` reads from `stemChansRef` (a ref that always holds
-  current channel state) instead of the `stemChans` closure, which goes stale in callbacks and
-  effects. The `useEffect` on `stemChans` updates the ref and reapplies the mix.
-- `stemLoadUrl(catId, url, name)` — loads audio into a channel. Calls `stemApplyMix` on load to
-  apply correct volume immediately.
-- `stemApplyMix(chans)` — applies mute/solo/volume to all Audio elements. Uses `stemChansRef`
-  when called without args.
+### Setlist Files Update (v0.234+, removable feature)
+- **"Setlist Files" button** on the setlist toolbar (right side). Prompts for a **folder**
+  (`webkitdirectory`) with **one subfolder per song**, and bulk-updates each song's files.
+- Self-contained + easy to remove: `SFU_*` helpers block near `loadScript`, plus the button /
+  hidden input / `runSetlistFilesUpdate` / `sfuModal` in `Setlist()`. Toggle `SFU_ENABLED`.
+- **Fuzzy folder→song matching** (`sfuScore`): the folder's tokens must contain the song's title
+  tokens (extra words like the artist are ignored), tolerant of punctuation/spacing/small typos
+  (`sfuLev`) and run-together titles. Greedy best-score assignment; each folder/song used once.
+  A subfolder literally named "Ignore" is skipped.
+- **Category by leading `[Tag]` prefix** (`sfuCatFromName`): `[Slide] [Bass] [Vocals] [Guitar]
+  [Keys] [Drums]` (also `[Other]`). `[Ignore]` skips the file; no/unknown tag skips it.
+- **Conversion** (`sfuFileToBlob`): JPEG as-is; PNG/WebP/GIF/BMP → JPEG; **PDF → one tall JPEG**
+  (pages concatenated) via PDF.js loaded lazily from CDN; audio uploaded as-is. **PPT/PPTX are
+  NOT converted in-browser** (rendering was poor — dropped v0.240); they're skipped with a message
+  to convert to PDF first (see `tools/pptx2pdf.py`).
+- **Dedup by size**: if an existing file in the same category has identical byte size, it's kept.
+  Otherwise the category's file is replaced (old storage deleted). Per-file feedback modal.
 
-### Stem recording (v0.187+)
-- **Record your part over backing stems**. StemRec button in stem player transport opens a
-  confirmation dialog, then records the user's microphone while playing all non-user stems.
-- **Mic processing**: Web Audio pipeline with 2.5x gain node + dynamics compressor (threshold
-  -24dB, ratio 4:1) for louder, more consistent recordings from phone mics.
-  `autoGainControl:true` enabled for adaptive mic sensitivity.
-- **Audio unlock**: all Audio elements get `play()+pause()` synchronously during the "Start"
-  button tap, before the async `getUserMedia` call. This prevents mobile browsers from blocking
-  playback after the user gesture context is lost. If all plays still fail, shows an error message.
-- **Sync**: MediaRecorder starts (`mr.start(100)`) before stems play, so recording begins at the
-  same moment as playback. 100ms timeslice for tight data capture.
-- **Mix state preservation**: saves current mute/solo/vol config to `stemRecPreMixRef` before
-  recording. User's instruments are force-muted, solo cleared. Restored after save/discard.
-- **File storage**: saved as `cat:'stem-rec'`, `by:MY_NAME`. Path: `files/{BOARD}/{fid}-stemrec.{ext}`.
-- **Stem-rec playback mode** (`stemRecPlayback` state): opened from "My Stem Recordings" Play button.
-  - Channels: one "My Stem" channel (vol 100%) + one channel per non-user instrument (vol 70%).
-  - Transport: PLAY, PAUSE/STOP, CONFIG, Share button (no StemRec button).
-  - **Share/mix feature**: two-phase flow — tap "Share" to fetch and offline-mix all active channels
-    into a WAV file (using `OfflineAudioContext` + `encodeWav`), then tap "Send" to trigger the
-    native share sheet (mobile) or download (PC). Two phases needed because `navigator.share()`
-    requires a direct user gesture, which is lost after async mixing.
+### Stem player (Practice mode)
+- **Multi-stem audio player** with 7 channels: Vocals, Drums, Bass, Keys, Guitar, Other, Metronome.
+- Plays with plain `Audio` elements + `.volume` for mixing. **Only loads real stem files**
+  (`f.stem===true`, from Get Stems) — NOT band/other recordings (v0.249 fix; a recording saved to
+  `cat:'other'` used to leak into the Other channel). CORS is configured on the bucket
+  (`gsutil cors set cors.json gs://soundcheck-1f16b.firebasestorage.app`) so `fetch()` works for
+  the Share/mix feature and for the recording player's Web Audio decode.
+- **Channel modes (v0.208)**: each channel box has three mutually-exclusive buttons — **Mute**,
+  **Solo**, **Custom**. The volume slider only appears in Custom mode; otherwise the channel plays
+  at its default level (80% practice; 100%/70% for My Stem/Backing). Boxes are a compact grid
+  (icon + Mute/Solo/Custom on one row).
+- **Metronome**: detected from filename (metronome/click/tick), muted by default, not counted toward
+  stem availability. Greyed out when no file loaded.
+- **Transport bar** (`.stem-btns`, all buttons same size; SVG/icon-based, v0.253/0.260):
+  ▶/⏸ play-pause toggle (white SVG), ■ **Stop** (red, resets to 0), **Files** toggle (cyan, file
+  icon — see below), **⛶ positions** (purple, shows `N/M`), **⚙ CONFIG** (yellow; opens the opaque
+  channel panel with a Reset-channels button), **🎙 Rec** (shows white dot + your instrument icons).
+  On phones (`@media max-width:640px`) buttons are content-sized and centered.
+- **Config persistence**: saved per song in `localStorage` `sc_stem_[songId]` (practice) and
+  `sc_stemrec_[songId]` (StemRec Player), including the `custom` flag.
+- **Stale closure fix (v0.200)**: `stemApplyMix` reads `stemChansRef` (always-current ref) not the
+  `stemChans` closure. The `useEffect` on `stemChans` updates the ref, reapplies the mix, and
+  persists to the right localStorage key (skipped while recording / restoring).
+
+### Practice slide + file toggle + zoom plans
+- **Files toggle** (v0.245): cycles which file is shown above the bar — the **Slide** first, then
+  any viewable (image/PDF) files in the user's own instrument sections (`viewFiles`). Button shows
+  the current section + `N/M`. `curView` drives the practice-full content.
+- **Slide area** (`.practice-full`, z-59; player bar z-60): bounded to exactly the area above the
+  bar — the bar height is measured (`stemBarH` via ResizeObserver) and the slide fills the rest.
+  Images preferred over PDF; PDF on mobile uses Google Docs Viewer (mobile can't inline PDFs).
+- **`SlideViewer`** — pinch/drag + Ctrl-scroll zoom/pan. Also drives the zoom-position plan:
+  - `applyRef` imperatively applies a stored view (normalized to container so it survives
+    resize/file replacement); `captureRef` returns the current view; `onTap(dir)` fires on **click**
+    (v0.260 — the canonical tap for mouse+touch; the old touchend handler was unreliable on mobile).
+  - **Tap right half of the slide → next position, left half → previous** (cyclic).
+- **Zoom/pan plan (positions)**: per shown FILE, keyed by **section** then **device**:
+  `song.zoomPlans = { [section]: { wide:[{t,scale,nx,ny}], narrow:[...] } }` (v0.247/0.229).
+  Sections: slide/vocals/keys/etc; device = `useWide()` wide/narrow. The ⛶ button opens a
+  **Set / Clear / Cancel** popover: **Set** captures the current view at the playhead time; during
+  playback the view snaps to the latest keyframe whose time has passed (only on an actual crossing,
+  so manual taps persist). Opening a file that has positions starts on its **first** position
+  (v0.250). Plans survive file replacement (keyed by section) and are separate per phone/tablet.
+
+### Stem recording (v0.187+, heavily reworked through v0.260)
+- **Record your part over backing stems.** Flow: `startStemRec` (prepare) → dialog → GO
+  (`beginStemRec`, a direct gesture) → REC → save/discard. States: `preparing`/`ready`/`recording`.
+- **Backing = one pre-rendered mix.** The backing stems are fetched (cached per song,
+  `stemRecBufCacheRef`, prefetched when the dialog opens), the count-in beeps + stems are
+  **offline-rendered** into a single WAV, and played via a blob-src `<audio>` element (`out`).
+  The user's own instruments are simply **never scheduled**, so they can't be heard (v0.216).
+- **Mic chain** (Web Audio): `getUserMedia` (EC per headphone toggle, NS off, AGC off) → highpass
+  90 Hz → gain 2.5× → compressor (−24 dB, 4:1) → limiter (−2 dB, 20:1) → `MediaStreamDestination` →
+  MediaRecorder (256 kbps). An AnalyserNode taps the chain for the **MIC level meter** shown in the
+  REC bar (green/amber/red).
+- **Headphones toggle** (`sc_rec_hp`): with headphones, echo-cancellation is OFF and the count-in
+  beeps continue through the Ta beats (help keep the pulse; they play in the ears, not the mic).
+  Without headphones, EC is ON (removes speaker bleed) and the Ta beats are silent.
+- **Volume during recording (v0.260)**: while the mic is open the OS is in *communication* audio
+  mode and the volume keys control that stream — a standalone media element ignores them. So `out`
+  is routed **through the recording AudioContext** (`createMediaElementSource → gain →
+  actx.destination`), which rides the same stream, restoring phone-button volume control.
+- **Sync via "Ta" calibration** — THE key mechanism, since output latency (esp. Bluetooth,
+  ~300–450 ms) cannot be measured from clocks:
+  - Count-in: **4 beeps** (beats 1–4, `BEAT=0.75s`), the user answers **"Ta" on beats 5–8**, stems
+    enter on beat 9 (`R_LEAD=B0+8*BEAT`). The voice reaches the mic directly regardless of output
+    path, so the Ta lateness *is* the output delay the user hears.
+  - Detection collects **all** voice onsets in the Ta region (live via a ScriptProcessor on the mic
+    graph; offline from the decoded take as fallback) and finds the single **global time-shift**
+    (`matchTaShift`, searched over `[-0.10,+0.65]s`) that best aligns them to the expected grid.
+    **DO NOT go back to per-beat windows** — with a 0.5 s grid a ~one-beat delay aliased into the
+    next beat and read as ~0 ms (the long-standing "add 300–400 ms manually" bug, fixed v0.257).
+  - Priority: live Ta → offline Ta → remembered calibration (`sc_sync_out`) → clock estimate.
+- **Save trims + re-encodes to MP3** (`uploadStemRec`): the measured `sync` count-in lead is trimmed
+  off the take and it's re-encoded to 128 kbps MP3 via lamejs, so the saved stem **starts at song
+  time 0** (`sync:0`) and is properly seekable. Falls back to the raw blob + a stored `sync` offset.
+- **Mix state preservation** (`stemRecPreMixRef` + `stemRecRestoreMix`): the pre-recording mix is
+  restored on every exit path (save/discard/blocked/error) — otherwise the force-mute persisted.
+- **File storage**: `cat:'stem-rec'`, `by:MY_NAME`, `sync`. Path `files/{BOARD}/{fid}-stemrec.{ext}`.
+
+### StemRec Player (`stemRecPlayback` state)
+- Opened from "My Stem Recordings" Play. Separate config/persistence from the practice Stem Player.
+- **Two channels only** (v0.206): **My Stem** (the recording, 100%) + **Backing** (all other stems
+  grouped under one volume/mute/solo control, 70%). `stemChanAudioKeys` maps the Backing channel to
+  every non-user audio element.
+- Transport: play/pause, stop, CONFIG, **Share** (no Rec/Files/Zoom). A **SYNC ±50ms nudge** row
+  (when CONFIG open) lets the user fine-tune alignment; the nudge is saved back onto the file's
+  `sync` (debounced) so it sticks. Recorded stem is offset by `sync` so it aligns with the backing.
+- **Share/mix**: two-phase — "Share" offline-mixes active channels to MP3 (128 kbps via lamejs; WAV
+  fallback), then "Send" triggers the native share sheet / download. Two phases because
+  `navigator.share()` needs a direct gesture, lost after async mixing.
+
+### Recording audio player (Web Audio for webm)
+- Band/stem recordings are **cue-less MediaRecorder webm** blobs: an `<audio>` element can't seek
+  them (silence after a jump) and reports `duration=Infinity`. So `openPlayer` **decodes webm/ogg
+  recordings into an AudioBuffer and plays via Web Audio** (BufferSource + gain) for accurate
+  duration and reliable seeking (`waRef`). Other formats keep the `<audio>` element path (with a
+  force-duration seek-to-end trick for any Infinity-duration file).
 
 ### Shows tab (v0.177+)
 - **Multi-show support**: each band can have multiple shows (concerts). Shows replace the old
@@ -219,9 +291,17 @@ You cannot run Firebase locally. To check a change before handing it off:
 - `ICON` object holds SVG paths for each instrument (including `other` and `metronome`).
 - `InstrIcon({id, size})` — renders plain SVG icon.
 - `InstrBadge({id, size})` — renders icon in colored circle with inner ring.
-- `InstrPicker` — header dropdown that toggles multiple instruments on/off. Shows all selected
-  instrument icons in the header button.
+- `InstrPicker` — header dropdown that toggles instruments on/off (selected = transparent-white
+  highlight). Header button grows to fit icons; on mobile with >2 selected it shows a layers icon +
+  count. Has a × close button.
 - Instrument prompt appears on first use (after changelog dismiss) if no instrument set.
+
+### Tablet frame simulation (v0.224)
+- On a **desktop** (fine pointer + screen ≥1024px) the whole app auto-renders inside a **4:3
+  landscape tablet frame (1440×1080)**, scaled to fit, so PC testing matches the tablet. Real
+  phones/tablets render natively. The scaling `transform` is on an **outer `.simframe` wrapper**,
+  with `#root` a plain scroll container inside — putting the transform on `#root` itself made its
+  `position:fixed` bars scroll with content. Override via URL: `?tablet=land|port|off`.
 
 ### Rehearsals tab
 - Upcoming/done split. Scheduling with date-time, duration, location, notes.
@@ -235,7 +315,8 @@ You cannot run Firebase locally. To check a change before handing it off:
   actually covered. Stores `coveredSongs[]` array on the rehearsal.
 - **Song rehearsal count**: `songRehCount(songId, rehearsals)` counts how many done rehearsals covered
   that song. Shown as `N×` badge on song rows.
-- Focus songs: Practice/Learn split with `FocusPicker` and `FocusTags`.
+- Focus songs: Practice/Learn split with `FocusPicker` and `FocusTags`. The **Practice/Learn labels
+  are filled** with their color (amber/blue) + dark text (v0.255).
 - Attendance tracking per instrument + guests.
 - `RehearsalProposal` for time-change proposals with voting.
 
@@ -308,7 +389,8 @@ Currently logged events:
   Add `last!=='staging'` guard in the localStorage restore.
 - Don't introduce `localStorage`/`sessionStorage` assumptions that break first-load; existing keys are
   `sc_name`, `sc_board`, `sc_seen_activity`, `sc_instr` (comma-separated multi-instrument),
-  `sc_seen_ver`, `sc_stem_[songId]`, `sc_show` (last-selected show ID).
+  `sc_seen_ver`, `sc_stem_[songId]`, `sc_stemrec_[songId]`, `sc_show`, `sc_rec_hp` (headphones
+  toggle), `sc_sync_out` (remembered Ta output-delay calibration, ms).
 - Adding a new persisted field: update `defaultState()` AND `migrate()`.
 - **scrollIntoView with sticky header**: `scrollIntoView({block:'start'})` positions the element at
   the very top of the viewport, hidden behind the sticky `.topbar`. Use manual `window.scrollTo()`
@@ -325,9 +407,9 @@ Currently logged events:
   `(f.cat==='original'?'other':f.cat||'other')`.
 - **CSS class `.song` has `scroll-margin-top:70px`** as a fallback for non-JS scroll scenarios.
   The actual scroll uses JS-measured offset.
-- **Firebase Storage CORS**: `fetch(url)` and `crossOrigin='anonymous'` on Audio elements both fail
-  on Firebase Storage URLs. Use plain `Audio` elements with `.volume` property for mixing instead
-  of Web Audio API (`createMediaElementSource` / `GainNode`).
+- **Stem mixing uses plain `Audio` + `.volume`** (not Web Audio) — simplest and avoids the historic
+  storage CORS pain. Web Audio IS used elsewhere now that the bucket has CORS: recording playback
+  (`decodeAudioData` for seekable webm), the recording backing/graph, and offline mixing for Share.
 - **FileList is a live reference**: setting `input.value=''` empties the FileList. Always copy to
   array with `Array.from(e.target.files)` before clearing the input.
 - **Block-scoped `const` in migrate()**: Babel Standalone may handle block-scoped variables in
@@ -352,7 +434,31 @@ Currently logged events:
   Use Google Docs Viewer (`docs.google.com/gview?embedded=true&url=...`) for mobile.
 - **Firebase Storage CORS config**: bucket `soundcheck-1f16b.firebasestorage.app` has CORS
   configured (`cors.json` in repo root) to allow `GET` from any origin. This enables `fetch()`
-  for the stem mix/share feature. Set via `gsutil cors set cors.json gs://BUCKET`.
+  for the stem mix/share feature and the recording player's `decodeAudioData`.
+  Set via `gsutil cors set cors.json gs://BUCKET`.
+- **Ta calibration beat-aliasing (v0.257)**: a fixed beat grid can't distinguish a delay `d` from
+  `d − beat`. Bluetooth output delay (~300–450 ms) ≈ one 0.5 s beat, so per-beat detection windows
+  aliased and reported ~0 ms — the app under-corrected by ~one beat. Fix: slower 0.75 s grid + a
+  **global shift search** aligning ALL collected onsets to the grid. Never revert to per-beat
+  windows or a 0.5 s grid.
+- **Volume keys during mic capture**: with `getUserMedia` active the OS is in *communication* audio
+  mode; the volume keys control that stream, and a standalone `<audio>` element (media stream) is
+  unaffected. Route playback **through the AudioContext** (`createMediaElementSource → destination`)
+  so it rides the communication stream and the volume keys work.
+- **Cue-less MediaRecorder webm**: no seek index → `<audio>` can't seek (silence after a jump) and
+  `duration` is `Infinity` until seeked to the end. For recordings, decode to an AudioBuffer and
+  play via Web Audio (seekable, accurate duration). For other Infinity-duration files, force
+  duration by seeking to a huge time then back to 0.
+- **Control glyphs render as emoji**: `▶`/`⏸`/`⏹`/`⚙` unicode glyphs render as colored emoji on
+  mobile (e.g. a yellow box around play/pause). Use inline **SVG** icons (`fill="currentColor"`)
+  for crisp, theme-colored controls.
+- **Tap detection on mobile**: prefer the `click` event (canonical tap for mouse+touch, suppressed
+  after a real drag) over a hand-rolled `touchend` handler, which was unreliable on phones.
+- **`sc_stem` vs `sc_stemrec`**: the practice Stem Player and the StemRec Player persist to separate
+  keys; don't let recording/stem-rec state contaminate the practice mix (guard the persist effect).
+- **PPTX cannot be rendered client-side well**: dropped in-browser PPTXjs (poor quality). Convert to
+  PDF first with `tools/pptx2pdf.py` (LibreOffice headless, or PowerPoint COM on Windows), then let
+  the app turn the PDF into tall slide JPEGs.
 
 ## Key helper functions
 
@@ -374,8 +480,17 @@ Currently logged events:
 - `isMyInstr(id)` — true if no instruments set OR if id is in `MY_INSTRS`.
 - `setMyInstrs(ids)` — sets `MY_INSTRS` array, persists comma-separated to localStorage.
 - `useBackHandler(active, closeFn)` — registers a modal close function for the phone back button.
-- `encodeWav(audioBuffer)` — encodes an AudioBuffer to a WAV ArrayBuffer (PCM 16-bit).
-- `SlideViewer({children})` — wrapper component with zoom/pan support for practice slide overlay.
+- `encodeWav(audioBuffer)` / `encodeMp3(buf, kbps)` — WAV / MP3 (lamejs, lazy CDN) encoders.
+- `SlideViewer({children, autoOn, navMode, applyRef, captureRef, onTap})` — zoom/pan viewer for the
+  practice slide; drives the zoom-position plan and tap-to-switch.
+- `fileRow(f, onOpen)` — one Files-modal row (tap-to-open + ⋯ Rename/Download/Share/Delete menu).
+- SFU helpers: `sfuScore`/`sfuLev`/`sfuCatFromName`/`sfuFileToBlob`/`sfuPdfToTallJpeg` (Setlist
+  Files Update). `matchTaShift`/`detectTaOnsets` (recording sync). `loadScript` (lazy CDN loader).
+
+## tools/
+- `tools/pptx2pdf.py` (+ `.bat`, `README.md`) — batch-converts every `.pptx`/`.ppt` under a folder
+  to PDF (LibreOffice headless, else PowerPoint COM on Windows). Double-click runs it in its own
+  folder. Not part of the web app; used before the Setlist Files Update.
 
 ## CSS architecture
 
@@ -387,5 +502,9 @@ Currently logged events:
 - `.topbar` is `position:sticky;top:0;z-index:20` with gradient fade-out at bottom.
 - `.tabbar` is `position:fixed;bottom:0` with backdrop blur.
 - Tab icons use inline SVGs with `ICONS` path map.
-- `.stem-player` is `position:fixed;bottom:0` with z-index 60. Practice slide overlay at z-index 59.
-- Wide-screen stem channels use flexbox horizontal layout via `@media(min-width:900px)`.
+- `.stem-player` and `.tabbar` are `position:fixed;bottom:0`, now **full frame width**
+  (`max-width:none`, v0.227/0.242). Practice slide (`.practice-full`) at z-59, player at z-60,
+  bounded above the measured bar height (`stemBarH`).
+- `.stem-btns` buttons are size-uniform (`flex:1`; content-sized + centered on phones ≤640px).
+  The CONFIG channel panel (`.stem-channels`) is an opaque absolute overlay above the bar.
+- Wide-screen stem channels use a 4-column grid via `@media(min-width:900px)`.
