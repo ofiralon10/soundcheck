@@ -367,7 +367,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.256';
+const VERSION='0.257';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -994,9 +994,9 @@ function detectSyncClick(buffer,searchSecs){
   }catch(_){return null;}
 }
 function detectTaOnsets(buffer,dEst,beats){
-  // Find the user's "Ta" voice onsets near the expected silent beats and
-  // return the median extra delay vs (dEst + beat) — i.e. the output
-  // latency the user is hearing. Needs >=2 detected onsets.
+  // Collect the user's "Ta" voice onsets in the whole Ta region (recording
+  // time). The caller aligns them to the expected grid with a global shift
+  // search — per-beat windows alias when the delay nears one beat spacing.
   try{
     const sr=buffer.sampleRate,d=buffer.getChannelData(0);
     const hopS=0.01,hop=Math.floor(sr*hopS);
@@ -1006,23 +1006,23 @@ function detectTaOnsets(buffer,dEst,beats){
     for(let i=0;i<nH;i++){let sum=0;const off=i*hop;for(let j=0;j<hop;j++){const v=d[off+j]||0;sum+=v*v;}env[i]=Math.sqrt(sum/hop);}
     // noise floor from the count-in region only — the rest of the take is
     // full of singing, which would inflate a whole-take percentile
-    const preEnd=Math.max(10,Math.min(nH,Math.floor((dEst+beats[0]-0.3)/hopS)));
+    const preEnd=Math.max(10,Math.min(nH,Math.floor((dEst+beats[0]-0.4)/hopS)));
     const pre=[...env.slice(0,preEnd)].sort((a,b)=>a-b);
     const noise=pre[Math.floor(pre.length*0.3)]||1e-6;
-    const delays=[];
-    beats.forEach(tb=>{
-      const from=Math.max(0,Math.floor((dEst+tb-0.2)/hopS));
-      const to=Math.min(nH-2,Math.floor((dEst+tb+0.45)/hopS));
-      let peak=0;for(let i=from;i<=to;i++)if(env[i]>peak)peak=env[i];
-      const thr=Math.max(noise*4,peak*0.35,1e-4);
-      if(peak<noise*4)return;
-      for(let i=from;i<=to;i++){
-        if(env[i]>thr&&env[i+1]>thr){delays.push(i*hopS-(dEst+tb));break;}
+    const thr=Math.max(noise*4,1e-4);
+    const from=Math.max(0,Math.floor((dEst+beats[0]-0.35)/hopS));
+    const to=Math.min(nH-2,Math.floor((dEst+beats[beats.length-1]+0.9)/hopS));
+    const onsets=[];
+    let loud=false;
+    for(let i=from;i<=to;i++){
+      const isLoud=env[i]>thr;
+      if(isLoud&&!loud&&env[i+1]>thr){
+        const t=i*hopS;
+        if(!onsets.length||t-onsets[onsets.length-1]>0.25) onsets.push(t);
       }
-    });
-    if(delays.length<2)return null;
-    delays.sort((a,b)=>a-b);
-    return delays[Math.floor(delays.length/2)];
+      loud=env[i]>thr*0.7;
+    }
+    return onsets.length?onsets:null;
   }catch(_){return null;}
 }
 function validEmail(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((e||'').trim()); }
@@ -2447,13 +2447,15 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       ))).filter(Boolean);
       if(!backing.length) throw new Error('no-backing');
       // Offline-render count-in + stems into one buffer at fixed positions:
-      // beeps on beats 1-8 (user answers "Ta" on silent beats 9-12),
-      // stems enter on beat 13.
-      const BEAT=0.5,B0=0.5,R_LEAD=B0+12*BEAT;
+      // beeps on beats 1-6 (user answers "Ta" on silent beats 7-10),
+      // stems enter on beat 11. BEAT=0.75s: a 0.5s grid aliased — real
+      // output delays (~300-450ms on Bluetooth) are ≈ one whole beat, so a
+      // Ta landed in the NEXT beat's window and read as ~0ms delay.
+      const BEAT=0.75,B0=0.5,R_LEAD=B0+10*BEAT;
       const rsr=44100;
       const maxDur=Math.max(...backing.map(b=>b.buf.duration));
       const oc=new OfflineAudioContext(2,Math.ceil((R_LEAD+maxDur)*rsr),rsr);
-      for(let k=0;k<8;k++){
+      for(let k=0;k<6;k++){
         const tb=B0+k*BEAT;
         const osc=oc.createOscillator();osc.frequency.value=1000;
         const cg=oc.createGain();
@@ -2473,12 +2475,32 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       const outUrl=URL.createObjectURL(new Blob([encodeWav(mix)],{type:'audio/wav'}));
       const out=new Audio();
       out.src=outUrl;out.preload='auto';
-      // Live Ta detection: tap the mic graph and find voice onsets in the
-      // expected beat windows while recording — no dependency on decoding
-      // the finished take, and gives real-time UI feedback.
-      const live={armed:false,noise:[],dctx:[],taHits:[],taDone:{}};
+      // Live Ta detection: collect ALL voice onsets in the Ta region, then
+      // (at stop) find the single global shift that best aligns them to the
+      // expected beat grid — immune to locking onto the wrong beat.
+      const live={armed:false,noise:[],dctx:[],onsets:[],loud:false};
       stemRecLiveRef.current=live;
-      const taBeatTimes=[8,9,10,11].map(k=>B0+k*BEAT);
+      const taBeatTimes=[6,7,8,9].map(k=>B0+k*BEAT);
+      const median=(arr)=>{const s=[...arr].sort((a,b)=>a-b);return s[Math.floor(s.length/2)];};
+      // Best alignment of detected onsets to the expected grid, searched over
+      // the physically plausible delay range only.
+      const matchTaShift=(onsets,expected)=>{
+        let best=null;
+        for(let sh=-0.10;sh<=0.65;sh+=0.005){
+          let matched=0,err=0;
+          expected.forEach(t=>{
+            let d=Infinity;onsets.forEach(o=>{const dd=Math.abs(o-(t+sh));if(dd<d)d=dd;});
+            if(d<0.12){matched++;err+=d;}else err+=0.2;
+          });
+          if(!best||matched>best.matched||(matched===best.matched&&err<best.err-1e-9)) best={sh,matched,err};
+        }
+        return best&&best.matched>=2?{dv:Math.round(best.sh*1000)/1000,matched:best.matched}:null;
+      };
+      const liveTaResult=()=>{
+        if(live.onsets.length<2||!live.dctx.length)return null;
+        const dc=median(live.dctx);
+        return matchTaShift(live.onsets,taBeatTimes.map(tb=>dc+tb));
+      };
       const sp=actx.createScriptProcessor(2048,1,1);
       const spMute=actx.createGain();spMute.gain.value=0;
       hp.connect(sp);sp.connect(spMute);spMute.connect(actx.destination);
@@ -2496,27 +2518,25 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           const ns=[...live.noise].sort((a,b)=>a-b);
           const noise=ns.length?ns[Math.floor(ns.length/2)]:1e-5;
           const thr=Math.max(noise*4,0.004);
-          // collect quiet blocks before the first Ta window as extra noise refs
-          if(out.currentTime<taBeatTimes[0]-0.4){if(live.noise.length<400)live.noise.push(rms);}
-          taBeatTimes.forEach((tb,ix)=>{
-            if(live.taDone[ix])return;
-            const exp=dc+tb;
-            if(blockEnd<exp-0.2)return;
-            if(blockStart>exp+0.45){live.taDone[ix]='miss';setStemRecTaUi({hits:live.taHits.length,seen:Object.keys(live.taDone).length,dv:live.taHits.length?median(live.taHits):null});return;}
-            if(rms>thr){
+          const pos=out.currentTime;
+          // quiet blocks before the Ta region refine the noise floor
+          if(pos<taBeatTimes[0]-0.5){if(live.noise.length<400)live.noise.push(rms);}
+          // Ta onset collection region (element-position based)
+          if(pos>taBeatTimes[0]-0.35&&pos<taBeatTimes[3]+0.9){
+            if(rms>thr&&!live.loud){
               // refine onset inside the block in 5ms steps
               const w=Math.floor(bsr*0.005);let onAt=blockStart;
               for(let o=0;o+w<=bl;o+=w){let s2=0;for(let i=o;i<o+w;i++){const v=data[i];s2+=v*v;}if(Math.sqrt(s2/w)>thr){onAt=blockStart+o/bsr;break;}}
-              const dv=onAt-exp;
-              if(dv>-0.2&&dv<0.5){
-                live.taHits.push(dv);live.taDone[ix]='hit';
-                setStemRecTaUi({hits:live.taHits.length,seen:Object.keys(live.taDone).length,dv:median(live.taHits)});
+              if(!live.onsets.length||onAt-live.onsets[live.onsets.length-1]>0.25){
+                live.onsets.push(onAt);
+                const m=liveTaResult();
+                setStemRecTaUi({hits:Math.min(4,live.onsets.length),seen:Math.min(4,live.onsets.length),dv:m?m.dv:null});
               }
             }
-          });
+            live.loud=rms>thr*0.7;
+          }
         }catch(_){}
       };
-      const median=(arr)=>{const s=[...arr].sort((a,b)=>a-b);return s[Math.floor(s.length/2)];};
       const mr=new MediaRecorder(dest.stream,{audioBitsPerSecond:256000});
       stemRecChunksRef.current=[];
       mr.ondataavailable=(e)=>{if(e.data.size>0) stemRecChunksRef.current.push(e.data);};
@@ -2539,13 +2559,17 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         let sync=(D!=null?D:0.15)+R_LEAD;
         let method='clock estimate only';
         let dv=null,how='';
-        if(live.taHits.length>=2){dv=median(live.taHits);how='live ✓'+live.taHits.length+'/4';}
+        const lm=liveTaResult();
+        if(lm){dv=lm.dv;how='live ✓'+lm.matched+'/4';}
         if(dv==null){
           try{
             const rec=await actx.decodeAudioData(await blob.arrayBuffer());
             if(D!=null){
-              const odv=detectTaOnsets(rec,D,taBeatTimes);
-              if(odv!=null&&odv>-0.06&&odv<0.6){dv=odv;how='offline';}
+              const ons=detectTaOnsets(rec,D,taBeatTimes);
+              if(ons&&ons.length>=2){
+                const om=matchTaShift(ons,taBeatTimes.map(tb=>D+tb));
+                if(om){dv=om.dv;how='offline ✓'+om.matched+'/4';}
+              }
             }
           }catch(_){}
         }
@@ -3284,7 +3308,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         <div className="rec-confirm-panel">
           <div className="modaltitle">Record Stem</div>
           <div style={{fontSize:13,color:'var(--muted)',marginBottom:10}}>Record your part over "{s.title}"</div>
-          <div style={{fontSize:12,color:'var(--muted)',marginBottom:12,lineHeight:1.5}}>Your instruments ({MY_INSTRS.length?MY_INSTRS.map(id=>(INSTR.find(i=>i.id===id)||{label:id}).label).join(', '):'none set'}) will be muted while all other stems play. Count-in: 8 beeps, then you answer "Ta" on the 4 silent beats (calibrates your delay), then the stems start. Your microphone recording will be saved as a personal stem recording.</div>
+          <div style={{fontSize:12,color:'var(--muted)',marginBottom:12,lineHeight:1.5}}>Your instruments ({MY_INSTRS.length?MY_INSTRS.map(id=>(INSTR.find(i=>i.id===id)||{label:id}).label).join(', '):'none set'}) will be muted while all other stems play. Count-in: 6 slow beeps, then you answer "Ta" on the 4 silent beats (calibrates your delay), then the stems start. Your microphone recording will be saved as a personal stem recording.</div>
           <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:6,padding:'8px 10px',background:'var(--surface-2)',borderRadius:8,cursor:'pointer'}} onClick={()=>setStemRecHpPersist(!stemRecHp)}>
             <span style={{width:36,height:20,borderRadius:10,background:stemRecHp?'var(--ok)':'var(--line-2)',position:'relative',flexShrink:0,transition:'background .15s'}}>
               <span style={{position:'absolute',top:2,left:stemRecHp?18:2,width:16,height:16,borderRadius:'50%',background:'#fff',transition:'left .15s'}}/>
@@ -3307,7 +3331,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       {stemRecState==='ready' && <div className="rec-confirm">
         <div className="rec-confirm-panel" style={{textAlign:'center'}}>
           <div className="modaltitle">Ready</div>
-          <div style={{fontSize:12,color:'var(--muted)',marginBottom:14,lineHeight:1.5}}>Tap GO — you'll hear <b>8 beeps</b>. Keep the pulse going out loud: say <b>"Ta" on the next 4 silent beats</b> (this calibrates your delay). The stems start right after.</div>
+          <div style={{fontSize:12,color:'var(--muted)',marginBottom:14,lineHeight:1.5}}>Tap GO — you'll hear <b>6 slow beeps</b>. Keep the pulse going out loud: say <b>"Ta" on the next 4 silent beats</b> (this calibrates your delay). The stems start right after.</div>
           <button className="btn" style={{background:'var(--drums)',fontSize:16,padding:'12px 36px'}} onClick={beginStemRec}>🎙 GO</button>
           <div style={{marginTop:12}}><button className="btn ghost sm" onClick={cancelStemRecReady}>Cancel</button></div>
         </div>
