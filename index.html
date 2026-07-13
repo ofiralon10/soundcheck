@@ -254,7 +254,9 @@
   .files-modal{position:fixed;inset:0;z-index:55;display:flex;align-items:flex-end;justify-content:center;background:rgba(8,7,12,.66)}
   .files-panel{background:var(--surface);border:1px solid var(--line-2);border-radius:18px 18px 0 0;width:100%;max-width:560px;padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
   .files-modal.planwide{align-items:center}
-  .files-panel.planwide{max-width:1120px;border-radius:18px;max-height:90vh;padding:22px 22px}
+  /* Inside the desktop tablet frame the modal is fixed to the scaled .simframe,
+     so size the panel as a % of the frame (not vh, which is the real viewport). */
+  .files-panel.planwide{max-width:1120px;border-radius:18px;max-height:88%;padding:22px 22px}
   .plan-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;align-items:start}
   .files-cat{margin-bottom:12px;border:1.5px solid var(--line-2);border-radius:12px;padding:12px;transition:border-color .15s,background .15s}
   .files-cat.drop-over{border-color:var(--keys);background:rgba(139,124,246,.08)}
@@ -376,7 +378,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.266';
+const VERSION='0.267';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
