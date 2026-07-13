@@ -253,6 +253,9 @@
   .player-vol input::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:var(--muted);border:none;cursor:pointer}
   .files-modal{position:fixed;inset:0;z-index:55;display:flex;align-items:flex-end;justify-content:center;background:rgba(8,7,12,.66)}
   .files-panel{background:var(--surface);border:1px solid var(--line-2);border-radius:18px 18px 0 0;width:100%;max-width:560px;padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .files-modal.planwide{align-items:center}
+  .files-panel.planwide{max-width:1120px;border-radius:18px;max-height:90vh;padding:22px 22px}
+  .plan-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;align-items:start}
   .files-cat{margin-bottom:12px;border:1.5px solid var(--line-2);border-radius:12px;padding:12px;transition:border-color .15s,background .15s}
   .files-cat.drop-over{border-color:var(--keys);background:rgba(139,124,246,.08)}
   .files-cat-h{font-family:var(--display);font-weight:600;font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
@@ -372,7 +375,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.264';
+const VERSION='0.265';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -4023,6 +4026,7 @@ function Album({state,update}){
 const RISK_META={'on-track':{label:'On track',color:'var(--ok)'},'tight':{label:'Tight',color:'var(--warn)'},'at-risk':{label:'At risk',color:'var(--drums)'}};
 function PlanModal({show,state,update,onClose}){
   useBackHandler(true,onClose);
+  const wide=useWide();
   const plan=buildShowPlan(show,state);
   const titleOf=id=>{const s=(state.songs||[]).find(x=>x.id===id);return s?(s.title||'Untitled'):id;};
   const upcoming=(state.rehearsals||[]).filter(r=>r.showId===show.id&&!r.done).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
@@ -4069,8 +4073,8 @@ function PlanModal({show,state,update,onClose}){
   );
   const risk=aiPlan?(RISK_META[aiPlan.riskLevel]||{label:aiPlan.riskLevel,color:'var(--muted)'}):null;
   return (
-    <div className="files-modal" onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
-      <div className="files-panel" onClick={e=>e.stopPropagation()}>
+    <div className={'files-modal'+(wide?' planwide':'')} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div className={'files-panel'+(wide?' planwide':'')} onClick={e=>e.stopPropagation()}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
           <div className="modaltitle" style={{margin:0}} dir="auto">Plan · {show.name||'Show'}</div>
           <button onClick={onClose} style={{background:'none',border:'none',color:'var(--muted)',fontSize:22,cursor:'pointer',padding:'0 4px'}}>×</button>
@@ -4131,7 +4135,7 @@ function PlanModal({show,state,update,onClose}){
             </div>
             <div style={{fontSize:13,lineHeight:1.5,whiteSpace:'pre-wrap'}} dir="auto">{aiPlan.assessment}</div>
           </div>
-          {aiPlan.sessions.map((s,i)=>sessionCard('ai-'+i,s.title||('Rehearsal '+(i+1)),s.goal,s.learn,s.practice,s.prep||[]))}
+          <div className={wide?'plan-grid':''}>{aiPlan.sessions.map((s,i)=>sessionCard('ai-'+i,s.title||('Rehearsal '+(i+1)),s.goal,s.learn,s.practice,s.prep||[]))}</div>
           {aiPlan.memberFeedback&&aiPlan.memberFeedback.length>0 && <div className="plan-card">
             <div className="plan-h">Personal feedback</div>
             {aiPlan.memberFeedback.map((m,i)=>{ const inst=INSTR.find(x=>x.id===(m.instrument||'').toLowerCase()); return (
@@ -4151,7 +4155,7 @@ function PlanModal({show,state,update,onClose}){
         {/* Basic (rule-based) fallback plan — shown when there's no AI plan */}
         {!aiPlan && <React.Fragment>
           {!hasKey && <div style={{fontSize:12,color:'var(--muted)',margin:'6px 2px'}}>Basic plan (rule-based) — add an API key above for a reasoned plan and personal feedback.</div>}
-          {plan.sessions.map((sess,i)=>sessionCard('basic-'+i,'Rehearsal '+(i+1),'',sess.learn,sess.practice,sess.prep.map(p=>titleOf(p.songId)+': '+p.needs.join('+'))))}
+          <div className={wide?'plan-grid':''}>{plan.sessions.map((sess,i)=>sessionCard('basic-'+i,'Rehearsal '+(i+1),'',sess.learn,sess.practice,sess.prep.map(p=>titleOf(p.songId)+': '+p.needs.join('+'))))}</div>
         </React.Fragment>}
 
         <div className="btnrow"><button className="btn" onClick={onClose}>Close</button></div>
