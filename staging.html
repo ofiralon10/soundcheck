@@ -372,7 +372,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.262';
+const VERSION='0.263';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -4033,10 +4033,11 @@ function PlanModal({show,state,update,onClose}){
   const [showKeyForm,setShowKeyForm]=useState(!aiGetKey());
   const [aiBusy,setAiBusy]=useState(false);
   const [aiErr,setAiErr]=useState('');
-  const [aiPlan,setAiPlan]=useState(null);
+  const [aiPlan,setAiPlan]=useState(show.aiPlan||null);
   const saveKey=()=>{ const k=keyInput.trim(); if(!k) return; aiSetKey(k); setHasKey(true); setShowKeyForm(false); setKeyInput(''); setAiErr(''); };
-  const removeKey=()=>{ aiSetKey(''); setHasKey(false); setAiPlan(null); setShowKeyForm(true); };
-  const runAi=async()=>{ setAiBusy(true); setAiErr(''); setMsg(''); try{ const r=await aiGeneratePlan(show,state); setAiPlan(r); }catch(e){ setAiErr(e.message||String(e)); } setAiBusy(false); };
+  const removeKey=()=>{ aiSetKey(''); setHasKey(false); setShowKeyForm(true); };
+  const clearAiPlan=()=>{ setAiPlan(null); update(st=>{const sh=getShow(st,show.id);if(sh)delete sh.aiPlan;return st;}); };
+  const runAi=async()=>{ setAiBusy(true); setAiErr(''); setMsg(''); try{ const r=await aiGeneratePlan(show,state); r.generatedAt=new Date().toISOString(); setAiPlan(r); update(st=>{const sh=getShow(st,show.id);if(sh)sh.aiPlan=r;return st;}); }catch(e){ setAiErr(e.message||String(e)); } setAiBusy(false); };
   const applySession=(learnIds,practiceIds,prepStrings,rehId)=>{
     update(st=>{const r=(st.rehearsals||[]).find(x=>x.id===rehId);if(r){r.focusPractice=[...practiceIds];r.focusLearn=[...learnIds];const prep=(prepStrings||[]).join('; ');if(prep)r.notes=(r.notes?r.notes+'\n':'')+'Prep — '+prep;logAct(st,'applied a rehearsal plan');}return st;});
     setApplyFor(null);setMsg('Applied to the rehearsal.');
@@ -4121,9 +4122,11 @@ function PlanModal({show,state,update,onClose}){
         {/* AI result */}
         {aiPlan && <React.Fragment>
           <div className="plan-card">
-            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6,flexWrap:'wrap'}}>
               <div className="plan-h" style={{margin:0}}>Manager's read</div>
               {risk && <span className="plan-tag" style={{background:risk.color}}>{risk.label}</span>}
+              {aiPlan.generatedAt && <span style={{fontSize:11,color:'var(--muted)'}}>{fmtDate(aiPlan.generatedAt)} · {fmtTime(aiPlan.generatedAt)}</span>}
+              <button className="btn ghost sm" style={{marginLeft:'auto'}} onClick={clearAiPlan}>Clear</button>
             </div>
             <div style={{fontSize:13,lineHeight:1.5,whiteSpace:'pre-wrap'}} dir="auto">{aiPlan.assessment}</div>
           </div>
