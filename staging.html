@@ -372,7 +372,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.263';
+const VERSION='0.264';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -414,6 +414,7 @@ function scScrollToEl(el,offPx){
 const CHANGELOG={
   '0.262':[
     'AI band manager: in Shows → Plan Rehearsals, Claude reads your progress and plans the rehearsals + gives each player personal feedback (needs your own Anthropic API key)',
+    'Generated plans are saved on the show, so they persist after closing and are shared with the band',
   ],
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -1480,7 +1481,7 @@ function App(){
       {tab==='stage'    && <Stage state={state} go={setTab} update={update} goSong={id=>{setTab('setlist');setGoSongId(id);}} showId={curShowId} pickShow={pickShow} />}
       {tab==='setlist'  && <Setlist state={state} update={update} goSongId={goSongId} clearGoSong={()=>setGoSongId(null)} showId={curShowId} pickShow={pickShow} />}
       {tab==='rehearse' && <Rehearsals state={state} update={update} goSong={id=>{setTab('setlist');setGoSongId(id);}} />}
-      {tab==='shows'    && <Shows state={state} update={update} pickShow={pickShow} selectedShowId={curShowId} />}
+      {tab==='shows'    && <Shows state={state} update={update} pickShow={pickShow} selectedShowId={curShowId} user={user} />}
       {tab==='album'    && <Album state={state} update={update} />}
       {tab==='setup'    && <Setup state={state} update={update} user={user} onSignOut={signOut} onSwitch={switchBoard} />}
       <TabBar tab={tab} setTab={setTab} />
@@ -4158,7 +4159,8 @@ function PlanModal({show,state,update,onClose}){
     </div>
   );
 }
-function Shows({state,update,pickShow,selectedShowId}){
+function Shows({state,update,pickShow,selectedShowId,user}){
+  const canPlan=!!(user&&user.email===ADMIN_EMAIL);
   const [planShow,setPlanShow]=useState(null);
   const [adding,setAdding]=useState(false);
   const [editId,setEditId]=useState(null);
@@ -4245,7 +4247,7 @@ function Shows({state,update,pickShow,selectedShowId}){
                 <button className="btn ghost sm" onClick={()=>startEdit(sh)}>Edit</button>
                 <button className="btn ghost sm" onClick={()=>startClone(sh)}>Clone</button>
                 <button className="btn ghost sm" onClick={()=>setManageSongs(sh.id)}>Manage songs</button>
-                {activeEntries.length>0 && <button className="btn ghost sm" style={{color:'var(--keys)',borderColor:'rgba(139,124,246,.5)'}} onClick={()=>setPlanShow(sh.id)}>◆ Plan Rehearsals</button>}
+                {canPlan && activeEntries.length>0 && <button className="btn ghost sm" style={{color:'var(--keys)',borderColor:'rgba(139,124,246,.5)'}} onClick={()=>setPlanShow(sh.id)}>◆ Plan Rehearsals</button>}
                 {confirmDel===sh.id
                   ? <React.Fragment><button className="btn danger sm" onClick={()=>delShow(sh.id)}>Confirm delete?</button><button className="btn ghost sm" onClick={()=>setConfirmDel(null)}>Cancel</button></React.Fragment>
                   : <button className="btn ghost sm" style={{color:'var(--drums)'}} onClick={()=>setConfirmDel(sh.id)}>Delete</button>}
@@ -4272,7 +4274,7 @@ function Shows({state,update,pickShow,selectedShowId}){
       </div>
       : <div className="add-bar"><button className="btn ghost" onClick={startAdd}>+ New show</button></div>}
       {cropSrc && <CropModal src={cropSrc} onCancel={()=>{setCropSrc(null);setArtTarget(null);}} onDone={onCropDone}/>}
-      {planShow && (()=>{ const sh=getShow(state,planShow); return sh?<PlanModal show={sh} state={state} update={update} onClose={()=>setPlanShow(null)}/>:null; })()}
+      {canPlan && planShow && (()=>{ const sh=getShow(state,planShow); return sh?<PlanModal show={sh} state={state} update={update} onClose={()=>setPlanShow(null)}/>:null; })()}
       {manageSongs && (()=>{
         const sh=getShow(state,manageSongs);
         if(!sh) return null;

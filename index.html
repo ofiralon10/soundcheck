@@ -372,7 +372,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.262';
+const VERSION='0.264';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -414,6 +414,7 @@ function scScrollToEl(el,offPx){
 const CHANGELOG={
   '0.262':[
     'AI band manager: in Shows → Plan Rehearsals, Claude reads your progress and plans the rehearsals + gives each player personal feedback (needs your own Anthropic API key)',
+    'Generated plans are saved on the show, so they persist after closing and are shared with the band',
   ],
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
@@ -1480,7 +1481,7 @@ function App(){
       {tab==='stage'    && <Stage state={state} go={setTab} update={update} goSong={id=>{setTab('setlist');setGoSongId(id);}} showId={curShowId} pickShow={pickShow} />}
       {tab==='setlist'  && <Setlist state={state} update={update} goSongId={goSongId} clearGoSong={()=>setGoSongId(null)} showId={curShowId} pickShow={pickShow} />}
       {tab==='rehearse' && <Rehearsals state={state} update={update} goSong={id=>{setTab('setlist');setGoSongId(id);}} />}
-      {tab==='shows'    && <Shows state={state} update={update} pickShow={pickShow} selectedShowId={curShowId} />}
+      {tab==='shows'    && <Shows state={state} update={update} pickShow={pickShow} selectedShowId={curShowId} user={user} />}
       {tab==='album'    && <Album state={state} update={update} />}
       {tab==='setup'    && <Setup state={state} update={update} user={user} onSignOut={signOut} onSwitch={switchBoard} />}
       <TabBar tab={tab} setTab={setTab} />
@@ -4033,10 +4034,11 @@ function PlanModal({show,state,update,onClose}){
   const [showKeyForm,setShowKeyForm]=useState(!aiGetKey());
   const [aiBusy,setAiBusy]=useState(false);
   const [aiErr,setAiErr]=useState('');
-  const [aiPlan,setAiPlan]=useState(null);
+  const [aiPlan,setAiPlan]=useState(show.aiPlan||null);
   const saveKey=()=>{ const k=keyInput.trim(); if(!k) return; aiSetKey(k); setHasKey(true); setShowKeyForm(false); setKeyInput(''); setAiErr(''); };
-  const removeKey=()=>{ aiSetKey(''); setHasKey(false); setAiPlan(null); setShowKeyForm(true); };
-  const runAi=async()=>{ setAiBusy(true); setAiErr(''); setMsg(''); try{ const r=await aiGeneratePlan(show,state); setAiPlan(r); }catch(e){ setAiErr(e.message||String(e)); } setAiBusy(false); };
+  const removeKey=()=>{ aiSetKey(''); setHasKey(false); setShowKeyForm(true); };
+  const clearAiPlan=()=>{ setAiPlan(null); update(st=>{const sh=getShow(st,show.id);if(sh)delete sh.aiPlan;return st;}); };
+  const runAi=async()=>{ setAiBusy(true); setAiErr(''); setMsg(''); try{ const r=await aiGeneratePlan(show,state); r.generatedAt=new Date().toISOString(); setAiPlan(r); update(st=>{const sh=getShow(st,show.id);if(sh)sh.aiPlan=r;return st;}); }catch(e){ setAiErr(e.message||String(e)); } setAiBusy(false); };
   const applySession=(learnIds,practiceIds,prepStrings,rehId)=>{
     update(st=>{const r=(st.rehearsals||[]).find(x=>x.id===rehId);if(r){r.focusPractice=[...practiceIds];r.focusLearn=[...learnIds];const prep=(prepStrings||[]).join('; ');if(prep)r.notes=(r.notes?r.notes+'\n':'')+'Prep — '+prep;logAct(st,'applied a rehearsal plan');}return st;});
     setApplyFor(null);setMsg('Applied to the rehearsal.');
@@ -4121,9 +4123,11 @@ function PlanModal({show,state,update,onClose}){
         {/* AI result */}
         {aiPlan && <React.Fragment>
           <div className="plan-card">
-            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6,flexWrap:'wrap'}}>
               <div className="plan-h" style={{margin:0}}>Manager's read</div>
               {risk && <span className="plan-tag" style={{background:risk.color}}>{risk.label}</span>}
+              {aiPlan.generatedAt && <span style={{fontSize:11,color:'var(--muted)'}}>{fmtDate(aiPlan.generatedAt)} · {fmtTime(aiPlan.generatedAt)}</span>}
+              <button className="btn ghost sm" style={{marginLeft:'auto'}} onClick={clearAiPlan}>Clear</button>
             </div>
             <div style={{fontSize:13,lineHeight:1.5,whiteSpace:'pre-wrap'}} dir="auto">{aiPlan.assessment}</div>
           </div>
@@ -4155,7 +4159,8 @@ function PlanModal({show,state,update,onClose}){
     </div>
   );
 }
-function Shows({state,update,pickShow,selectedShowId}){
+function Shows({state,update,pickShow,selectedShowId,user}){
+  const canPlan=!!(user&&user.email===ADMIN_EMAIL);
   const [planShow,setPlanShow]=useState(null);
   const [adding,setAdding]=useState(false);
   const [editId,setEditId]=useState(null);
@@ -4242,7 +4247,7 @@ function Shows({state,update,pickShow,selectedShowId}){
                 <button className="btn ghost sm" onClick={()=>startEdit(sh)}>Edit</button>
                 <button className="btn ghost sm" onClick={()=>startClone(sh)}>Clone</button>
                 <button className="btn ghost sm" onClick={()=>setManageSongs(sh.id)}>Manage songs</button>
-                {activeEntries.length>0 && <button className="btn ghost sm" style={{color:'var(--keys)',borderColor:'rgba(139,124,246,.5)'}} onClick={()=>setPlanShow(sh.id)}>◆ Plan Rehearsals</button>}
+                {canPlan && activeEntries.length>0 && <button className="btn ghost sm" style={{color:'var(--keys)',borderColor:'rgba(139,124,246,.5)'}} onClick={()=>setPlanShow(sh.id)}>◆ Plan Rehearsals</button>}
                 {confirmDel===sh.id
                   ? <React.Fragment><button className="btn danger sm" onClick={()=>delShow(sh.id)}>Confirm delete?</button><button className="btn ghost sm" onClick={()=>setConfirmDel(null)}>Cancel</button></React.Fragment>
                   : <button className="btn ghost sm" style={{color:'var(--drums)'}} onClick={()=>setConfirmDel(sh.id)}>Delete</button>}
@@ -4269,7 +4274,7 @@ function Shows({state,update,pickShow,selectedShowId}){
       </div>
       : <div className="add-bar"><button className="btn ghost" onClick={startAdd}>+ New show</button></div>}
       {cropSrc && <CropModal src={cropSrc} onCancel={()=>{setCropSrc(null);setArtTarget(null);}} onDone={onCropDone}/>}
-      {planShow && (()=>{ const sh=getShow(state,planShow); return sh?<PlanModal show={sh} state={state} update={update} onClose={()=>setPlanShow(null)}/>:null; })()}
+      {canPlan && planShow && (()=>{ const sh=getShow(state,planShow); return sh?<PlanModal show={sh} state={state} update={update} onClose={()=>setPlanShow(null)}/>:null; })()}
       {manageSongs && (()=>{
         const sh=getShow(state,manageSongs);
         if(!sh) return null;
