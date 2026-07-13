@@ -187,6 +187,11 @@
   .file-menu{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 10px;justify-content:flex-end;align-items:center}
   .file-menu button{font-size:12px;color:var(--text);background:var(--surface-2);border:1px solid var(--line);border-radius:7px;padding:7px 13px;cursor:pointer}
   .file-menu button.danger{color:var(--drums);border-color:rgba(242,84,91,.4)}
+  .plan-card{background:var(--surface-2);border:1px solid var(--line-2);border-radius:12px;padding:11px 13px;margin-bottom:10px}
+  .plan-h{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:7px}
+  .plan-tag{font-family:var(--mono);font-size:10px;font-weight:700;color:#15141B;padding:2px 8px;border-radius:6px}
+  .plan-chips{display:inline-flex;flex-wrap:wrap;gap:5px;vertical-align:middle}
+  .plan-chip{font-size:12px;padding:3px 9px;border-radius:999px;border:1px solid;background:transparent;direction:ltr;display:inline-block}
   .ftype{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.02em;color:#15141B;padding:5px 0;border-radius:6px;flex-shrink:0;width:38px;text-align:center}
   .fver{font-family:var(--mono);font-size:9px;font-weight:700;color:var(--muted);flex-shrink:0;letter-spacing:.02em}
   .fname{flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -367,7 +372,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.260';
+const VERSION='0.261';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -833,6 +838,45 @@ function getShow(state,showId){ return (state.shows||[]).find(x=>x.id===showId)|
 function getEntry(show,songId){ return show?(show.setlist||[]).find(e=>e.songId===songId):null; }
 function mergeSongEntry(song,entry){ return song&&entry?Object.assign({},song,{parts:entry.parts,guests:entry.guests,encore:entry.encore,excluded:entry.excluded}):song; }
 function isRehLive(r){ if(!r||!r.date||r.done) return false; const start=new Date(r.date).getTime(); const dur=parseFloat(r.duration)||2; const end=start+dur*3600000; const now=Date.now(); return now>=start && now<=end; }
+// Rehearsal planner (rule-based; structured so an AI "polish" step can be added
+// later). Reads current status (docs present + per-member readiness) for a show
+// and proposes a sequence of rehearsal sessions to reach show-ready.
+const PLAN_CORE=['vocals','drums','bass','guitar','keys','other'];
+function planCatOf(f){ return f.cat==='original'?'other':(f.cat||'other'); }
+function buildShowPlan(show,state){
+  const songs=state.songs||[];
+  const byId=id=>songs.find(x=>x.id===id);
+  const entries=(show.setlist||[]).filter(e=>!e.excluded);
+  const perSong=entries.map(e=>{
+    const song=byId(e.songId); if(!song) return null;
+    const files=song.files||[];
+    const hasSlide=files.some(f=>planCatOf(f)==='slide'&&f.url);
+    const stemCats=new Set(files.filter(f=>f.stem).map(planCatOf).filter(c=>PLAN_CORE.includes(c)));
+    return {songId:e.songId,title:song.title||'Untitled',readiness:entryReadiness(e),hasSlide,stemCount:stemCats.size,docReady:hasSlide&&stemCats.size>0};
+  }).filter(Boolean);
+  const total=perSong.length;
+  const ready=perSong.filter(s=>s.readiness>=0.9).length;
+  const overall=total?perSong.reduce((a,s)=>a+s.readiness,0)/total:0;
+  const docsMissing=perSong.filter(s=>!s.docReady);
+  const instrAvg=INSTR.map(i=>{ let sum=0,n=0; entries.forEach(e=>{ sum+=score((e.parts||{})[i.id]||'todo'); n++; }); return {id:i.id,label:i.label,avg:n?sum/n:0}; });
+  const statusById={}; perSong.forEach(s=>statusById[s.songId]=s);
+  const learnPool=perSong.filter(s=>s.readiness<0.30).sort((a,b)=>a.readiness-b.readiness);
+  const practicePool=perSong.filter(s=>s.readiness>=0.30&&s.readiness<0.90).sort((a,b)=>b.readiness-a.readiness);
+  const readyPool=perSong.filter(s=>s.readiness>=0.90);
+  const nSess=Math.min(8,Math.max(1,Math.ceil(Math.max(learnPool.length/2,(learnPool.length+practicePool.length)/5))));
+  const sessions=[]; let li=0,pi=0;
+  for(let s=0;s<nSess;s++){
+    const learn=[],practice=[];
+    const nLearn=learnPool.length?Math.min(2,learnPool.length):0;
+    for(let k=0;k<nLearn;k++) learn.push(learnPool[(li++)%learnPool.length].songId);
+    const pool=practicePool.length?practicePool:readyPool;
+    for(let k=0;k<5&&pool.length;k++) practice.push(pool[(pi++)%pool.length].songId);
+    const L=[...new Set(learn)],P=[...new Set(practice)];
+    const prep=[...L,...P].map(id=>{const st=statusById[id];if(!st)return null;const needs=[];if(!st.hasSlide)needs.push('slide');if(st.stemCount===0)needs.push('stems');return needs.length?{songId:id,needs}:null;}).filter(Boolean);
+    sessions.push({learn:L,practice:P,prep});
+  }
+  return {total,ready,overall,docsMissing,instrAvg,perSong,sessions};
+}
 function fmtDuration(d){ if(!d) return ''; const h=Math.floor(d); const m=Math.round((d-h)*60); return h+'h'+(m?(' '+m+'m'):''); }
 function fmtTimeRange(iso,dur){ if(!iso) return ''; const s=new Date(iso); const st=fmtTime(iso); if(!dur) return st; const e=new Date(s.getTime()+dur*3600000); const et=e.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); return st+'–'+et; }
 const KIND_COLOR={audio:'#EC6FA9',pdf:'#F2545B',slides:'#F4A93C',doc:'#5B9DF9',image:'#2DD4BF',sheet:'#3DD68C',file:'#948FA6',link:'#C9A6FF'};
@@ -3841,7 +3885,75 @@ function Album({state,update}){
     </div>
   );
 }
+function PlanModal({show,state,update,onClose}){
+  useBackHandler(true,onClose);
+  const plan=buildShowPlan(show,state);
+  const titleOf=id=>{const s=(state.songs||[]).find(x=>x.id===id);return s?(s.title||'Untitled'):id;};
+  const upcoming=(state.rehearsals||[]).filter(r=>r.showId===show.id&&!r.done).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const [applyFor,setApplyFor]=useState(null);
+  const [msg,setMsg]=useState('');
+  const applySession=(sess,rehId)=>{
+    update(st=>{const r=(st.rehearsals||[]).find(x=>x.id===rehId);if(r){r.focusPractice=[...sess.practice];r.focusLearn=[...sess.learn];const prep=sess.prep.map(p=>titleOf(p.songId)+': '+p.needs.join('+')).join('; ');if(prep)r.notes=(r.notes?r.notes+'\n':'')+'Prep — '+prep;logAct(st,'applied a rehearsal plan');}return st;});
+    setApplyFor(null);setMsg('Applied to the rehearsal.');
+  };
+  const chip=(id,color)=><span key={id} className="plan-chip" style={{borderColor:color,color}} dir="auto">{titleOf(id)}</span>;
+  return (
+    <div className="files-modal" onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div className="files-panel" onClick={e=>e.stopPropagation()}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+          <div className="modaltitle" style={{margin:0}} dir="auto">Plan · {show.name||'Show'}</div>
+          <button onClick={onClose} style={{background:'none',border:'none',color:'var(--muted)',fontSize:22,cursor:'pointer',padding:'0 4px'}}>×</button>
+        </div>
+        {msg && <div style={{fontSize:12,color:'var(--ok)',marginBottom:8}}>{msg}</div>}
+        {/* Status */}
+        <div className="plan-card">
+          <div className="plan-h">Status</div>
+          <div style={{display:'flex',gap:14,flexWrap:'wrap',fontSize:13}}>
+            <span><b style={{color:meterColor(plan.overall)}}>{Math.round(plan.overall*100)}%</b> ready</span>
+            <span>{plan.ready}/{plan.total} songs show-ready</span>
+            <span style={{color:plan.docsMissing.length?'var(--warn)':'var(--muted)'}}>{plan.docsMissing.length} missing docs</span>
+          </div>
+          <div style={{display:'flex',gap:10,flexWrap:'wrap',marginTop:8}}>
+            {plan.instrAvg.map(x=>(
+              <div key={x.id} style={{display:'flex',alignItems:'center',gap:5}}>
+                <InstrBadge id={x.id} size={18}/>
+                <span style={{fontFamily:'var(--mono)',fontSize:11,color:meterColor(x.avg)}}>{Math.round(x.avg*100)}%</span>
+              </div>
+            ))}
+          </div>
+          {plan.docsMissing.length>0 && <div style={{marginTop:8,fontSize:12,color:'var(--muted)'}}>
+            Needs docs: {plan.docsMissing.map(s=>(<span key={s.songId} dir="auto"> · <b style={{color:'var(--text)'}}>{s.title}</b> ({[!s.hasSlide&&'slide',s.stemCount===0&&'stems'].filter(Boolean).join('+')})</span>))}
+          </div>}
+        </div>
+        {/* Sessions */}
+        {plan.sessions.map((sess,i)=>(
+          <div className="plan-card" key={i}>
+            <div className="plan-h">Rehearsal {i+1}</div>
+            {sess.prep.length>0 && <div style={{fontSize:12,marginBottom:6}}><span style={{color:'var(--warn)',fontWeight:700}}>Prepare: </span>{sess.prep.map((p,j)=><span key={p.songId} dir="auto">{j>0?', ':''}{titleOf(p.songId)} ({p.needs.join('+')})</span>)}</div>}
+            {sess.learn.length>0 && <div style={{fontSize:12,marginTop:2}}><span className="plan-tag" style={{background:'var(--learn)'}}>Learn</span> <span className="plan-chips">{sess.learn.map(id=>chip(id,'var(--learn)'))}</span></div>}
+            {sess.practice.length>0 && <div style={{fontSize:12,marginTop:6}}><span className="plan-tag" style={{background:'var(--warn)'}}>Practice</span> <span className="plan-chips">{sess.practice.map(id=>chip(id,'var(--warn)'))}</span></div>}
+            {applyFor===i
+              ? <div style={{marginTop:8}}>
+                  {upcoming.length===0
+                    ? <div style={{fontSize:12,color:'var(--muted)'}}>No upcoming rehearsal for this show — schedule one in the Rehearsals tab first.<div style={{marginTop:6}}><button className="btn ghost sm" onClick={()=>setApplyFor(null)}>OK</button></div></div>
+                    : <React.Fragment>
+                        <div style={{fontSize:11,color:'var(--muted)',marginBottom:4}}>Apply to which rehearsal?</div>
+                        {upcoming.map(r=>(
+                          <button key={r.id} className="btn ghost sm" style={{display:'block',width:'100%',textAlign:'left',marginBottom:4}} onClick={()=>applySession(sess,r.id)}>{r.date?fmtDate(r.date)+' · '+fmtTime(r.date):'Undated rehearsal'}{r.location?' · '+r.location:''}</button>
+                        ))}
+                        <button className="btn ghost sm" onClick={()=>setApplyFor(null)}>Cancel</button>
+                      </React.Fragment>}
+                </div>
+              : <button className="btn ghost sm" style={{marginTop:10}} onClick={()=>{setApplyFor(i);setMsg('');}}>Apply to a rehearsal</button>}
+          </div>
+        ))}
+        <div className="btnrow"><button className="btn" onClick={onClose}>Close</button></div>
+      </div>
+    </div>
+  );
+}
 function Shows({state,update,pickShow,selectedShowId}){
+  const [planShow,setPlanShow]=useState(null);
   const [adding,setAdding]=useState(false);
   const [editId,setEditId]=useState(null);
   const [name,setName]=useState('');
@@ -3927,6 +4039,7 @@ function Shows({state,update,pickShow,selectedShowId}){
                 <button className="btn ghost sm" onClick={()=>startEdit(sh)}>Edit</button>
                 <button className="btn ghost sm" onClick={()=>startClone(sh)}>Clone</button>
                 <button className="btn ghost sm" onClick={()=>setManageSongs(sh.id)}>Manage songs</button>
+                {activeEntries.length>0 && <button className="btn ghost sm" style={{color:'var(--keys)',borderColor:'rgba(139,124,246,.5)'}} onClick={()=>setPlanShow(sh.id)}>◆ Plan Rehearsals</button>}
                 {confirmDel===sh.id
                   ? <React.Fragment><button className="btn danger sm" onClick={()=>delShow(sh.id)}>Confirm delete?</button><button className="btn ghost sm" onClick={()=>setConfirmDel(null)}>Cancel</button></React.Fragment>
                   : <button className="btn ghost sm" style={{color:'var(--drums)'}} onClick={()=>setConfirmDel(sh.id)}>Delete</button>}
@@ -3953,6 +4066,7 @@ function Shows({state,update,pickShow,selectedShowId}){
       </div>
       : <div className="add-bar"><button className="btn ghost" onClick={startAdd}>+ New show</button></div>}
       {cropSrc && <CropModal src={cropSrc} onCancel={()=>{setCropSrc(null);setArtTarget(null);}} onDone={onCropDone}/>}
+      {planShow && (()=>{ const sh=getShow(state,planShow); return sh?<PlanModal show={sh} state={state} update={update} onClose={()=>setPlanShow(null)}/>:null; })()}
       {manageSongs && (()=>{
         const sh=getShow(state,manageSongs);
         if(!sh) return null;
