@@ -372,7 +372,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.261';
+const VERSION='0.262';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -412,6 +412,9 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
+  '0.262':[
+    'AI band manager: in Shows → Plan Rehearsals, Claude reads your progress and plans the rehearsals + gives each player personal feedback (needs your own Anthropic API key)',
+  ],
   '0.180':[
     'Show art: tap cover to reveal change/remove buttons (like songs)',
     'Song cover art grid on each show card',
@@ -877,6 +880,137 @@ function buildShowPlan(show,state){
   }
   return {total,ready,overall,docsMissing,instrAvg,perSong,sessions};
 }
+/* ============================================================================
+   AI REHEARSAL MANAGER (v0.262)
+   A real LLM (Claude) acts as a band manager: reads the show status, the
+   band's demonstrated rate of progress (readinessHistory + past rehearsals)
+   and the time left, then plans as many rehearsals as realistically fit and
+   writes personal, motivating feedback per member.
+   The app is a single public file with no backend, so the OWNER supplies their
+   own Anthropic API key. It's stored only in this browser's localStorage
+   (key sc_ai_key) and sent straight to api.anthropic.com from the browser
+   (the anthropic-dangerous-direct-browser-access header enables that CORS
+   path). Each plan is a paid API request on the owner's account.
+   ========================================================================== */
+const AI_KEY_LS='sc_ai_key', AI_MODEL_LS='sc_ai_model', AI_MODEL_DEFAULT='claude-opus-4-8';
+function aiGetKey(){ try{ return localStorage.getItem(AI_KEY_LS)||''; }catch(_){ return ''; } }
+function aiSetKey(k){ try{ if(k) localStorage.setItem(AI_KEY_LS,k); else localStorage.removeItem(AI_KEY_LS); }catch(_){} }
+function aiGetModel(){ try{ return localStorage.getItem(AI_MODEL_LS)||AI_MODEL_DEFAULT; }catch(_){ return AI_MODEL_DEFAULT; } }
+// Compact, model-friendly description of everything the manager needs to reason.
+function buildPlanBrief(show,state){
+  const songs=state.songs||[];
+  const byId=id=>songs.find(x=>x.id===id);
+  const entries=(show.setlist||[]).filter(e=>!e.excluded);
+  const members=state.members||{};
+  const idxToSong=[];      // 1-based index -> songId
+  const songLines=[];
+  entries.forEach(e=>{
+    const s=byId(e.songId); if(!s) return;
+    idxToSong.push(e.songId);
+    const n=idxToSong.length;
+    const parts=INSTR.map(x=>x.label+':'+((e.parts||{})[x.id]||'todo')).join(', ');
+    const files=s.files||[];
+    const hasSlide=files.some(f=>planCatOf(f)==='slide'&&f.url);
+    const stemCats=new Set(files.filter(f=>f.stem).map(planCatOf).filter(c=>PLAN_CORE.includes(c)));
+    songLines.push('#'+n+' "'+(s.title||'Untitled')+'"'+(s.artist?(' — '+s.artist):'')
+      +' | overall '+Math.round(entryReadiness(e)*100)+'%'
+      +' | per-player '+parts
+      +' | docs: slide '+(hasSlide?'yes':'MISSING')+', stems '+stemCats.size+'/6');
+  });
+  const lineup=INSTR.map(i=>i.label+' = '+((members[i.id]&&members[i.id].name)||'(unnamed)')).join(', ');
+  const hist=(show.readinessHistory||[]).slice(-16).map(p=>p.d+' '+p.v+'%').join(', ')||'(no history yet)';
+  const reh=(state.rehearsals||[]).filter(r=>r.showId===show.id);
+  const done=reh.filter(r=>r.done).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const doneLines=done.slice(-10).map(r=>fmtDate(r.date)+' — covered: '+((r.coveredSongs||[]).map(id=>{const s=byId(id);return s?('"'+(s.title||'?')+'"'):null;}).filter(Boolean).join(', ')||'(not recorded)'));
+  const upcoming=reh.filter(r=>!r.done&&r.date).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const upLines=upcoming.map(r=>fmtDate(r.date)+(r.duration?(' ('+fmtDuration(r.duration)+')'):'')+(r.location?(' @ '+r.location):''));
+  const d=daysUntil(show.date);
+  const brief=[
+    'SHOW: '+(show.name||'Untitled')+(show.venue?(' @ '+show.venue):'')+(show.date?(' on '+fmtDate(show.date)):'')
+      +(d!=null?(' — '+(d>0?d+' days away':(d===0?'TODAY':Math.abs(d)+' days ago'))):' — no date set'),
+    'LINEUP: '+lineup,
+    '',
+    'SETLIST ('+songLines.length+' songs). Readiness scale: 0%=not started, ~33%=learning, ~66%=practicing, 100%=stage-ready.',
+    ...songLines,
+    '',
+    'OVERALL READINESS OVER TIME (most recent last): '+hist,
+    '',
+    'PAST REHEARSALS (what the band actually worked on — use this to gauge how fast they progress on a song):',
+    ...(doneLines.length?doneLines:['(none logged yet)']),
+    '',
+    'ALREADY-SCHEDULED UPCOMING REHEARSALS:',
+    ...(upLines.length?upLines:['(none scheduled yet)']),
+  ].join('\n');
+  return {brief,idxToSong};
+}
+const AI_SYSTEM=
+'You are a seasoned, motivating band manager. Your job is to get a 5-piece band on stage at the right level, on time. '
++'You are given a show\'s current status, the setlist with each player\'s readiness, the band\'s readiness history over time, and what past rehearsals covered.\n\n'
++'Reason like a real manager:\n'
++'- Infer the band\'s RATE of progress from the readiness history and what past rehearsals covered (e.g. how many rehearsals a new song has taken to go from learning to practicing). Do not assume a fixed pace — read it from the data.\n'
++'- Compare that pace against the days remaining. Plan AS MANY rehearsals as realistically fit before the show at the band\'s demonstrated cadence — do NOT pad to or cap at a round number, and do not cram everything into a few sessions.\n'
++'- Each rehearsal should focus on 1-2 songs to LEARN (lowest readiness / not started) and 4-5 songs to PRACTICE (mid readiness), plus any document prep needed first (a song needs at least a slide and its stems before it can be rehearsed well). Sequence them so the weakest material gets the most runway.\n'
++'- Reference songs ONLY by their #number from the setlist.\n'
++'- If the timeline is genuinely too tight for the current pace, say so plainly in the assessment, set riskLevel accordingly, and prioritise ruthlessly (cut or defer the least-ready songs) rather than pretending it fits.\n\n'
++'Then write PERSONAL feedback for each of the 5 core players (vocals, drums, bass, guitar, keys). For each: name their specific weak songs, give 2-3 concrete actions to close the gap in time, and keep the tone encouraging and direct — like a manager who believes in them. Address them by name when a name is given.\n\n'
++'Be concrete and specific to THIS band\'s data. No generic filler.';
+const AI_SCHEMA={type:'object',additionalProperties:false,properties:{
+  assessment:{type:'string'},
+  riskLevel:{type:'string',enum:['on-track','tight','at-risk']},
+  sessions:{type:'array',items:{type:'object',additionalProperties:false,properties:{
+    title:{type:'string'},
+    goal:{type:'string'},
+    learn:{type:'array',items:{type:'integer'}},
+    practice:{type:'array',items:{type:'integer'}},
+    prep:{type:'array',items:{type:'string'}}
+  },required:['title','goal','learn','practice','prep']}},
+  memberFeedback:{type:'array',items:{type:'object',additionalProperties:false,properties:{
+    instrument:{type:'string'},
+    player:{type:'string'},
+    message:{type:'string'},
+    actions:{type:'array',items:{type:'string'}}
+  },required:['instrument','player','message','actions']}}
+},required:['assessment','riskLevel','sessions','memberFeedback']};
+async function aiGeneratePlan(show,state){
+  const key=aiGetKey(); if(!key) throw new Error('No API key set.');
+  const {brief,idxToSong}=buildPlanBrief(show,state);
+  const body={
+    model:aiGetModel(),
+    max_tokens:8000,
+    thinking:{type:'adaptive'},
+    system:AI_SYSTEM,
+    messages:[{role:'user',content:'Plan the rehearsals and write per-player feedback for this show.\n\n'+brief}],
+    output_config:{format:{type:'json_schema',schema:AI_SCHEMA}}
+  };
+  let res;
+  try{
+    res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{
+      'content-type':'application/json',
+      'x-api-key':key,
+      'anthropic-version':'2023-06-01',
+      'anthropic-dangerous-direct-browser-access':'true'
+    },body:JSON.stringify(body)});
+  }catch(e){ throw new Error('Network error reaching Anthropic. Check your connection.'); }
+  if(!res.ok){
+    let detail=''; try{ const j=await res.json(); detail=(j&&j.error&&j.error.message)||''; }catch(_){}
+    if(res.status===401) throw new Error('Invalid API key (401). Check the key in AI settings.');
+    if(res.status===429) throw new Error('Rate limited (429). Wait a moment and try again.');
+    throw new Error('Anthropic API error '+res.status+(detail?(': '+detail):''));
+  }
+  const data=await res.json();
+  if(data.stop_reason==='refusal') throw new Error('The request was declined by safety filters.');
+  const txt=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('').trim();
+  let out; try{ out=JSON.parse(txt); }catch(_){ throw new Error('Could not parse the plan from the model.'); }
+  // map 1-based indices back to song ids
+  const toId=n=>idxToSong[(n|0)-1]||null;
+  out.sessions=(out.sessions||[]).map(s=>({
+    title:s.title||'', goal:s.goal||'',
+    learn:(s.learn||[]).map(toId).filter(Boolean),
+    practice:(s.practice||[]).map(toId).filter(Boolean),
+    prep:s.prep||[]
+  }));
+  return out;
+}
 function fmtDuration(d){ if(!d) return ''; const h=Math.floor(d); const m=Math.round((d-h)*60); return h+'h'+(m?(' '+m+'m'):''); }
 function fmtTimeRange(iso,dur){ if(!iso) return ''; const s=new Date(iso); const st=fmtTime(iso); if(!dur) return st; const e=new Date(s.getTime()+dur*3600000); const et=e.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); return st+'–'+et; }
 const KIND_COLOR={audio:'#EC6FA9',pdf:'#F2545B',slides:'#F4A93C',doc:'#5B9DF9',image:'#2DD4BF',sheet:'#3DD68C',file:'#948FA6',link:'#C9A6FF'};
@@ -1269,7 +1403,7 @@ function App(){
         setBands(list);
         if(list.length===1){ startBoard(list[0].id); return; }
         let last=null; try{ last=localStorage.getItem('sc_board'); }catch(_){}
-        if(last!=='staging' && last && list.find(b=>b.id===last)){ startBoard(last); return; }
+        if(last && last!=='staging' && list.find(b=>b.id===last)){ startBoard(last); return; }
         setPhase('pickband');
       }).catch(()=>{ setBands([]); setPhase('pickband'); });
     });
@@ -3885,18 +4019,53 @@ function Album({state,update}){
     </div>
   );
 }
+const RISK_META={'on-track':{label:'On track',color:'var(--ok)'},'tight':{label:'Tight',color:'var(--warn)'},'at-risk':{label:'At risk',color:'var(--drums)'}};
 function PlanModal({show,state,update,onClose}){
   useBackHandler(true,onClose);
   const plan=buildShowPlan(show,state);
   const titleOf=id=>{const s=(state.songs||[]).find(x=>x.id===id);return s?(s.title||'Untitled'):id;};
   const upcoming=(state.rehearsals||[]).filter(r=>r.showId===show.id&&!r.done).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-  const [applyFor,setApplyFor]=useState(null);
+  const [applyFor,setApplyFor]=useState(null);   // key: 'ai-<i>' or 'basic-<i>'
   const [msg,setMsg]=useState('');
-  const applySession=(sess,rehId)=>{
-    update(st=>{const r=(st.rehearsals||[]).find(x=>x.id===rehId);if(r){r.focusPractice=[...sess.practice];r.focusLearn=[...sess.learn];const prep=sess.prep.map(p=>titleOf(p.songId)+': '+p.needs.join('+')).join('; ');if(prep)r.notes=(r.notes?r.notes+'\n':'')+'Prep — '+prep;logAct(st,'applied a rehearsal plan');}return st;});
+  // AI manager state
+  const [hasKey,setHasKey]=useState(!!aiGetKey());
+  const [keyInput,setKeyInput]=useState('');
+  const [showKeyForm,setShowKeyForm]=useState(!aiGetKey());
+  const [aiBusy,setAiBusy]=useState(false);
+  const [aiErr,setAiErr]=useState('');
+  const [aiPlan,setAiPlan]=useState(null);
+  const saveKey=()=>{ const k=keyInput.trim(); if(!k) return; aiSetKey(k); setHasKey(true); setShowKeyForm(false); setKeyInput(''); setAiErr(''); };
+  const removeKey=()=>{ aiSetKey(''); setHasKey(false); setAiPlan(null); setShowKeyForm(true); };
+  const runAi=async()=>{ setAiBusy(true); setAiErr(''); setMsg(''); try{ const r=await aiGeneratePlan(show,state); setAiPlan(r); }catch(e){ setAiErr(e.message||String(e)); } setAiBusy(false); };
+  const applySession=(learnIds,practiceIds,prepStrings,rehId)=>{
+    update(st=>{const r=(st.rehearsals||[]).find(x=>x.id===rehId);if(r){r.focusPractice=[...practiceIds];r.focusLearn=[...learnIds];const prep=(prepStrings||[]).join('; ');if(prep)r.notes=(r.notes?r.notes+'\n':'')+'Prep — '+prep;logAct(st,'applied a rehearsal plan');}return st;});
     setApplyFor(null);setMsg('Applied to the rehearsal.');
   };
   const chip=(id,color)=><span key={id} className="plan-chip" style={{borderColor:color,color}} dir="auto">{titleOf(id)}</span>;
+  // One rehearsal card (used by both AI and basic plans). prepStrings = array of human-readable prep lines.
+  const sessionCard=(key,title,goal,learnIds,practiceIds,prepStrings)=>(
+    <div className="plan-card" key={key}>
+      <div className="plan-h" dir="auto">{title}</div>
+      {goal && <div style={{fontSize:12,color:'var(--muted)',marginBottom:6}} dir="auto">{goal}</div>}
+      {prepStrings.length>0 && <div style={{fontSize:12,marginBottom:6}}><span style={{color:'var(--warn)',fontWeight:700}}>Prepare: </span><span dir="auto">{prepStrings.join('; ')}</span></div>}
+      {learnIds.length>0 && <div style={{fontSize:12,marginTop:2}}><span className="plan-tag" style={{background:'var(--learn)'}}>Learn</span> <span className="plan-chips">{learnIds.map(id=>chip(id,'var(--learn)'))}</span></div>}
+      {practiceIds.length>0 && <div style={{fontSize:12,marginTop:6}}><span className="plan-tag" style={{background:'var(--warn)'}}>Practice</span> <span className="plan-chips">{practiceIds.map(id=>chip(id,'var(--warn)'))}</span></div>}
+      {applyFor===key
+        ? <div style={{marginTop:8}}>
+            {upcoming.length===0
+              ? <div style={{fontSize:12,color:'var(--muted)'}}>No upcoming rehearsal for this show — schedule one in the Rehearsals tab first.<div style={{marginTop:6}}><button className="btn ghost sm" onClick={()=>setApplyFor(null)}>OK</button></div></div>
+              : <React.Fragment>
+                  <div style={{fontSize:11,color:'var(--muted)',marginBottom:4}}>Apply to which rehearsal?</div>
+                  {upcoming.map(r=>(
+                    <button key={r.id} className="btn ghost sm" style={{display:'block',width:'100%',textAlign:'left',marginBottom:4}} onClick={()=>applySession(learnIds,practiceIds,prepStrings,r.id)}>{r.date?fmtDate(r.date)+' · '+fmtTime(r.date):'Undated rehearsal'}{r.location?' · '+r.location:''}</button>
+                  ))}
+                  <button className="btn ghost sm" onClick={()=>setApplyFor(null)}>Cancel</button>
+                </React.Fragment>}
+          </div>
+        : <button className="btn ghost sm" style={{marginTop:10}} onClick={()=>{setApplyFor(key);setMsg('');}}>Apply to a rehearsal</button>}
+    </div>
+  );
+  const risk=aiPlan?(RISK_META[aiPlan.riskLevel]||{label:aiPlan.riskLevel,color:'var(--muted)'}):null;
   return (
     <div className="files-modal" onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
       <div className="files-panel" onClick={e=>e.stopPropagation()}>
@@ -3925,28 +4094,62 @@ function PlanModal({show,state,update,onClose}){
             Needs docs: {plan.docsMissing.map(s=>(<span key={s.songId} dir="auto"> · <b style={{color:'var(--text)'}}>{s.title}</b> ({[!s.hasSlide&&'slide',s.stemCount===0&&'stems'].filter(Boolean).join('+')})</span>))}
           </div>}
         </div>
-        {/* Sessions */}
-        {plan.sessions.map((sess,i)=>(
-          <div className="plan-card" key={i}>
-            <div className="plan-h">Rehearsal {i+1}</div>
-            {sess.prep.length>0 && <div style={{fontSize:12,marginBottom:6}}><span style={{color:'var(--warn)',fontWeight:700}}>Prepare: </span>{sess.prep.map((p,j)=><span key={p.songId} dir="auto">{j>0?', ':''}{titleOf(p.songId)} ({p.needs.join('+')})</span>)}</div>}
-            {sess.learn.length>0 && <div style={{fontSize:12,marginTop:2}}><span className="plan-tag" style={{background:'var(--learn)'}}>Learn</span> <span className="plan-chips">{sess.learn.map(id=>chip(id,'var(--learn)'))}</span></div>}
-            {sess.practice.length>0 && <div style={{fontSize:12,marginTop:6}}><span className="plan-tag" style={{background:'var(--warn)'}}>Practice</span> <span className="plan-chips">{sess.practice.map(id=>chip(id,'var(--warn)'))}</span></div>}
-            {applyFor===i
-              ? <div style={{marginTop:8}}>
-                  {upcoming.length===0
-                    ? <div style={{fontSize:12,color:'var(--muted)'}}>No upcoming rehearsal for this show — schedule one in the Rehearsals tab first.<div style={{marginTop:6}}><button className="btn ghost sm" onClick={()=>setApplyFor(null)}>OK</button></div></div>
-                    : <React.Fragment>
-                        <div style={{fontSize:11,color:'var(--muted)',marginBottom:4}}>Apply to which rehearsal?</div>
-                        {upcoming.map(r=>(
-                          <button key={r.id} className="btn ghost sm" style={{display:'block',width:'100%',textAlign:'left',marginBottom:4}} onClick={()=>applySession(sess,r.id)}>{r.date?fmtDate(r.date)+' · '+fmtTime(r.date):'Undated rehearsal'}{r.location?' · '+r.location:''}</button>
-                        ))}
-                        <button className="btn ghost sm" onClick={()=>setApplyFor(null)}>Cancel</button>
-                      </React.Fragment>}
-                </div>
-              : <button className="btn ghost sm" style={{marginTop:10}} onClick={()=>{setApplyFor(i);setMsg('');}}>Apply to a rehearsal</button>}
+
+        {/* AI manager */}
+        <div className="plan-card" style={{borderColor:'var(--keys)'}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <div className="plan-h" style={{color:'var(--keys)'}}>◆ AI band manager</div>
+            {hasKey && !showKeyForm && <button className="btn ghost sm" onClick={()=>setShowKeyForm(true)}>Key</button>}
           </div>
-        ))}
+          {showKeyForm
+            ? <div style={{marginTop:4}}>
+                <div style={{fontSize:12,color:'var(--muted)',marginBottom:6}}>Paste your own Anthropic API key. It's stored only in this browser and sent straight to Anthropic when you generate a plan — each plan is a paid request on your account. Use a dedicated, spend-capped key.</div>
+                <input className="inp" type="password" autoComplete="off" spellCheck="false" placeholder="sk-ant-..." value={keyInput} onChange={e=>setKeyInput(e.target.value)}/>
+                <div className="btnrow" style={{marginTop:6}}>
+                  <button className="btn sm" disabled={!keyInput.trim()} onClick={saveKey}>Save key</button>
+                  {hasKey && <button className="btn ghost sm" onClick={()=>{setShowKeyForm(false);setKeyInput('');}}>Cancel</button>}
+                  {hasKey && <button className="btn danger sm" onClick={removeKey}>Remove key</button>}
+                </div>
+              </div>
+            : <div style={{marginTop:4}}>
+                <button className="btn sm" disabled={aiBusy} onClick={runAi}>{aiBusy?'Thinking…':(aiPlan?'Regenerate plan':'Generate plan')}</button>
+                {aiBusy && <span style={{fontSize:12,color:'var(--muted)',marginLeft:8}}>The manager is reading your progress…</span>}
+              </div>}
+          {aiErr && <div style={{marginTop:8,fontSize:12,color:'var(--drums)'}}>{aiErr}</div>}
+        </div>
+
+        {/* AI result */}
+        {aiPlan && <React.Fragment>
+          <div className="plan-card">
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+              <div className="plan-h" style={{margin:0}}>Manager's read</div>
+              {risk && <span className="plan-tag" style={{background:risk.color}}>{risk.label}</span>}
+            </div>
+            <div style={{fontSize:13,lineHeight:1.5,whiteSpace:'pre-wrap'}} dir="auto">{aiPlan.assessment}</div>
+          </div>
+          {aiPlan.sessions.map((s,i)=>sessionCard('ai-'+i,s.title||('Rehearsal '+(i+1)),s.goal,s.learn,s.practice,s.prep||[]))}
+          {aiPlan.memberFeedback&&aiPlan.memberFeedback.length>0 && <div className="plan-card">
+            <div className="plan-h">Personal feedback</div>
+            {aiPlan.memberFeedback.map((m,i)=>{ const inst=INSTR.find(x=>x.id===(m.instrument||'').toLowerCase()); return (
+              <div key={i} style={{marginTop:i?10:2,paddingTop:i?10:0,borderTop:i?'1px solid rgba(255,255,255,.08)':'none'}}>
+                <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:3}}>
+                  {inst?<InstrBadge id={inst.id} size={18}/>:null}
+                  <b style={{fontSize:13,color:inst?inst.color:'var(--text)'}} dir="auto">{m.player||(inst?inst.label:m.instrument)}</b>
+                  {m.player&&inst&&<span style={{fontSize:11,color:'var(--muted)'}}>· {inst.label}</span>}
+                </div>
+                <div style={{fontSize:12,lineHeight:1.5}} dir="auto">{m.message}</div>
+                {m.actions&&m.actions.length>0 && <ul style={{margin:'5px 0 0',paddingLeft:18,fontSize:12,lineHeight:1.5}}>{m.actions.map((a,j)=><li key={j} dir="auto">{a}</li>)}</ul>}
+              </div>
+            ); })}
+          </div>}
+        </React.Fragment>}
+
+        {/* Basic (rule-based) fallback plan — shown when there's no AI plan */}
+        {!aiPlan && <React.Fragment>
+          {!hasKey && <div style={{fontSize:12,color:'var(--muted)',margin:'6px 2px'}}>Basic plan (rule-based) — add an API key above for a reasoned plan and personal feedback.</div>}
+          {plan.sessions.map((sess,i)=>sessionCard('basic-'+i,'Rehearsal '+(i+1),'',sess.learn,sess.practice,sess.prep.map(p=>titleOf(p.songId)+': '+p.needs.join('+'))))}
+        </React.Fragment>}
+
         <div className="btnrow"><button className="btn" onClick={onClose}>Close</button></div>
       </div>
     </div>
