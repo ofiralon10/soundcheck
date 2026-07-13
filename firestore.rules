@@ -50,5 +50,18 @@ service cloud.firestore {
       // DELETE: admin or an owner.
       allow delete: if isAdmin() || (isMember() && role() == 'owner');
     }
+
+    // Push-notification device tokens for the always-on manager. Owner-only
+    // for now: only the admin can register/read their own devices. Cloud
+    // Functions use the Admin SDK and bypass these rules.
+    match /notifyTokens/{token} {
+      allow read, write, delete: if isAdmin();
+    }
+
+    // Manager scheduler bookkeeping (sent reminders, last weekly time).
+    // Written only by Cloud Functions (Admin SDK); locked to admin otherwise.
+    match /managerState/{bandId} {
+      allow read, write: if isAdmin();
+    }
   }
 }
