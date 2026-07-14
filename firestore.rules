@@ -70,5 +70,19 @@ service cloud.firestore {
     match /managerChat/{bandId} {
       allow read, write: if false;
     }
+
+    // Telegram link codes: the owner creates a one-time code to link their
+    // Telegram; the webhook (Admin SDK) reads/deletes it.
+    match /telegramLinks/{code} {
+      allow create: if isAdmin();
+      allow read, update, delete: if false;
+    }
+
+    // Telegram linked-chat registry, written only by the webhook (Admin SDK).
+    // Owner can read to show linked status (owner-only for now).
+    match /telegramChats/{bandId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
   }
 }

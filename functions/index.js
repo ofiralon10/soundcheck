@@ -27,14 +27,46 @@ const APP_URL = 'https://ofiralon10.github.io/soundcheck/'; // opened when a pus
 /* -------------------------------------- */
 
 const { onSchedule } = require('firebase-functions/v2/scheduler');
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
+const crypto = require('crypto');
 
 admin.initializeApp();
 const db = admin.firestore();
 const ANTHROPIC_KEY = defineSecret('ANTHROPIC_KEY');
+const TELEGRAM_TOKEN = defineSecret('TELEGRAM_BOT_TOKEN');
+
+/* ---------- Telegram helpers ---------- */
+async function tgApi(token, method, payload) {
+  const res = await fetch('https://api.telegram.org/bot' + token + '/' + method, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload)
+  });
+  const j = await res.json();
+  if (!j.ok) throw new Error('telegram ' + method + ': ' + (j.description || res.status));
+  return j.result;
+}
+// Deterministic webhook secret (no extra stored secret) — sent as secret_token on
+// setWebhook and verified on every incoming request.
+function tgWebhookSecret(token) { return crypto.createHash('sha256').update('soundcheck-webhook:' + token).digest('hex').slice(0, 48); }
+// Find a linked member's chat for this band by "me"/owner, email, name, or @username.
+async function tgFindChat(bandId, recipient, callerEmail) {
+  const snap = await db.collection('telegramChats').doc(bandId).get();
+  const users = (snap.exists && Array.isArray(snap.data().users)) ? snap.data().users : [];
+  if (!users.length) return null;
+  const r = (recipient || '').trim().toLowerCase().replace(/^@/, '');
+  if (r === 'me' || r === 'owner' || r === '') return users.find(u => u.email === callerEmail) || users.find(u => u.email === ADMIN_EMAIL) || null;
+  return users.find(u => (u.email || '').toLowerCase() === r)
+    || users.find(u => (u.firstName || '').toLowerCase() === r)
+    || users.find(u => (u.username || '').toLowerCase() === r) || null;
+}
+async function sendTelegramToMember(bandId, recipient, message, callerEmail) {
+  const target = await tgFindChat(bandId, recipient, callerEmail);
+  if (!target) return 'No linked Telegram found for "' + recipient + '". They need to connect Telegram in the app first.';
+  await tgApi(TELEGRAM_TOKEN.value(), 'sendMessage', { chat_id: target.chatId, text: message });
+  return 'Sent a Telegram message to ' + (target.firstName || target.email) + '.';
+}
 
 /* ---------- readiness helpers (mirror the app) ---------- */
 const CORE = ['keys', 'drums', 'guitar', 'bass', 'vocals'];
@@ -234,7 +266,8 @@ const MANAGER_TOOLS = [
   { name: 'set_song_status', description: 'Set one player\'s readiness on a setlist song.', input_schema: { type: 'object', properties: { song: { type: 'integer', description: '#number from the setlist' }, instrument: { type: 'string', enum: ['keys', 'drums', 'guitar', 'bass', 'vocals'] }, status: { type: 'string', enum: ['todo', 'learning', 'practicing', 'ready'] } }, required: ['song', 'instrument', 'status'] } },
   { name: 'apply_focus', description: 'Set learn/practice focus on an existing upcoming rehearsal (by R-number).', input_schema: { type: 'object', properties: { rehearsal: { type: 'integer' }, learn: { type: 'array', items: { type: 'integer' } }, practice: { type: 'array', items: { type: 'integer' } }, note: { type: 'string' } }, required: ['rehearsal'] } },
   { name: 'create_rehearsal', description: 'Schedule a new rehearsal for this show.', input_schema: { type: 'object', properties: { date: { type: 'string', description: 'YYYY-MM-DD' }, time: { type: 'string', description: 'HH:MM 24h (default 20:00)' }, durationHours: { type: 'number' }, location: { type: 'string' }, learn: { type: 'array', items: { type: 'integer' } }, practice: { type: 'array', items: { type: 'integer' } } }, required: ['date'] } },
-  { name: 'send_notification', description: 'Push a phone notification to the registered device(s). Use only when the member explicitly asks to notify/alert/remind/ping now.', input_schema: { type: 'object', properties: { title: { type: 'string', description: 'Short title (<=6 words)' }, body: { type: 'string', description: 'Short message body' } }, required: ['title', 'body'] } }
+  { name: 'send_notification', description: 'Push a phone notification to the registered device(s). Use only when the member explicitly asks to notify/alert/remind/ping now.', input_schema: { type: 'object', properties: { title: { type: 'string', description: 'Short title (<=6 words)' }, body: { type: 'string', description: 'Short message body' } }, required: ['title', 'body'] } },
+  { name: 'send_telegram', description: 'Send a Telegram direct message to a band member who has linked Telegram. Use when asked to message/DM/telegram someone.', input_schema: { type: 'object', properties: { recipient: { type: 'string', description: 'Member name or email, or "me" for the owner' }, message: { type: 'string' } }, required: ['recipient', 'message'] } }
 ];
 
 function genId() { return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
@@ -322,7 +355,7 @@ async function anthropicRaw(key, body) {
   return res.json();
 }
 
-exports.managerChat = onCall({ secrets: [ANTHROPIC_KEY] }, async (req) => {
+exports.managerChat = onCall({ secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN] }, async (req) => {
   const email = req.auth && req.auth.token && req.auth.token.email;
   if (!email) throw new HttpsError('unauthenticated', 'Please sign in first.');
   const { bandId, showId, message } = req.data || {};
@@ -368,6 +401,10 @@ exports.managerChat = onCall({ secrets: [ANTHROPIC_KEY] }, async (req) => {
               out = n > 0 ? ('Notification pushed to ' + n + ' device' + (n === 1 ? '' : 's') + '.')
                           : 'No devices are registered for notifications yet — enable notifications in Setup first.';
             } catch (e) { out = 'Could not send the notification: ' + e.message; }
+          } else if (tu.name === 'send_telegram') {
+            const inp = tu.input || {};
+            try { out = await sendTelegramToMember(bandId, inp.recipient || 'me', inp.message || '', email); }
+            catch (e) { out = 'Could not send the Telegram message: ' + e.message; }
           } else {
             out = applyManagerTool(tu.name, tu.input || {}, ctx, show.id, work, ops);
           }
@@ -402,4 +439,43 @@ exports.managerChat = onCall({ secrets: [ANTHROPIC_KEY] }, async (req) => {
     });
   }
   return { reply, messages, actions };
+});
+
+/* ============================ TELEGRAM WEBHOOK ============================
+   Telegram POSTs bot updates here. On "/start <code>" it links the sender's
+   chat to the Soundcheck user the code was generated for (telegramLinks/{code}
+   → telegramChats/{bandId}.users[]). Other messages get a gentle hint (no
+   two-way chat yet). Verified via the secret_token set at registration. */
+exports.telegramWebhook = onRequest({ secrets: [TELEGRAM_TOKEN] }, async (req, res) => {
+  try {
+    const token = TELEGRAM_TOKEN.value();
+    if (req.get('X-Telegram-Bot-Api-Secret-Token') !== tgWebhookSecret(token)) { res.status(403).send('no'); return; }
+    const update = req.body || {};
+    const msg = update.message || update.edited_message;
+    if (!msg || !msg.chat) { res.status(200).send('ok'); return; }
+    const chatId = msg.chat.id;
+    const text = (msg.text || '').trim();
+    const m = text.match(/^\/start\s+(\S+)/);
+    if (m) {
+      const code = m[1];
+      const linkRef = db.collection('telegramLinks').doc(code);
+      const linkSnap = await linkRef.get();
+      if (!linkSnap.exists) { await tgApi(token, 'sendMessage', { chat_id: chatId, text: 'That link is invalid or expired. Generate a new one in the Soundcheck app (Admin → Connect Telegram).' }); res.status(200).send('ok'); return; }
+      const { bandId, email } = linkSnap.data();
+      const ref = db.collection('telegramChats').doc(bandId);
+      await db.runTransaction(async (tx) => {
+        const s = await tx.get(ref);
+        const users = (s.exists && Array.isArray(s.data().users)) ? s.data().users : [];
+        const entry = { email, chatId, username: (msg.from && msg.from.username) || '', firstName: (msg.from && msg.from.first_name) || '', ts: Date.now() };
+        const idx = users.findIndex(u => u.email === email);
+        if (idx >= 0) users[idx] = entry; else users.push(entry);
+        tx.set(ref, { users }, { merge: true });
+      });
+      await linkRef.delete().catch(() => {});
+      await tgApi(token, 'sendMessage', { chat_id: chatId, text: '✅ Linked to Soundcheck. The band manager can now message you here.' });
+      res.status(200).send('ok'); return;
+    }
+    await tgApi(token, 'sendMessage', { chat_id: chatId, text: 'Hi! To link your account, open Soundcheck → Admin → Connect Telegram and tap the link there.' });
+    res.status(200).send('ok');
+  } catch (e) { logger.error('telegramWebhook: ' + e.message); res.status(200).send('ok'); }
 });
