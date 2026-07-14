@@ -395,7 +395,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.281';
+const VERSION='0.282';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -1435,22 +1435,29 @@ function App(){
   useEffect(()=>{
     let hasToken=false; try{ hasToken=!!localStorage.getItem('sc_push_token'); }catch(_){}
     if(!hasToken || !('serviceWorker' in navigator)) return;
-    let unsub=null;
-    try{
-      if(firebase.messaging && (!firebase.messaging.isSupported || firebase.messaging.isSupported()!==false)){
-        unsub=firebase.messaging().onMessage(payload=>{
+    let unsub=null, cancelled=false;
+    (async()=>{
+      try{
+        if(!firebase.messaging || (firebase.messaging.isSupported && firebase.messaging.isSupported()===false)) return;
+        // Register + activate OUR worker, then associate it with the messaging
+        // instance via getToken. Without this, firebase.messaging()/onMessage
+        // registers a root-scope default worker (which 404s on /soundcheck/).
+        const reg=await navigator.serviceWorker.register('firebase-messaging-sw.js');
+        if(!reg.active){ await new Promise(res=>{ const sw=reg.installing||reg.waiting; if(!sw||sw.state==='activated') return res(); sw.addEventListener('statechange',()=>{ if(sw.state==='activated') res(); }); setTimeout(res,5000); }); }
+        if(cancelled) return;
+        const m=firebase.messaging();
+        try{ await m.getToken({vapidKey:VAPID_KEY,serviceWorkerRegistration:reg}); }catch(_){}
+        if(cancelled) return;
+        unsub=m.onMessage(payload=>{
           const n=(payload&&payload.notification)||{};
           const title=n.title||'Band manager', body=n.body||'';
           if(('Notification' in window)&&Notification.permission==='granted'){
-            navigator.serviceWorker.getRegistration().then(reg=>{
-              if(reg&&reg.showNotification) reg.showNotification(title,{body,icon:'admin-banner.jpg'});
-              else try{ new Notification(title,{body}); }catch(_){}
-            }).catch(()=>{ try{ new Notification(title,{body}); }catch(_){} });
+            try{ reg.showNotification(title,{body,icon:'admin-banner.jpg'}); }catch(_){ try{ new Notification(title,{body}); }catch(__){} }
           }
         });
-      }
-    }catch(_){}
-    return ()=>{ try{ unsub&&unsub(); }catch(_){} };
+      }catch(_){}
+    })();
+    return ()=>{ cancelled=true; try{ unsub&&unsub(); }catch(_){} };
   },[]);
   useEffect(()=>{
     if(!configReady()){ setPhase('config'); return; }
