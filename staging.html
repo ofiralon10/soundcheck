@@ -389,7 +389,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.270';
+const VERSION='0.271';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -4269,7 +4269,7 @@ function Admin({state,update,user,showId,pickShow}){
   return (
     <div className="page">
       <div className="admin-banner">
-        <img src="admin-banner.jpg" alt="" onError={e=>{e.target.style.display='none';}}/>
+        <img src="admin-banner.png" alt="" onError={e=>{e.target.style.display='none';}}/>
         <div className="abt">AI Manager<small>Your always-on band manager</small></div>
       </div>
       <ShowSelector shows={state.shows} showId={showId} pickShow={pickShow}/>
