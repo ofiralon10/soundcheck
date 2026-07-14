@@ -384,7 +384,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.268';
+const VERSION='0.269';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -424,8 +424,8 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
-  '0.268':[
-    'Chat with the AI manager from Shows — ask questions, give standing guidelines that persist, and tell it to schedule/adjust rehearsals or update readiness. Owner + allowlisted members (Setup → AI manager).',
+  '0.269':[
+    'New Admin tab — home for the AI manager: chat with it, run the rehearsal planner, set standing guidelines, and pick who can use it. Owner + allowlisted members.',
   ],
   '0.262':[
     'AI band manager: in Shows → Plan Rehearsals, Claude reads your progress and plans the rehearsals + gives each player personal feedback (needs your own Anthropic API key)',
@@ -1485,6 +1485,8 @@ function App(){
   const confirmInstrPrompt=()=>{setMyInstrs(promptInstrs); setShowInstrPrompt(false);};
   const curShowId = (state.shows||[]).find(x=>x.id===selectedShowId) ? selectedShowId : ((state.shows||[])[0]||{}).id||'';
   if(curShowId && curShowId!==selectedShowId){ pickShow(curShowId); }
+  const myEmailLc=((user&&user.email)||'').toLowerCase();
+  const canAdmin=!!(user&&(user.email===ADMIN_EMAIL||(state.managerChatAllow||[]).map(e=>(e||'').toLowerCase()).includes(myEmailLc)));
 
   return (
     <React.Fragment>
@@ -1524,9 +1526,10 @@ function App(){
       {tab==='setlist'  && <Setlist state={state} update={update} goSongId={goSongId} clearGoSong={()=>setGoSongId(null)} showId={curShowId} pickShow={pickShow} />}
       {tab==='rehearse' && <Rehearsals state={state} update={update} goSong={id=>{setTab('setlist');setGoSongId(id);}} />}
       {tab==='shows'    && <Shows state={state} update={update} pickShow={pickShow} selectedShowId={curShowId} user={user} />}
+      {tab==='admin'    && canAdmin && <Admin state={state} update={update} user={user} showId={curShowId} pickShow={pickShow} />}
       {tab==='album'    && <Album state={state} update={update} />}
       {tab==='setup'    && <Setup state={state} update={update} user={user} onSignOut={signOut} onSwitch={switchBoard} />}
-      <TabBar tab={tab} setTab={setTab} />
+      <TabBar tab={tab} setTab={setTab} canAdmin={canAdmin} />
     </React.Fragment>
   );
 }
@@ -3884,12 +3887,6 @@ function Setup({state,update,user,onSignOut,onSwitch}){
   const [notifMsg,setNotifMsg]=useState('');
   const [notifBusy,setNotifBusy]=useState(false);
   const enableNotif=async()=>{ setNotifBusy(true); setNotifMsg(''); try{ await enableManagerNotifications(myEmail); setNotifMsg('Done — this device will now receive manager notifications.'); }catch(e){ setNotifMsg(e.message||String(e)); } setNotifBusy(false); };
-  const [gl,setGl]=useState(state.managerGuidelines||'');
-  const [glMsg,setGlMsg]=useState('');
-  const saveGl=()=>{ update(s=>{s.managerGuidelines=gl;return s;}); setGlMsg('Saved.'); };
-  const [allowEmail,setAllowEmail]=useState('');
-  const addAllow=()=>{ const e=allowEmail.trim().toLowerCase(); if(!e) return; update(s=>{ s.managerChatAllow=[...new Set([...(s.managerChatAllow||[]),e])]; return s; }); setAllowEmail(''); };
-  const rmAllow=(e)=>update(s=>{ s.managerChatAllow=(s.managerChatAllow||[]).filter(x=>x!==e); return s; });
   const delBand=async()=>{ try{ await deleteBandDoc(); if(onSwitch) onSwitch(); }catch(e){ alert('Failed: '+prettyErr(e)); setConfirmDelete(false); } };
   const setBand=(v)=>update(s=>{s.band=v;return s;});
   const setMember=(id,v)=>update(s=>{s.members[id].name=v;return s;});
@@ -3913,21 +3910,7 @@ function Setup({state,update,user,onSignOut,onSwitch}){
           <div style={{fontSize:12.5,color:'var(--muted)',lineHeight:1.55}}>Get rehearsal reminders (~24h ahead) and a weekly readiness report pushed to this device from the always-on manager. Owner-only. Enable it on each device you want notified.</div>
           <div className="btnrow"><button className="btn ghost" disabled={notifBusy} onClick={enableNotif}>{notifBusy?'Enabling…':'Enable on this device'}</button></div>
           {notifMsg && <div style={{fontSize:12,color:'var(--muted)',marginTop:6}}>{notifMsg}</div>}
-        </div>
-
-        <div className="section-h">AI manager</div>
-        <div className="card">
-          <label className="fl">Standing guidelines</label>
-          <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5,marginBottom:6}}>Persistent instructions that shape the manager's chat, plans and reminders. The manager can also update these when you tell it to.</div>
-          <textarea className="inp" rows={4} dir="auto" value={gl} onChange={e=>{setGl(e.target.value);setGlMsg('');}} placeholder="e.g. We rehearse Sundays 8–10pm. Prioritise the encore songs. Keep feedback blunt. Ofir plays vocals + keys."/>
-          <div className="btnrow"><button className="btn ghost sm" onClick={saveGl}>Save guidelines</button>{glMsg && <span style={{fontSize:12,color:'var(--ok)',alignSelf:'center'}}>{glMsg}</span>}</div>
-          <label className="fl" style={{marginTop:14}}>Who can chat with the manager (besides you)</label>
-          <div style={{display:'flex',gap:6,flexWrap:'wrap',margin:'6px 0'}}>
-            {(state.managerChatAllow||[]).length===0 && <span style={{fontSize:12,color:'var(--muted)'}}>Just you.</span>}
-            {(state.managerChatAllow||[]).map(e=>(<span key={e} className="plan-chip" style={{borderColor:'var(--keys)',color:'var(--keys)',display:'inline-flex',alignItems:'center',gap:5}}>{e}<button onClick={()=>rmAllow(e)} style={{background:'none',border:'none',color:'inherit',cursor:'pointer',fontSize:15,lineHeight:1,padding:0}}>×</button></span>))}
-          </div>
-          <div style={{display:'flex',gap:6}}><input className="inp" style={{flex:1}} value={allowEmail} onChange={e=>setAllowEmail(e.target.value)} placeholder="bandmate@email.com" onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addAllow();}}}/><button className="btn ghost sm" onClick={addAllow}>Add</button></div>
-          <div style={{fontSize:11,color:'var(--muted)',marginTop:6}}>They chat via the shared server key — requires the <b style={{color:'var(--text)'}}>managerChat</b> Cloud Function deployed. The person must sign in with this exact email.</div>
+          <div style={{fontSize:11,color:'var(--muted)',marginTop:8}}>Manage the AI manager's guidelines, chat and who can use it in the <b style={{color:'var(--text)'}}>Admin</b> tab.</div>
         </div>
       </React.Fragment>}
 
@@ -4095,9 +4078,7 @@ function Album({state,update}){
     </div>
   );
 }
-function ChatModal({show,state,user,onClose}){
-  useBackHandler(true,onClose);
-  const wide=useWide();
+function ChatPanel({show}){
   const [msgs,setMsgs]=useState([]);
   const [loading,setLoading]=useState(true);
   const [busy,setBusy]=useState(false);
@@ -4105,7 +4086,7 @@ function ChatModal({show,state,user,onClose}){
   const [text,setText]=useState('');
   const scRef=useRef(null);
   const em=e=>(e&&e.message)||String(e);
-  useEffect(()=>{ let alive=true; managerChatCall(show.id,'').then(d=>{ if(alive){ setMsgs((d&&d.messages)||[]); setLoading(false); } }).catch(e=>{ if(alive){ setErr(em(e)); setLoading(false); } }); return ()=>{alive=false;}; },[show.id]);
+  useEffect(()=>{ let alive=true; setLoading(true); setErr(''); managerChatCall(show.id,'').then(d=>{ if(alive){ setMsgs((d&&d.messages)||[]); setLoading(false); } }).catch(e=>{ if(alive){ setErr(em(e)); setLoading(false); } }); return ()=>{alive=false;}; },[show.id]);
   useEffect(()=>{ const el=scRef.current; if(el) el.scrollTop=el.scrollHeight; },[msgs,busy,loading]);
   const send=async()=>{ const t=text.trim(); if(!t||busy) return; setErr(''); setText(''); setBusy(true);
     const base=msgs; setMsgs([...base,{role:'user',text:t,ts:Date.now()}]);
@@ -4114,24 +4095,18 @@ function ChatModal({show,state,user,onClose}){
     setBusy(false);
   };
   return (
-    <div className={'files-modal'+(wide?' planwide':'')} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
-      <div className={'files-panel'+(wide?' planwide':'')} onClick={e=>e.stopPropagation()} style={wide?{display:'flex',flexDirection:'column'}:null}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
-          <div className="modaltitle" style={{margin:0}}>◆ Manager · <span dir="auto">{show.name||'Show'}</span></div>
-          <button onClick={onClose} style={{background:'none',border:'none',color:'var(--muted)',fontSize:22,cursor:'pointer',padding:'0 4px'}}>×</button>
-        </div>
-        <div className="mchat" ref={scRef} style={{flex:wide?1:'none',maxHeight:wide?'none':'52vh'}}>
-          {loading && <div className="mbub sys">Loading…</div>}
-          {!loading && msgs.length===0 && <div className="mbub sys">Ask the manager anything about the band, give standing instructions, or tell him to plan/adjust rehearsals.</div>}
-          {msgs.map((m,i)=><div key={i} className={'mbub '+(m.role==='user'?'me':'mgr')} dir="auto">{m.text}</div>)}
-          {busy && <div className="mbub mgr" style={{opacity:.7}}>…thinking</div>}
-        </div>
-        {err && <div style={{fontSize:12,color:'var(--drums)',margin:'6px 2px'}}>{err}</div>}
-        <div style={{display:'flex',gap:6,marginTop:8}}>
-          <input className="inp" style={{flex:1}} dir="auto" placeholder="Message the manager…" value={text} disabled={busy||loading}
-            onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}}}/>
-          <button className="btn" disabled={busy||loading||!text.trim()} onClick={send}>Send</button>
-        </div>
+    <div className="card" style={{display:'flex',flexDirection:'column'}}>
+      <div className="mchat" ref={scRef} style={{maxHeight:'58vh'}}>
+        {loading && <div className="mbub sys">Loading…</div>}
+        {!loading && msgs.length===0 && <div className="mbub sys">Ask the manager anything about the band, give standing instructions, or tell him to plan/adjust rehearsals.</div>}
+        {msgs.map((m,i)=><div key={i} className={'mbub '+(m.role==='user'?'me':'mgr')} dir="auto">{m.text}</div>)}
+        {busy && <div className="mbub mgr" style={{opacity:.7}}>…thinking</div>}
+      </div>
+      {err && <div style={{fontSize:12,color:'var(--drums)',margin:'6px 2px'}}>{err}</div>}
+      <div style={{display:'flex',gap:6,marginTop:8}}>
+        <input className="inp" style={{flex:1}} dir="auto" placeholder="Message the manager…" value={text} disabled={busy||loading}
+          onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}}}/>
+        <button className="btn" disabled={busy||loading||!text.trim()} onClick={send}>Send</button>
       </div>
     </div>
   );
@@ -4276,12 +4251,50 @@ function PlanModal({show,state,update,onClose}){
     </div>
   );
 }
+function Admin({state,update,user,showId,pickShow}){
+  const admin=!!(user&&user.email===ADMIN_EMAIL);
+  const show=getShow(state,showId);
+  const [planOpen,setPlanOpen]=useState(false);
+  const [gl,setGl]=useState(state.managerGuidelines||'');
+  const [glMsg,setGlMsg]=useState('');
+  const saveGl=()=>{ update(s=>{s.managerGuidelines=gl;return s;}); setGlMsg('Saved.'); };
+  const [allowEmail,setAllowEmail]=useState('');
+  const addAllow=()=>{ const e=allowEmail.trim().toLowerCase(); if(!e) return; update(s=>{ s.managerChatAllow=[...new Set([...(s.managerChatAllow||[]),e])]; return s; }); setAllowEmail(''); };
+  const rmAllow=(e)=>update(s=>{ s.managerChatAllow=(s.managerChatAllow||[]).filter(x=>x!==e); return s; });
+  return (
+    <div className="page">
+      <div className="section-h">AI Manager</div>
+      <ShowSelector shows={state.shows} showId={showId} pickShow={pickShow}/>
+      {!show
+        ? <div className="empty"><div className="big">No show selected</div><div className="sm">Create a show in the Shows tab first.</div></div>
+        : <React.Fragment>
+            {admin && <div className="card">
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
+                <div style={{fontSize:13,color:'var(--muted)'}}>Plan rehearsals, per-player feedback and status for <b style={{color:'var(--text)'}} dir="auto">{show.name||'this show'}</b>.</div>
+                <button className="btn sm" style={{color:'#fff'}} onClick={()=>setPlanOpen(true)}>◆ Plan rehearsals</button>
+              </div>
+            </div>}
+            {admin && <div className="card">
+              <label className="fl">Standing guidelines</label>
+              <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5,marginBottom:6}}>Persistent instructions that shape the manager's chat, plans and reminders. The manager can also update these when you tell it to in chat.</div>
+              <textarea className="inp" rows={4} dir="auto" value={gl} onChange={e=>{setGl(e.target.value);setGlMsg('');}} placeholder="e.g. We rehearse Sundays 8–10pm. Prioritise the encore songs. Keep feedback blunt. Ofir plays vocals + keys."/>
+              <div className="btnrow"><button className="btn ghost sm" onClick={saveGl}>Save guidelines</button>{glMsg && <span style={{fontSize:12,color:'var(--ok)',alignSelf:'center'}}>{glMsg}</span>}</div>
+              <label className="fl" style={{marginTop:14}}>Who can chat with the manager (besides you)</label>
+              <div style={{display:'flex',gap:6,flexWrap:'wrap',margin:'6px 0'}}>
+                {(state.managerChatAllow||[]).length===0 && <span style={{fontSize:12,color:'var(--muted)'}}>Just you.</span>}
+                {(state.managerChatAllow||[]).map(e=>(<span key={e} className="plan-chip" style={{borderColor:'var(--keys)',color:'var(--keys)',display:'inline-flex',alignItems:'center',gap:5}}>{e}<button onClick={()=>rmAllow(e)} style={{background:'none',border:'none',color:'inherit',cursor:'pointer',fontSize:15,lineHeight:1,padding:0}}>×</button></span>))}
+              </div>
+              <div style={{display:'flex',gap:6}}><input className="inp" style={{flex:1}} value={allowEmail} onChange={e=>setAllowEmail(e.target.value)} placeholder="bandmate@email.com" onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addAllow();}}}/><button className="btn ghost sm" onClick={addAllow}>Add</button></div>
+              <div style={{fontSize:11,color:'var(--muted)',marginTop:6}}>They chat via the shared server key — requires the <b style={{color:'var(--text)'}}>managerChat</b> Cloud Function deployed. The person must sign in with this exact email.</div>
+            </div>}
+            <div className="section-h">Chat</div>
+            <ChatPanel show={show}/>
+          </React.Fragment>}
+      {admin && planOpen && show && <PlanModal show={show} state={state} update={update} onClose={()=>setPlanOpen(false)}/>}
+    </div>
+  );
+}
 function Shows({state,update,pickShow,selectedShowId,user}){
-  const canPlan=!!(user&&user.email===ADMIN_EMAIL);
-  const myEmailLc=((user&&user.email)||'').toLowerCase();
-  const canChat=!!(user&&(user.email===ADMIN_EMAIL||(state.managerChatAllow||[]).map(e=>(e||'').toLowerCase()).includes(myEmailLc)));
-  const [planShow,setPlanShow]=useState(null);
-  const [chatShow,setChatShow]=useState(null);
   const [adding,setAdding]=useState(false);
   const [editId,setEditId]=useState(null);
   const [name,setName]=useState('');
@@ -4367,8 +4380,6 @@ function Shows({state,update,pickShow,selectedShowId,user}){
                 <button className="btn ghost sm" onClick={()=>startEdit(sh)}>Edit</button>
                 <button className="btn ghost sm" onClick={()=>startClone(sh)}>Clone</button>
                 <button className="btn ghost sm" onClick={()=>setManageSongs(sh.id)}>Manage songs</button>
-                {canPlan && activeEntries.length>0 && <button className="btn ghost sm" style={{color:'var(--keys)',borderColor:'rgba(139,124,246,.5)'}} onClick={()=>setPlanShow(sh.id)}>◆ Plan Rehearsals</button>}
-                {canChat && activeEntries.length>0 && <button className="btn ghost sm" style={{color:'var(--keys)',borderColor:'rgba(139,124,246,.5)'}} onClick={()=>setChatShow(sh.id)}>💬 Manager chat</button>}
                 {confirmDel===sh.id
                   ? <React.Fragment><button className="btn danger sm" onClick={()=>delShow(sh.id)}>Confirm delete?</button><button className="btn ghost sm" onClick={()=>setConfirmDel(null)}>Cancel</button></React.Fragment>
                   : <button className="btn ghost sm" style={{color:'var(--drums)'}} onClick={()=>setConfirmDel(sh.id)}>Delete</button>}
@@ -4395,8 +4406,6 @@ function Shows({state,update,pickShow,selectedShowId,user}){
       </div>
       : <div className="add-bar"><button className="btn ghost" onClick={startAdd}>+ New show</button></div>}
       {cropSrc && <CropModal src={cropSrc} onCancel={()=>{setCropSrc(null);setArtTarget(null);}} onDone={onCropDone}/>}
-      {canPlan && planShow && (()=>{ const sh=getShow(state,planShow); return sh?<PlanModal show={sh} state={state} update={update} onClose={()=>setPlanShow(null)}/>:null; })()}
-      {canChat && chatShow && (()=>{ const sh=getShow(state,chatShow); return sh?<ChatModal show={sh} state={state} user={user} onClose={()=>setChatShow(null)}/>:null; })()}
       {manageSongs && (()=>{
         const sh=getShow(state,manageSongs);
         if(!sh) return null;
@@ -4424,10 +4433,11 @@ const ICONS={
   rehearse:'M5 4h14v16l-7-4-7 4z',
   shows:'M4 3h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z M7 18h10 M9 15v3 M15 15v3',
   album:'M4 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5z M9 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M4 16l4-4 3 3 4-4 5 5',
-  setup:'M10 3h4l.5 3 2 1 3-1.5 2 3.5-2.5 2v2l2.5 2-2 3.5-3-1.5-2 1L14 21h-4l-.5-3-2-1-3 1.5-2-3.5 2.5-2v-2L0 9'
+  setup:'M10 3h4l.5 3 2 1 3-1.5 2 3.5-2.5 2v2l2.5 2-2 3.5-3-1.5-2 1L14 21h-4l-.5-3-2-1-3 1.5-2-3.5 2.5-2v-2L0 9',
+  admin:'M4 5h16v11H13l-4 3v-3H4z M8 9h8 M8 12h5'
 };
-function TabBar({tab,setTab}){
-  const items=[['stage','Stage'],['setlist','Setlist'],['rehearse','Rehearsals'],['shows','Shows'],['album','Gallery'],['setup','Setup']];
+function TabBar({tab,setTab,canAdmin}){
+  const items=[['stage','Stage'],['setlist','Setlist'],['rehearse','Rehearsals'],['shows','Shows'],...(canAdmin?[['admin','Admin']]:[]),['album','Gallery'],['setup','Setup']];
   return (
     <nav className="tabbar">
       {items.map(([id,label])=>(
