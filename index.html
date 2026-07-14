@@ -395,7 +395,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.277';
+const VERSION='0.278';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -646,7 +646,16 @@ async function enableManagerNotifications(email){
   const token=await firebase.messaging().getToken({vapidKey:VAPID_KEY,serviceWorkerRegistration:reg});
   if(!token) throw new Error('Could not obtain a push token.');
   await db.collection('notifyTokens').doc(token).set({email,ts:Date.now(),ua:(navigator.userAgent||'').slice(0,180)});
+  try{ localStorage.setItem('sc_push_token',token); }catch(_){}
   return token;
+}
+// Turn off notifications on this device: drop the token from Firestore + FCM.
+async function disableManagerNotifications(){
+  let token=''; try{ token=localStorage.getItem('sc_push_token')||''; }catch(_){}
+  if(!token){ try{ token=await firebase.messaging().getToken({vapidKey:VAPID_KEY}); }catch(_){} }
+  try{ await firebase.messaging().deleteToken(); }catch(_){}
+  if(token){ try{ await db.collection('notifyTokens').doc(token).delete(); }catch(_){} }
+  try{ localStorage.removeItem('sc_push_token'); }catch(_){}
 }
 // Talk to the always-on manager (server-side; shared key). message='' loads history.
 function managerChatCall(showId,message){
@@ -3897,7 +3906,11 @@ function Setup({state,update,user,onSignOut,onSwitch}){
   const [confirmDelete,setConfirmDelete]=useState(false);
   const [notifMsg,setNotifMsg]=useState('');
   const [notifBusy,setNotifBusy]=useState(false);
-  const enableNotif=async()=>{ setNotifBusy(true); setNotifMsg(''); try{ await enableManagerNotifications(myEmail); setNotifMsg('Done — this device will now receive manager notifications.'); }catch(e){ setNotifMsg(e.message||String(e)); } setNotifBusy(false); };
+  const [pushOn,setPushOn]=useState(()=>{ try{ return !!localStorage.getItem('sc_push_token'); }catch(_){ return false; } });
+  const toggleNotif=async()=>{ setNotifBusy(true); setNotifMsg(''); try{
+      if(pushOn){ await disableManagerNotifications(); setPushOn(false); setNotifMsg('Notifications turned off on this device.'); }
+      else { await enableManagerNotifications(myEmail); setPushOn(true); setNotifMsg('Done — this device will now receive manager notifications.'); }
+    }catch(e){ setNotifMsg(e.message||String(e)); } setNotifBusy(false); };
   const delBand=async()=>{ try{ await deleteBandDoc(); if(onSwitch) onSwitch(); }catch(e){ alert('Failed: '+prettyErr(e)); setConfirmDelete(false); } };
   const setBand=(v)=>update(s=>{s.band=v;return s;});
   const setMember=(id,v)=>update(s=>{s.members[id].name=v;return s;});
@@ -3919,7 +3932,7 @@ function Setup({state,update,user,onSignOut,onSwitch}){
         <div className="section-h">AI manager notifications</div>
         <div className="card">
           <div style={{fontSize:12.5,color:'var(--muted)',lineHeight:1.55}}>Get rehearsal reminders (~24h ahead) and a weekly readiness report pushed to this device from the always-on manager. Owner-only. Enable it on each device you want notified.</div>
-          <div className="btnrow"><button className="btn ghost" disabled={notifBusy} onClick={enableNotif}>{notifBusy?'Enabling…':'Enable on this device'}</button></div>
+          <div className="btnrow"><button className="btn ghost" disabled={notifBusy} onClick={toggleNotif}>{notifBusy?(pushOn?'Turning off…':'Enabling…'):(pushOn?'Disable on this device':'Enable on this device')}</button></div>
           {notifMsg && <div style={{fontSize:12,color:'var(--muted)',marginTop:6}}>{notifMsg}</div>}
           <div style={{fontSize:11,color:'var(--muted)',marginTop:8}}>Manage the AI manager's guidelines, chat and who can use it in the <b style={{color:'var(--text)'}}>Admin</b> tab.</div>
         </div>
