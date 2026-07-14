@@ -395,7 +395,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.275';
+const VERSION='0.276';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -4277,8 +4277,12 @@ function Admin({state,update,user,showId,pickShow}){
   const [allowEmail,setAllowEmail]=useState('');
   const addAllow=()=>{ const e=allowEmail.trim().toLowerCase(); if(!e) return; update(s=>{ s.managerChatAllow=[...new Set([...(s.managerChatAllow||[]),e])]; return s; }); setAllowEmail(''); };
   const rmAllow=(e)=>update(s=>{ s.managerChatAllow=(s.managerChatAllow||[]).filter(x=>x!==e); return s; });
-  // Per-band image: admin-banner-<bandId>.jpg, falling back to the default admin-banner.jpg.
-  const heroImg=<img src={'admin-banner-'+BOARD+'.jpg'} alt="" onError={e=>{ if(e.target.src.indexOf('admin-banner-')!==-1){ e.target.src='admin-banner.jpg'; } else { e.target.style.display='none'; } }}/>;
+  // Per-band image by band name, falling back to admin-banner-Default.jpg then the generic.
+  const bandName=(state.band||'').trim();
+  const bannerCands=[];
+  if(bandName) bannerCands.push('admin-banner-'+encodeURIComponent(bandName)+'.jpg');
+  bannerCands.push('admin-banner-Default.jpg','admin-banner.jpg');
+  const heroImg=<img src={bannerCands[0]} data-i="0" alt="" onError={e=>{ const i=(+e.target.getAttribute('data-i'))+1; if(i<bannerCands.length){ e.target.setAttribute('data-i',String(i)); e.target.src=bannerCands[i]; } else { e.target.style.display='none'; } }}/>;
   const banner=(cls)=>(<div className={cls}>{heroImg}<div className="abt">AI Manager<small>Your always-on band manager</small></div></div>);
   const interactions=(
     !show
@@ -4302,7 +4306,7 @@ function Admin({state,update,user,showId,pickShow}){
               <div style={{display:'flex',gap:6}}><input className="inp" style={{flex:1}} value={allowEmail} onChange={e=>setAllowEmail(e.target.value)} placeholder="bandmate@email.com" onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addAllow();}}}/><button className="btn ghost sm" onClick={addAllow}>Add</button></div>
               <div style={{fontSize:11,color:'var(--muted)',marginTop:6}}>They chat via the shared server key — requires the <b style={{color:'var(--text)'}}>managerChat</b> Cloud Function deployed. The person must sign in with this exact email.</div>
               <label className="fl" style={{marginTop:14}}>Manager banner image (this band)</label>
-              <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5}}>Add a file named <b style={{color:'var(--text)',userSelect:'all'}}>admin-banner-{BOARD}.jpg</b> to give this band its own manager image. Without one, the default image is shown.</div>
+              <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5}}>Add a file named <b style={{color:'var(--text)',userSelect:'all'}} dir="auto">admin-banner-{bandName||'Default'}.jpg</b> to give this band its own manager image. Without one, <b style={{color:'var(--text)'}}>admin-banner-Default.jpg</b> is shown.</div>
             </div>}
           </div>}
           <ChatPanel show={show}/>
