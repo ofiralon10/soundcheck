@@ -14,6 +14,11 @@ firebase.initializeApp({
   appId: "1:720440182108:web:48fd85d99bd4cc7da32d99"
 });
 
+// Activate immediately and take control so getToken() sees an active worker
+// on first registration (otherwise FCM falls back to a root-scope default SW).
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+
 // Background handler. FCM auto-displays messages that carry a `notification`
 // payload (which our functions send), so this is mostly a safety net + logging.
 const messaging = firebase.messaging();

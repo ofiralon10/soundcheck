@@ -395,7 +395,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.279';
+const VERSION='0.280';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -643,9 +643,11 @@ async function enableManagerNotifications(email){
   const perm=await Notification.requestPermission();
   if(perm!=='granted') throw new Error('Notifications permission was not granted.');
   const reg=await navigator.serviceWorker.register('firebase-messaging-sw.js');
-  try{ await navigator.serviceWorker.ready; }catch(_){}
-  // Always pass our own registration so FCM never falls back to a root-scope default SW
-  // (this app is served from a /soundcheck/ subpath, so the default /firebase-messaging-sw.js 404s).
+  // Wait until THIS registration has an active worker. Passing a still-installing
+  // registration makes FCM fall back to a root-scope default SW, which 404s on
+  // this /soundcheck/ subpath. (navigator.serviceWorker.ready isn't reliable — it
+  // can resolve to a different controlling registration.)
+  if(!reg.active){ await new Promise(res=>{ const sw=reg.installing||reg.waiting; if(!sw||sw.state==='activated') return res(); sw.addEventListener('statechange',()=>{ if(sw.state==='activated') res(); }); setTimeout(res,5000); }); }
   const token=await firebase.messaging().getToken({vapidKey:VAPID_KEY,serviceWorkerRegistration:reg});
   if(!token) throw new Error('Could not obtain a push token.');
   await db.collection('notifyTokens').doc(token).set({email,ts:Date.now(),ua:(navigator.userAgent||'').slice(0,180)});
