@@ -66,7 +66,28 @@ want notified.
 
 After editing: `firebase deploy --only functions`.
 
+## Chat manager (`managerChat` callable)
+
+A third function lets you (and allowlisted bandmates) **chat** with the manager
+from the app — ask questions, give standing instructions, and tell it to act
+(save a guideline, set a player's status, set a rehearsal's focus, schedule a
+rehearsal). It runs server-side with the same `ANTHROPIC_KEY` secret, so people
+you allow chat **without any key on their device**.
+
+- Deployed by the same `firebase deploy --only functions,firestore:rules`
+  above — no extra setup beyond the secret + Blaze.
+- **Who can chat:** you always; add others in the app under **Setup → AI
+  manager → Who can chat**. They must sign in with that exact email. The
+  allowlist is enforced inside the function, not just the UI.
+- **Guidelines:** edit them in **Setup → AI manager → Standing guidelines**.
+  They shape the chat, the plan generator, and the reminders. The manager can
+  also update them when you tell it to in chat.
+- Chat history lives in a function-only `managerChat/{bandId}` doc (clients
+  reach it only through the callable). Tool actions commit to the board in a
+  transaction so they merge with the app's saves.
+
 ## Cost
 
-Each notification is one small Claude call on your key (a few cents at most).
-Function invocations/FCM are within Firebase's free tier at this scale.
+Each notification or chat turn is one (or a few) Claude calls on your key — a
+few cents at most. Function invocations/FCM are within Firebase's free tier at
+this scale.

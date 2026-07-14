@@ -63,5 +63,12 @@ service cloud.firestore {
     match /managerState/{bandId} {
       allow read, write: if isAdmin();
     }
+
+    // Manager chat transcript. Read/written ONLY by the managerChat Cloud
+    // Function (Admin SDK, which bypasses these rules). Clients reach it solely
+    // through the callable, which enforces the allowlist — so deny direct access.
+    match /managerChat/{bandId} {
+      allow read, write: if false;
+    }
   }
 }

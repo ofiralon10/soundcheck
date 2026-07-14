@@ -27,6 +27,7 @@ const APP_URL = 'https://ofiralon10.github.io/soundcheck/'; // opened when a pus
 /* -------------------------------------- */
 
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
@@ -154,7 +155,9 @@ exports.rehearsalReminders = onSchedule(
         const show = (board.shows || []).find(s => s.id === r.showId);
         const focus = [...(r.focusLearn || []), ...(r.focusPractice || [])]
           .map(id => titleOf(board, id)).filter(Boolean);
+        const gl = (board.managerGuidelines || '').trim();
         const brief = [
+          gl ? ('OWNER GUIDELINES (honor these): ' + gl) : '',
           'BAND: ' + (board.band || board.id),
           'SHOW: ' + (show ? (show.name || 'Untitled') : '—') + (show && show.date ? (' (' + (daysUntil(show.date)) + ' days out)') : ''),
           'REHEARSAL: ' + fmtWhen(r.date) + (r.duration ? (' (' + r.duration + 'h)') : '') + (r.location ? (' @ ' + r.location) : ''),
@@ -194,7 +197,9 @@ exports.weeklyReport = onSchedule(
       shows.sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
       const show = shows[0];
       const inst = instrAverages(show).sort((a, b) => a.avg - b.avg);
+      const gl = (board.managerGuidelines || '').trim();
       const brief = [
+        gl ? ('OWNER GUIDELINES (honor these): ' + gl) : '',
         'BAND: ' + (board.band || board.id),
         'SHOW: ' + (show.name || 'Untitled') + (show.date ? (' on ' + fmtWhen(show.date) + ' (' + daysUntil(show.date) + ' days out)') : ' (no date)'),
         'OVERALL READINESS: ' + pct(showOverall(show)) + '%',
@@ -210,3 +215,176 @@ exports.weeklyReport = onSchedule(
     }
   }
 );
+
+/* ============================ CHAT MANAGER (callable) ============================
+   Owner + allowlisted members chat with the manager. Runs server-side with the
+   shared key; the manager can act via tools (guidelines, statuses, focus,
+   scheduling). Chat history lives in a function-only `managerChat/{bandId}` doc
+   so the app's whole-doc board saves never clobber it. Tool actions commit to
+   the board in a transaction (merge onto the latest doc). */
+const MANAGER_SYSTEM =
+  'You are the band\'s manager, in an ongoing chat with a band member. You have the current band data and the owner\'s standing guidelines below. ' +
+  'Answer questions and give concrete, motivating advice. When asked to change something — save a guideline, set a player\'s status, set a rehearsal\'s focus, or schedule a rehearsal — use the tools, then confirm in plain language what you did. ' +
+  'Reference songs by their #number and rehearsals by their R-number. Always honor the owner guidelines. Be concise and direct — this is a chat, not a report.';
+
+const MANAGER_TOOLS = [
+  { name: 'save_guideline', description: 'Save/append to the owner\'s standing guidelines. They persist and shape all future chat, plans and reminders.', input_schema: { type: 'object', properties: { text: { type: 'string' }, replace: { type: 'boolean', description: 'true replaces all guidelines; false appends.' } }, required: ['text'] } },
+  { name: 'set_song_status', description: 'Set one player\'s readiness on a setlist song.', input_schema: { type: 'object', properties: { song: { type: 'integer', description: '#number from the setlist' }, instrument: { type: 'string', enum: ['keys', 'drums', 'guitar', 'bass', 'vocals'] }, status: { type: 'string', enum: ['todo', 'learning', 'practicing', 'ready'] } }, required: ['song', 'instrument', 'status'] } },
+  { name: 'apply_focus', description: 'Set learn/practice focus on an existing upcoming rehearsal (by R-number).', input_schema: { type: 'object', properties: { rehearsal: { type: 'integer' }, learn: { type: 'array', items: { type: 'integer' } }, practice: { type: 'array', items: { type: 'integer' } }, note: { type: 'string' } }, required: ['rehearsal'] } },
+  { name: 'create_rehearsal', description: 'Schedule a new rehearsal for this show.', input_schema: { type: 'object', properties: { date: { type: 'string', description: 'YYYY-MM-DD' }, time: { type: 'string', description: 'HH:MM 24h (default 20:00)' }, durationHours: { type: 'number' }, location: { type: 'string' }, learn: { type: 'array', items: { type: 'integer' } }, practice: { type: 'array', items: { type: 'integer' } } }, required: ['date'] } }
+];
+
+function genId() { return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+function buildManagerContextNode(board, show) {
+  const entries = (show.setlist || []).filter(e => !e.excluded);
+  const idxToSong = []; const songLines = [];
+  entries.forEach(e => {
+    const s = (board.songs || []).find(x => x.id === e.songId); if (!s) return;
+    idxToSong.push(e.songId);
+    const parts = CORE.map(id => LABEL[id] + ':' + ((e.parts || {})[id] || 'todo')).join(', ');
+    songLines.push('#' + idxToSong.length + ' "' + (s.title || 'Untitled') + '"' + (s.artist ? (' — ' + s.artist) : '') + ' | overall ' + pct(entryReadiness(e)) + '% | ' + parts);
+  });
+  const reh = (board.rehearsals || []).filter(r => r.showId === show.id && !r.done && r.date).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const rehIds = reh.map(r => r.id);
+  const rehLines = reh.map((r, i) => 'R' + (i + 1) + ' ' + fmtWhen(r.date) + (r.duration ? (' (' + r.duration + 'h)') : '') + (r.location ? (' @ ' + r.location) : '') + (((r.focusLearn || []).length || (r.focusPractice || []).length) ? ' [focus set]' : ''));
+  const g = (board.managerGuidelines || '').trim();
+  const lineup = CORE.map(id => LABEL[id] + ' = ' + ((board.members && board.members[id] && board.members[id].name) || '(unnamed)')).join(', ');
+  const context = [
+    g ? ('OWNER GUIDELINES (always honor these):\n' + g) : 'OWNER GUIDELINES: (none set)',
+    '',
+    'BAND: ' + (board.band || ''),
+    'SHOW: ' + (show.name || 'Untitled') + (show.date ? (' on ' + fmtWhen(show.date) + ' (' + daysUntil(show.date) + ' days out)') : ' (no date)'),
+    'LINEUP: ' + lineup,
+    'OVERALL READINESS: ' + pct(showOverall(show)) + '%',
+    '',
+    'SETLIST (reference songs by #number):',
+    ...(songLines.length ? songLines : ['(empty)']),
+    '',
+    'UPCOMING REHEARSALS (reference by R-number):',
+    ...(rehLines.length ? rehLines : ['(none scheduled)'])
+  ].join('\n');
+  return { context, idxToSong, rehIds };
+}
+
+function applyOpToBoard(op, board) {
+  if (op.type === 'guideline') {
+    const t = (op.text || '').trim();
+    board.managerGuidelines = op.replace ? t : ((board.managerGuidelines || '').trim() ? (board.managerGuidelines.trim() + '\n' + t) : t);
+  } else if (op.type === 'status') {
+    const sh = (board.shows || []).find(s => s.id === op.showId);
+    if (sh) { const e = (sh.setlist || []).find(x => x.songId === op.songId); if (e) { e.parts = e.parts || {}; e.parts[op.instrument] = op.status; } }
+  } else if (op.type === 'focus') {
+    const r = (board.rehearsals || []).find(x => x.id === op.rehId);
+    if (r) { if (op.learn) r.focusLearn = op.learn; if (op.practice) r.focusPractice = op.practice; if (op.note) r.notes = (r.notes ? r.notes + '\n' : '') + op.note; }
+  } else if (op.type === 'rehearsal') {
+    board.rehearsals = board.rehearsals || []; board.rehearsals.push(op.reh);
+  }
+}
+
+function applyManagerTool(name, input, ctx, showId, work, ops) {
+  const songId = n => ctx.idxToSong[(parseInt(n, 10) || 0) - 1] || null;
+  const title = id => { const s = (work.songs || []).find(x => x.id === id); return s ? (s.title || 'Untitled') : id; };
+  let op = null, msg = '';
+  if (name === 'save_guideline') {
+    op = { type: 'guideline', text: input.text || '', replace: !!input.replace };
+    msg = 'Guidelines ' + (input.replace ? 'replaced' : 'updated') + '.';
+  } else if (name === 'set_song_status') {
+    const id = songId(input.song); if (!id) return 'No song #' + input.song + '.';
+    op = { type: 'status', showId, songId: id, instrument: input.instrument, status: input.status };
+    msg = 'Set ' + input.instrument + ' = ' + input.status + ' on #' + input.song + ' (' + title(id) + ').';
+  } else if (name === 'apply_focus') {
+    const rehId = ctx.rehIds[(parseInt(input.rehearsal, 10) || 0) - 1]; if (!rehId) return 'No rehearsal R' + input.rehearsal + '.';
+    const L = (input.learn || []).map(songId).filter(Boolean), P = (input.practice || []).map(songId).filter(Boolean);
+    op = { type: 'focus', rehId, learn: input.learn ? L : null, practice: input.practice ? P : null, note: input.note || '' };
+    msg = 'Updated rehearsal R' + input.rehearsal + ' focus.';
+  } else if (name === 'create_rehearsal') {
+    const t = (input.time && /^\d{1,2}:\d{2}$/.test(input.time)) ? input.time : '20:00';
+    const iso = input.date + 'T' + (t.length === 4 ? ('0' + t) : t);
+    const L = (input.learn || []).map(songId).filter(Boolean), P = (input.practice || []).map(songId).filter(Boolean);
+    const reh = { id: genId(), showId, date: iso, duration: String(input.durationHours || 2), location: input.location || '', notes: '', focusLearn: L, focusPractice: P, attendance: Object.fromEntries(CORE.map(id => [id, true])), proposal: null, done: false };
+    op = { type: 'rehearsal', reh };
+    msg = 'Scheduled a rehearsal on ' + input.date + ' ' + t + '.';
+  } else { return 'Unknown tool.'; }
+  ops.push(op); applyOpToBoard(op, work); return msg;
+}
+
+async function anthropicRaw(key, body) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) throw new Error('anthropic ' + res.status + ': ' + (await res.text()).slice(0, 300));
+  return res.json();
+}
+
+exports.managerChat = onCall({ secrets: [ANTHROPIC_KEY] }, async (req) => {
+  const email = req.auth && req.auth.token && req.auth.token.email;
+  if (!email) throw new HttpsError('unauthenticated', 'Please sign in first.');
+  const { bandId, showId, message } = req.data || {};
+  if (!bandId) throw new HttpsError('invalid-argument', 'Missing band.');
+  const boardRef = db.collection('boards').doc(bandId);
+  const boardSnap = await boardRef.get();
+  if (!boardSnap.exists) throw new HttpsError('not-found', 'No such band.');
+  const board = boardSnap.data();
+  const allow = [ADMIN_EMAIL, ...((board.managerChatAllow) || [])].map(x => (x || '').toLowerCase());
+  if (!allow.includes(email.toLowerCase())) throw new HttpsError('permission-denied', 'You are not allowed to chat with the manager.');
+
+  const chatRef = db.collection('managerChat').doc(bandId);
+  const chatSnap = await chatRef.get();
+  let messages = (chatSnap.exists && Array.isArray(chatSnap.data().messages)) ? chatSnap.data().messages : [];
+  if (!message || !String(message).trim()) return { messages };   // history load
+
+  const show = (board.shows || []).find(s => s.id === showId) || (board.shows || [])[0];
+  if (!show) throw new HttpsError('failed-precondition', 'No show to discuss.');
+
+  const ctx = buildManagerContextNode(board, show);
+  const sys = MANAGER_SYSTEM + '\n\n' + ctx.context;
+  const apiMsgs = messages.slice(-20).map(m => ({ role: m.role, content: m.text }));
+  apiMsgs.push({ role: 'user', content: String(message) });
+
+  const work = JSON.parse(JSON.stringify(board));   // apply tool effects here for in-loop results
+  const ops = [];
+  const key = ANTHROPIC_KEY.value();
+  let reply = ''; const actions = [];
+  try {
+    for (let step = 0; step < 6; step++) {
+      const data = await anthropicRaw(key, { model: MODEL, max_tokens: 2000, system: sys, messages: apiMsgs, tools: MANAGER_TOOLS });
+      if (data.stop_reason === 'refusal') { reply = 'Sorry — I can\'t help with that one.'; break; }
+      apiMsgs.push({ role: 'assistant', content: data.content });
+      const toolUses = (data.content || []).filter(b => b.type === 'tool_use');
+      if (data.stop_reason === 'tool_use' && toolUses.length) {
+        const results = [];
+        for (const tu of toolUses) {
+          const out = applyManagerTool(tu.name, tu.input || {}, ctx, show.id, work, ops);
+          actions.push(tu.name);
+          results.push({ type: 'tool_result', tool_use_id: tu.id, content: out });
+        }
+        apiMsgs.push({ role: 'user', content: results });
+        continue;
+      }
+      reply = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+      break;
+    }
+  } catch (e) {
+    logger.error('managerChat LLM error: ' + e.message);
+    throw new HttpsError('internal', 'The manager could not respond right now.');
+  }
+
+  const now = Date.now();
+  messages = [...messages, { role: 'user', text: String(message), ts: now }, { role: 'assistant', text: reply || '(no reply)', ts: now }].slice(-40);
+  await chatRef.set({ messages }, { merge: true });
+
+  if (ops.length) {
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(boardRef);
+      if (!snap.exists) return;
+      const b = snap.data();
+      ops.forEach(op => applyOpToBoard(op, b));
+      b._updatedAt = new Date().toISOString();
+      tx.set(boardRef, b);
+    });
+  }
+  return { reply, messages, actions };
+});

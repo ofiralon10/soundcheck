@@ -258,6 +258,11 @@
      so size the panel as a % of the frame (not vh, which is the real viewport). */
   .files-panel.planwide{max-width:1120px;border-radius:18px;max-height:88%;padding:22px 22px}
   .plan-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;align-items:start}
+  .mchat{display:flex;flex-direction:column;gap:8px;overflow-y:auto;padding:4px 2px;min-height:120px}
+  .mbub{max-width:82%;padding:9px 12px;border-radius:14px;font-size:13px;line-height:1.5;white-space:pre-wrap}
+  .mbub.me{align-self:flex-end;background:var(--keys);color:#fff;border-bottom-right-radius:5px}
+  .mbub.mgr{align-self:flex-start;background:var(--surface-3);color:var(--text);border:1px solid var(--line);border-bottom-left-radius:5px}
+  .mbub.sys{align-self:center;background:none;color:var(--muted);font-size:11.5px;max-width:100%;padding:2px}
   .files-cat{margin-bottom:12px;border:1.5px solid var(--line-2);border-radius:12px;padding:12px;transition:border-color .15s,background .15s}
   .files-cat.drop-over{border-color:var(--keys);background:rgba(139,124,246,.08)}
   .files-cat-h{font-family:var(--display);font-weight:600;font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
@@ -374,11 +379,12 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-functions-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.267';
+const VERSION='0.268';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -418,6 +424,9 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
+  '0.268':[
+    'Chat with the AI manager from Shows — ask questions, give standing guidelines that persist, and tell it to schedule/adjust rehearsals or update readiness. Owner + allowlisted members (Setup → AI manager).',
+  ],
   '0.262':[
     'AI band manager: in Shows → Plan Rehearsals, Claude reads your progress and plans the rehearsals + gives each player personal feedback (needs your own Anthropic API key)',
     'Generated plans are saved on the show, so they persist after closing and are shared with the band',
@@ -628,6 +637,11 @@ async function enableManagerNotifications(email){
   await db.collection('notifyTokens').doc(token).set({email,ts:Date.now(),ua:(navigator.userAgent||'').slice(0,180)});
   return token;
 }
+// Talk to the always-on manager (server-side; shared key). message='' loads history.
+function managerChatCall(showId,message){
+  const fn=firebase.functions().httpsCallable('managerChat');
+  return fn({bandId:BOARD,showId,message:message||''}).then(r=>r.data);
+}
 async function queryMyBands(email){
   const snap=await db.collection('boards').where('memberEmails','array-contains',email).get();
   return snap.docs.map(d=>({id:d.id,...d.data()}));
@@ -720,7 +734,7 @@ async function deleteBandDoc(){ if(boardRef) await boardRef.delete(); }
 /* ---------- state helpers ---------- */
 function defaultState(){
   const members={}; INSTR.forEach(i=>members[i.id]={name:i.label});
-  return {band:'', bandArt:'', shows:[], members, songs:[], rehearsals:[], activity:[], access:{}, memberEmails:[], album:[], _rev:0, _updatedAt:null};
+  return {band:'', bandArt:'', shows:[], members, songs:[], rehearsals:[], activity:[], access:{}, memberEmails:[], album:[], managerGuidelines:'', managerChatAllow:[], _rev:0, _updatedAt:null};
 }
 function freshParts(){ const p={}; INSTR.forEach(i=>p[i.id]='todo'); return p; }
 function deriveFromStatus(st){ return st==='ready'?'ready' : (st==='practicing')?'practicing' : (st==='rehearsing'||st==='learning')?'learning' : 'todo'; }
@@ -728,6 +742,8 @@ function migrate(s){
   if(typeof s._rev!=='number') s._rev=0;
   if(s.band===undefined) s.band='';
   if(s.bandArt===undefined) s.bandArt='';
+  if(typeof s.managerGuidelines!=='string') s.managerGuidelines='';
+  if(!Array.isArray(s.managerChatAllow)) s.managerChatAllow=[];
   if(!s.members){ s.members={}; INSTR.forEach(i=>s.members[i.id]={name:i.label}); }
   if(!Array.isArray(s.songs)) s.songs=[];
   s.songs.forEach(song=>{
@@ -999,11 +1015,13 @@ const AI_SCHEMA={type:'object',additionalProperties:false,properties:{
 async function aiGeneratePlan(show,state){
   const key=aiGetKey(); if(!key) throw new Error('No API key set.');
   const {brief,idxToSong}=buildPlanBrief(show,state);
+  const g=(state.managerGuidelines||'').trim();
+  const sys=AI_SYSTEM+(g?('\n\nOWNER GUIDELINES (always honor these):\n'+g):'');
   const body={
     model:aiGetModel(),
     max_tokens:8000,
     thinking:{type:'adaptive'},
-    system:AI_SYSTEM,
+    system:sys,
     messages:[{role:'user',content:'Plan the rehearsals and write per-player feedback for this show.\n\n'+brief}],
     output_config:{format:{type:'json_schema',schema:AI_SCHEMA}}
   };
@@ -3866,6 +3884,12 @@ function Setup({state,update,user,onSignOut,onSwitch}){
   const [notifMsg,setNotifMsg]=useState('');
   const [notifBusy,setNotifBusy]=useState(false);
   const enableNotif=async()=>{ setNotifBusy(true); setNotifMsg(''); try{ await enableManagerNotifications(myEmail); setNotifMsg('Done — this device will now receive manager notifications.'); }catch(e){ setNotifMsg(e.message||String(e)); } setNotifBusy(false); };
+  const [gl,setGl]=useState(state.managerGuidelines||'');
+  const [glMsg,setGlMsg]=useState('');
+  const saveGl=()=>{ update(s=>{s.managerGuidelines=gl;return s;}); setGlMsg('Saved.'); };
+  const [allowEmail,setAllowEmail]=useState('');
+  const addAllow=()=>{ const e=allowEmail.trim().toLowerCase(); if(!e) return; update(s=>{ s.managerChatAllow=[...new Set([...(s.managerChatAllow||[]),e])]; return s; }); setAllowEmail(''); };
+  const rmAllow=(e)=>update(s=>{ s.managerChatAllow=(s.managerChatAllow||[]).filter(x=>x!==e); return s; });
   const delBand=async()=>{ try{ await deleteBandDoc(); if(onSwitch) onSwitch(); }catch(e){ alert('Failed: '+prettyErr(e)); setConfirmDelete(false); } };
   const setBand=(v)=>update(s=>{s.band=v;return s;});
   const setMember=(id,v)=>update(s=>{s.members[id].name=v;return s;});
@@ -3889,6 +3913,21 @@ function Setup({state,update,user,onSignOut,onSwitch}){
           <div style={{fontSize:12.5,color:'var(--muted)',lineHeight:1.55}}>Get rehearsal reminders (~24h ahead) and a weekly readiness report pushed to this device from the always-on manager. Owner-only. Enable it on each device you want notified.</div>
           <div className="btnrow"><button className="btn ghost" disabled={notifBusy} onClick={enableNotif}>{notifBusy?'Enabling…':'Enable on this device'}</button></div>
           {notifMsg && <div style={{fontSize:12,color:'var(--muted)',marginTop:6}}>{notifMsg}</div>}
+        </div>
+
+        <div className="section-h">AI manager</div>
+        <div className="card">
+          <label className="fl">Standing guidelines</label>
+          <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5,marginBottom:6}}>Persistent instructions that shape the manager's chat, plans and reminders. The manager can also update these when you tell it to.</div>
+          <textarea className="inp" rows={4} dir="auto" value={gl} onChange={e=>{setGl(e.target.value);setGlMsg('');}} placeholder="e.g. We rehearse Sundays 8–10pm. Prioritise the encore songs. Keep feedback blunt. Ofir plays vocals + keys."/>
+          <div className="btnrow"><button className="btn ghost sm" onClick={saveGl}>Save guidelines</button>{glMsg && <span style={{fontSize:12,color:'var(--ok)',alignSelf:'center'}}>{glMsg}</span>}</div>
+          <label className="fl" style={{marginTop:14}}>Who can chat with the manager (besides you)</label>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap',margin:'6px 0'}}>
+            {(state.managerChatAllow||[]).length===0 && <span style={{fontSize:12,color:'var(--muted)'}}>Just you.</span>}
+            {(state.managerChatAllow||[]).map(e=>(<span key={e} className="plan-chip" style={{borderColor:'var(--keys)',color:'var(--keys)',display:'inline-flex',alignItems:'center',gap:5}}>{e}<button onClick={()=>rmAllow(e)} style={{background:'none',border:'none',color:'inherit',cursor:'pointer',fontSize:15,lineHeight:1,padding:0}}>×</button></span>))}
+          </div>
+          <div style={{display:'flex',gap:6}}><input className="inp" style={{flex:1}} value={allowEmail} onChange={e=>setAllowEmail(e.target.value)} placeholder="bandmate@email.com" onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addAllow();}}}/><button className="btn ghost sm" onClick={addAllow}>Add</button></div>
+          <div style={{fontSize:11,color:'var(--muted)',marginTop:6}}>They chat via the shared server key — requires the <b style={{color:'var(--text)'}}>managerChat</b> Cloud Function deployed. The person must sign in with this exact email.</div>
         </div>
       </React.Fragment>}
 
@@ -4056,6 +4095,47 @@ function Album({state,update}){
     </div>
   );
 }
+function ChatModal({show,state,user,onClose}){
+  useBackHandler(true,onClose);
+  const wide=useWide();
+  const [msgs,setMsgs]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [busy,setBusy]=useState(false);
+  const [err,setErr]=useState('');
+  const [text,setText]=useState('');
+  const scRef=useRef(null);
+  const em=e=>(e&&e.message)||String(e);
+  useEffect(()=>{ let alive=true; managerChatCall(show.id,'').then(d=>{ if(alive){ setMsgs((d&&d.messages)||[]); setLoading(false); } }).catch(e=>{ if(alive){ setErr(em(e)); setLoading(false); } }); return ()=>{alive=false;}; },[show.id]);
+  useEffect(()=>{ const el=scRef.current; if(el) el.scrollTop=el.scrollHeight; },[msgs,busy,loading]);
+  const send=async()=>{ const t=text.trim(); if(!t||busy) return; setErr(''); setText(''); setBusy(true);
+    const base=msgs; setMsgs([...base,{role:'user',text:t,ts:Date.now()}]);
+    try{ const d=await managerChatCall(show.id,t); setMsgs((d&&d.messages)||base); }
+    catch(e){ setErr(em(e)); setMsgs(base); setText(t); }
+    setBusy(false);
+  };
+  return (
+    <div className={'files-modal'+(wide?' planwide':'')} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div className={'files-panel'+(wide?' planwide':'')} onClick={e=>e.stopPropagation()} style={wide?{display:'flex',flexDirection:'column'}:null}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+          <div className="modaltitle" style={{margin:0}}>◆ Manager · <span dir="auto">{show.name||'Show'}</span></div>
+          <button onClick={onClose} style={{background:'none',border:'none',color:'var(--muted)',fontSize:22,cursor:'pointer',padding:'0 4px'}}>×</button>
+        </div>
+        <div className="mchat" ref={scRef} style={{flex:wide?1:'none',maxHeight:wide?'none':'52vh'}}>
+          {loading && <div className="mbub sys">Loading…</div>}
+          {!loading && msgs.length===0 && <div className="mbub sys">Ask the manager anything about the band, give standing instructions, or tell him to plan/adjust rehearsals.</div>}
+          {msgs.map((m,i)=><div key={i} className={'mbub '+(m.role==='user'?'me':'mgr')} dir="auto">{m.text}</div>)}
+          {busy && <div className="mbub mgr" style={{opacity:.7}}>…thinking</div>}
+        </div>
+        {err && <div style={{fontSize:12,color:'var(--drums)',margin:'6px 2px'}}>{err}</div>}
+        <div style={{display:'flex',gap:6,marginTop:8}}>
+          <input className="inp" style={{flex:1}} dir="auto" placeholder="Message the manager…" value={text} disabled={busy||loading}
+            onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}}}/>
+          <button className="btn" disabled={busy||loading||!text.trim()} onClick={send}>Send</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 const RISK_META={'on-track':{label:'On track',color:'var(--ok)'},'tight':{label:'Tight',color:'var(--warn)'},'at-risk':{label:'At risk',color:'var(--drums)'}};
 function PlanModal({show,state,update,onClose}){
   useBackHandler(true,onClose);
@@ -4198,7 +4278,10 @@ function PlanModal({show,state,update,onClose}){
 }
 function Shows({state,update,pickShow,selectedShowId,user}){
   const canPlan=!!(user&&user.email===ADMIN_EMAIL);
+  const myEmailLc=((user&&user.email)||'').toLowerCase();
+  const canChat=!!(user&&(user.email===ADMIN_EMAIL||(state.managerChatAllow||[]).map(e=>(e||'').toLowerCase()).includes(myEmailLc)));
   const [planShow,setPlanShow]=useState(null);
+  const [chatShow,setChatShow]=useState(null);
   const [adding,setAdding]=useState(false);
   const [editId,setEditId]=useState(null);
   const [name,setName]=useState('');
@@ -4285,6 +4368,7 @@ function Shows({state,update,pickShow,selectedShowId,user}){
                 <button className="btn ghost sm" onClick={()=>startClone(sh)}>Clone</button>
                 <button className="btn ghost sm" onClick={()=>setManageSongs(sh.id)}>Manage songs</button>
                 {canPlan && activeEntries.length>0 && <button className="btn ghost sm" style={{color:'var(--keys)',borderColor:'rgba(139,124,246,.5)'}} onClick={()=>setPlanShow(sh.id)}>◆ Plan Rehearsals</button>}
+                {canChat && activeEntries.length>0 && <button className="btn ghost sm" style={{color:'var(--keys)',borderColor:'rgba(139,124,246,.5)'}} onClick={()=>setChatShow(sh.id)}>💬 Manager chat</button>}
                 {confirmDel===sh.id
                   ? <React.Fragment><button className="btn danger sm" onClick={()=>delShow(sh.id)}>Confirm delete?</button><button className="btn ghost sm" onClick={()=>setConfirmDel(null)}>Cancel</button></React.Fragment>
                   : <button className="btn ghost sm" style={{color:'var(--drums)'}} onClick={()=>setConfirmDel(sh.id)}>Delete</button>}
@@ -4312,6 +4396,7 @@ function Shows({state,update,pickShow,selectedShowId,user}){
       : <div className="add-bar"><button className="btn ghost" onClick={startAdd}>+ New show</button></div>}
       {cropSrc && <CropModal src={cropSrc} onCancel={()=>{setCropSrc(null);setArtTarget(null);}} onDone={onCropDone}/>}
       {canPlan && planShow && (()=>{ const sh=getShow(state,planShow); return sh?<PlanModal show={sh} state={state} update={update} onClose={()=>setPlanShow(null)}/>:null; })()}
+      {canChat && chatShow && (()=>{ const sh=getShow(state,chatShow); return sh?<ChatModal show={sh} state={state} user={user} onClose={()=>setChatShow(null)}/>:null; })()}
       {manageSongs && (()=>{
         const sh=getShow(state,manageSongs);
         if(!sh) return null;
