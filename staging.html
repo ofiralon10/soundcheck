@@ -395,7 +395,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.273';
+const VERSION='0.274';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -4096,7 +4096,11 @@ function ChatPanel({show}){
   const [err,setErr]=useState('');
   const [text,setText]=useState('');
   const scRef=useRef(null);
-  const em=e=>(e&&e.message)||String(e);
+  const em=e=>{ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e);
+    if(/permission-denied/.test(c)) return "You're not on the manager's allowlist.";
+    if(/unauthenticated/.test(c)) return 'Please sign in again to use the manager.';
+    if(/not-found|internal|unavailable/.test(c)||m==='internal') return "The manager isn't connected yet — its Cloud Function needs to be deployed (see functions/README).";
+    return m; };
   useEffect(()=>{ let alive=true; setLoading(true); setErr(''); managerChatCall(show.id,'').then(d=>{ if(alive){ setMsgs((d&&d.messages)||[]); setLoading(false); } }).catch(e=>{ if(alive){ setErr(em(e)); setLoading(false); } }); return ()=>{alive=false;}; },[show.id]);
   useEffect(()=>{ const el=scRef.current; if(el) el.scrollTop=el.scrollHeight; },[msgs,busy,loading]);
   const send=async()=>{ const t=text.trim(); if(!t||busy) return; setErr(''); setText(''); setBusy(true);
@@ -4117,7 +4121,7 @@ function ChatPanel({show}){
       <div style={{display:'flex',gap:6,marginTop:8}}>
         <input className="inp" style={{flex:1}} dir="auto" placeholder="Message the manager…" value={text} disabled={busy||loading}
           onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}}}/>
-        <button className="btn" disabled={busy||loading||!text.trim()} onClick={send}>Send</button>
+        <button className="btn sm" disabled={busy||loading||!text.trim()} onClick={send}>Send</button>
       </div>
     </div>
   );
@@ -4266,7 +4270,7 @@ function Admin({state,update,user,showId,pickShow}){
   const admin=!!(user&&user.email===ADMIN_EMAIL);
   const show=getShow(state,showId);
   const wide=useWide();
-  const [planOpen,setPlanOpen]=useState(false);
+  const [settingsOpen,setSettingsOpen]=useState(false);
   const [gl,setGl]=useState(state.managerGuidelines||'');
   const [glMsg,setGlMsg]=useState('');
   const saveGl=()=>{ update(s=>{s.managerGuidelines=gl;return s;}); setGlMsg('Saved.'); };
@@ -4276,18 +4280,15 @@ function Admin({state,update,user,showId,pickShow}){
   const heroImg=<img src="admin-banner.jpg" alt="" onError={e=>{e.target.style.display='none';}}/>;
   const banner=(cls)=>(<div className={cls}>{heroImg}<div className="abt">AI Manager<small>Your always-on band manager</small></div></div>);
   const interactions=(
-    <React.Fragment>
-      <ShowSelector shows={state.shows} showId={showId} pickShow={pickShow}/>
-      {!show
-        ? <div className="empty"><div className="big">No show selected</div><div className="sm">Create a show in the Shows tab first.</div></div>
-        : <React.Fragment>
-            {admin && <div className="card">
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,flexWrap:'wrap'}}>
-                <div style={{fontSize:13,color:'var(--muted)'}}>Plan rehearsals, per-player feedback and status for <b style={{color:'var(--text)'}} dir="auto">{show.name||'this show'}</b>.</div>
-                <button className="btn sm" style={{color:'#fff'}} onClick={()=>setPlanOpen(true)}>◆ Plan rehearsals</button>
-              </div>
-            </div>}
-            {admin && <div className="card">
+    !show
+      ? <div className="empty"><div className="big">No show yet</div><div className="sm">Create a show in the Shows tab first.</div></div>
+      : <React.Fragment>
+          {admin && <div className="card">
+            <button onClick={()=>setSettingsOpen(o=>!o)} style={{background:'none',border:'none',width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',padding:0,color:'var(--text)'}}>
+              <span style={{fontSize:13,fontWeight:600}}>Manager settings</span>
+              <span style={{color:'var(--muted)',fontSize:12}}>{settingsOpen?'Hide ▾':'Guidelines & access ▸'}</span>
+            </button>
+            {settingsOpen && <div style={{marginTop:12}}>
               <label className="fl">Standing guidelines</label>
               <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5,marginBottom:6}}>Persistent instructions that shape the manager's chat, plans and reminders. The manager can also update these when you tell it to in chat.</div>
               <textarea className="inp" rows={4} dir="auto" value={gl} onChange={e=>{setGl(e.target.value);setGlMsg('');}} placeholder="e.g. We rehearse Sundays 8–10pm. Prioritise the encore songs. Keep feedback blunt. Ofir plays vocals + keys."/>
@@ -4300,10 +4301,9 @@ function Admin({state,update,user,showId,pickShow}){
               <div style={{display:'flex',gap:6}}><input className="inp" style={{flex:1}} value={allowEmail} onChange={e=>setAllowEmail(e.target.value)} placeholder="bandmate@email.com" onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addAllow();}}}/><button className="btn ghost sm" onClick={addAllow}>Add</button></div>
               <div style={{fontSize:11,color:'var(--muted)',marginTop:6}}>They chat via the shared server key — requires the <b style={{color:'var(--text)'}}>managerChat</b> Cloud Function deployed. The person must sign in with this exact email.</div>
             </div>}
-            <div className="section-h">Chat</div>
-            <ChatPanel show={show}/>
-          </React.Fragment>}
-    </React.Fragment>
+          </div>}
+          <ChatPanel show={show}/>
+        </React.Fragment>
   );
   return (
     <div className="page">
@@ -4313,7 +4313,6 @@ function Admin({state,update,user,showId,pickShow}){
             {banner('admin-side')}
           </div>
         : <React.Fragment>{banner('admin-hero')}{interactions}</React.Fragment>}
-      {admin && planOpen && show && <PlanModal show={show} state={state} update={update} onClose={()=>setPlanOpen(false)}/>}
     </div>
   );
 }
