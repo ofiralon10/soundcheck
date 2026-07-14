@@ -80,7 +80,7 @@ async function askClaude(key, system, user) {
 async function pushToOwner(title, body) {
   const snap = await db.collection('notifyTokens').where('email', '==', ADMIN_EMAIL).get();
   const tokens = snap.docs.map(d => d.id);
-  if (!tokens.length) { logger.warn('no notify tokens registered — nothing to push'); return; }
+  if (!tokens.length) { logger.warn('no notify tokens registered — nothing to push'); return 0; }
   const resp = await admin.messaging().sendEachForMulticast({
     tokens,
     notification: { title, body },
@@ -96,6 +96,7 @@ async function pushToOwner(title, body) {
   });
   await Promise.all(dead.map(t => db.collection('notifyTokens').doc(t).delete().catch(() => {})));
   logger.info('pushed "' + title + '" — ok ' + resp.successCount + ', fail ' + resp.failureCount);
+  return resp.successCount;
 }
 
 /* ---------- owner's boards ---------- */
@@ -225,13 +226,15 @@ exports.weeklyReport = onSchedule(
 const MANAGER_SYSTEM =
   'You are the band\'s manager, in an ongoing chat with a band member. You have the current band data and the owner\'s standing guidelines below. ' +
   'Answer questions and give concrete, motivating advice. When asked to change something — save a guideline, set a player\'s status, set a rehearsal\'s focus, or schedule a rehearsal — use the tools, then confirm in plain language what you did. ' +
+  'When the member explicitly asks you to notify, alert, ping, or remind someone right now, use send_notification to push a phone notification (keep the title <=6 words and the body short). Do not send notifications unprompted. ' +
   'Reference songs by their #number and rehearsals by their R-number. Always honor the owner guidelines. Be concise and direct — this is a chat, not a report.';
 
 const MANAGER_TOOLS = [
   { name: 'save_guideline', description: 'Save/append to the owner\'s standing guidelines. They persist and shape all future chat, plans and reminders.', input_schema: { type: 'object', properties: { text: { type: 'string' }, replace: { type: 'boolean', description: 'true replaces all guidelines; false appends.' } }, required: ['text'] } },
   { name: 'set_song_status', description: 'Set one player\'s readiness on a setlist song.', input_schema: { type: 'object', properties: { song: { type: 'integer', description: '#number from the setlist' }, instrument: { type: 'string', enum: ['keys', 'drums', 'guitar', 'bass', 'vocals'] }, status: { type: 'string', enum: ['todo', 'learning', 'practicing', 'ready'] } }, required: ['song', 'instrument', 'status'] } },
   { name: 'apply_focus', description: 'Set learn/practice focus on an existing upcoming rehearsal (by R-number).', input_schema: { type: 'object', properties: { rehearsal: { type: 'integer' }, learn: { type: 'array', items: { type: 'integer' } }, practice: { type: 'array', items: { type: 'integer' } }, note: { type: 'string' } }, required: ['rehearsal'] } },
-  { name: 'create_rehearsal', description: 'Schedule a new rehearsal for this show.', input_schema: { type: 'object', properties: { date: { type: 'string', description: 'YYYY-MM-DD' }, time: { type: 'string', description: 'HH:MM 24h (default 20:00)' }, durationHours: { type: 'number' }, location: { type: 'string' }, learn: { type: 'array', items: { type: 'integer' } }, practice: { type: 'array', items: { type: 'integer' } } }, required: ['date'] } }
+  { name: 'create_rehearsal', description: 'Schedule a new rehearsal for this show.', input_schema: { type: 'object', properties: { date: { type: 'string', description: 'YYYY-MM-DD' }, time: { type: 'string', description: 'HH:MM 24h (default 20:00)' }, durationHours: { type: 'number' }, location: { type: 'string' }, learn: { type: 'array', items: { type: 'integer' } }, practice: { type: 'array', items: { type: 'integer' } } }, required: ['date'] } },
+  { name: 'send_notification', description: 'Push a phone notification to the registered device(s). Use only when the member explicitly asks to notify/alert/remind/ping now.', input_schema: { type: 'object', properties: { title: { type: 'string', description: 'Short title (<=6 words)' }, body: { type: 'string', description: 'Short message body' } }, required: ['title', 'body'] } }
 ];
 
 function genId() { return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
@@ -357,7 +360,17 @@ exports.managerChat = onCall({ secrets: [ANTHROPIC_KEY] }, async (req) => {
       if (data.stop_reason === 'tool_use' && toolUses.length) {
         const results = [];
         for (const tu of toolUses) {
-          const out = applyManagerTool(tu.name, tu.input || {}, ctx, show.id, work, ops);
+          let out;
+          if (tu.name === 'send_notification') {
+            const inp = tu.input || {};
+            try {
+              const n = await pushToOwner(inp.title || 'Band manager', inp.body || '');
+              out = n > 0 ? ('Notification pushed to ' + n + ' device' + (n === 1 ? '' : 's') + '.')
+                          : 'No devices are registered for notifications yet — enable notifications in Setup first.';
+            } catch (e) { out = 'Could not send the notification: ' + e.message; }
+          } else {
+            out = applyManagerTool(tu.name, tu.input || {}, ctx, show.id, work, ops);
+          }
           actions.push(tu.name);
           results.push({ type: 'tool_result', tool_use_id: tu.id, content: out });
         }
