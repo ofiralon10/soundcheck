@@ -382,6 +382,8 @@ exports.managerChat = onCall({ secrets: [ANTHROPIC_KEY] }, async (req) => {
     }
   } catch (e) {
     logger.error('managerChat LLM error: ' + e.message);
+    if (/anthropic 401/.test(e.message || '')) throw new HttpsError('failed-precondition', 'The manager\'s Anthropic API key is invalid — reset the ANTHROPIC_KEY secret and redeploy.');
+    if (/anthropic 429/.test(e.message || '')) throw new HttpsError('resource-exhausted', 'The manager is rate-limited right now — try again in a moment.');
     throw new HttpsError('internal', 'The manager could not respond right now.');
   }
 
