@@ -258,11 +258,17 @@
      so size the panel as a % of the frame (not vh, which is the real viewport). */
   .files-panel.planwide{max-width:1120px;border-radius:18px;max-height:88%;padding:22px 22px}
   .plan-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;align-items:start}
-  .admin-banner{position:relative;border-radius:16px;overflow:hidden;margin-bottom:14px;border:1px solid var(--line-2);background:linear-gradient(135deg,#2a2540,#171622);min-height:120px}
-  .admin-banner img{display:block;width:100%;height:180px;object-fit:cover;object-position:center 32%}
-  .admin-banner .abt{position:absolute;left:16px;bottom:12px;right:16px;font-family:var(--display);font-size:23px;font-weight:700;color:#fff;text-shadow:0 2px 14px rgba(0,0,0,.85);letter-spacing:.02em}
-  .admin-banner .abt small{display:block;font-size:12px;font-weight:500;opacity:.9;letter-spacing:.03em;margin-top:2px;font-family:var(--body)}
-  .admin-banner::after{content:'';position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.5),rgba(0,0,0,0) 55%);pointer-events:none}
+  /* Phone: full image at natural aspect, full width. */
+  .admin-hero{position:relative;border-radius:16px;overflow:hidden;margin-bottom:14px;border:1px solid var(--line-2);background:linear-gradient(135deg,#2a2540,#171622)}
+  .admin-hero img{display:block;width:100%;height:auto}
+  /* Tablet/wide: controls left, portrait image pinned right. */
+  .admin-wide{display:flex;gap:16px;align-items:flex-start}
+  .admin-main{flex:1;min-width:0}
+  .admin-side{width:300px;flex:none;align-self:flex-start;position:sticky;top:8px;border-radius:16px;overflow:hidden;border:1px solid var(--line-2);background:linear-gradient(135deg,#2a2540,#171622);aspect-ratio:3/4}
+  .admin-side img{display:block;width:100%;height:100%;object-fit:cover;object-position:center}
+  .abt{position:absolute;left:16px;bottom:12px;right:16px;font-family:var(--display);font-size:22px;font-weight:700;color:#fff;text-shadow:0 2px 14px rgba(0,0,0,.85);letter-spacing:.02em;pointer-events:none;z-index:1}
+  .abt small{display:block;font-size:12px;font-weight:500;opacity:.9;letter-spacing:.03em;margin-top:2px;font-family:var(--body)}
+  .admin-hero::after,.admin-side::after{content:'';position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.55),rgba(0,0,0,0) 50%);pointer-events:none}
   .mchat{display:flex;flex-direction:column;gap:8px;overflow-y:auto;padding:4px 2px;min-height:120px}
   .mbub{max-width:82%;padding:9px 12px;border-radius:14px;font-size:13px;line-height:1.5;white-space:pre-wrap}
   .mbub.me{align-self:flex-end;background:var(--keys);color:#fff;border-bottom-right-radius:5px}
@@ -389,7 +395,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.272';
+const VERSION='0.273';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -4259,6 +4265,7 @@ function PlanModal({show,state,update,onClose}){
 function Admin({state,update,user,showId,pickShow}){
   const admin=!!(user&&user.email===ADMIN_EMAIL);
   const show=getShow(state,showId);
+  const wide=useWide();
   const [planOpen,setPlanOpen]=useState(false);
   const [gl,setGl]=useState(state.managerGuidelines||'');
   const [glMsg,setGlMsg]=useState('');
@@ -4266,12 +4273,10 @@ function Admin({state,update,user,showId,pickShow}){
   const [allowEmail,setAllowEmail]=useState('');
   const addAllow=()=>{ const e=allowEmail.trim().toLowerCase(); if(!e) return; update(s=>{ s.managerChatAllow=[...new Set([...(s.managerChatAllow||[]),e])]; return s; }); setAllowEmail(''); };
   const rmAllow=(e)=>update(s=>{ s.managerChatAllow=(s.managerChatAllow||[]).filter(x=>x!==e); return s; });
-  return (
-    <div className="page">
-      <div className="admin-banner">
-        <img src="admin-banner.jpg" alt="" onError={e=>{e.target.style.display='none';}}/>
-        <div className="abt">AI Manager<small>Your always-on band manager</small></div>
-      </div>
+  const heroImg=<img src="admin-banner.jpg" alt="" onError={e=>{e.target.style.display='none';}}/>;
+  const banner=(cls)=>(<div className={cls}>{heroImg}<div className="abt">AI Manager<small>Your always-on band manager</small></div></div>);
+  const interactions=(
+    <React.Fragment>
       <ShowSelector shows={state.shows} showId={showId} pickShow={pickShow}/>
       {!show
         ? <div className="empty"><div className="big">No show selected</div><div className="sm">Create a show in the Shows tab first.</div></div>
@@ -4298,6 +4303,16 @@ function Admin({state,update,user,showId,pickShow}){
             <div className="section-h">Chat</div>
             <ChatPanel show={show}/>
           </React.Fragment>}
+    </React.Fragment>
+  );
+  return (
+    <div className="page">
+      {wide
+        ? <div className="admin-wide">
+            <div className="admin-main">{interactions}</div>
+            {banner('admin-side')}
+          </div>
+        : <React.Fragment>{banner('admin-hero')}{interactions}</React.Fragment>}
       {admin && planOpen && show && <PlanModal show={show} state={state} update={update} onClose={()=>setPlanOpen(false)}/>}
     </div>
   );
