@@ -397,7 +397,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.286';
+const VERSION='0.287';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -4357,7 +4357,7 @@ function Admin({state,update,user,showId,pickShow}){
   const [tgBotMsg,setTgBotMsg]=useState('');
   const saveTgBot=()=>{ update(s=>{ s.telegramBot=(tgBot||'').trim().replace(/^@/,''); return s; }); setTgBotMsg('Saved.'); };
   const botUser=((state.telegramBot||TELEGRAM_BOT||'').trim().replace(/^@/,''));
-  const refreshTg=useCallback(()=>{ if(!admin) return; db.collection('telegramChats').doc(BOARD).get().then(s=>{ const users=(s.exists&&Array.isArray(s.data().users))?s.data().users:[]; setTgUser(users.find(u=>u.email===(user&&user.email))||null); }).catch(()=>{}); },[admin,user]);
+  const refreshTg=useCallback(()=>{ db.collection('telegramChats').doc(BOARD).get().then(s=>{ const users=(s.exists&&Array.isArray(s.data().users))?s.data().users:[]; setTgUser(users.find(u=>u.email===(user&&user.email))||null); }).catch(()=>{}); },[user]);
   useEffect(()=>{ refreshTg(); },[refreshTg]);
   const connectTg=async()=>{
     if(!botUser){ setTgMsg('Set this band\'s bot username first, then Save.'); return; }
@@ -4396,16 +4396,20 @@ function Admin({state,update,user,showId,pickShow}){
               </div>
               <div style={{display:'flex',gap:6}}><input className="inp" style={{flex:1}} value={allowEmail} onChange={e=>setAllowEmail(e.target.value)} placeholder="bandmate@email.com" onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addAllow();}}}/><button className="btn ghost sm" onClick={addAllow}>Add</button></div>
               <div style={{fontSize:11,color:'var(--muted)',marginTop:6}}>They chat via the shared server key — requires the <b style={{color:'var(--text)'}}>managerChat</b> Cloud Function deployed. The person must sign in with this exact email.</div>
-              <label className="fl" style={{marginTop:14}}>Telegram</label>
-              <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5,marginBottom:6}}>This band's bot username (from @BotFather, without the @). Then link your account so the manager can message you there.</div>
-              <div style={{display:'flex',gap:6,marginBottom:8}}><input className="inp" style={{flex:1}} value={tgBot} onChange={e=>{setTgBot(e.target.value);setTgBotMsg('');}} placeholder="my_band_bot"/><button className="btn ghost sm" onClick={saveTgBot}>Save</button>{tgBotMsg && <span style={{fontSize:12,color:'var(--ok)',alignSelf:'center'}}>{tgBotMsg}</span>}</div>
-              {tgUser
-                ? <div style={{fontSize:12.5,color:'var(--ok)',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>✓ Linked{tgUser.username?(' as @'+tgUser.username):(tgUser.firstName?(' ('+tgUser.firstName+')'):'')}<button className="btn ghost sm" onClick={connectTg}>Re-link</button></div>
-                : <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}><button className="btn ghost sm" disabled={tgBusy} onClick={connectTg}>{tgBusy?'…':'Connect Telegram'}</button><button className="btn ghost sm" onClick={refreshTg}>Refresh</button></div>}
-              {tgMsg && <div style={{fontSize:11,color:'var(--muted)',marginTop:6}}>{tgMsg}</div>}
+              <label className="fl" style={{marginTop:14}}>Telegram bot (this band)</label>
+              <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5,marginBottom:6}}>Bot username from @BotFather, without the @. Members link their own Telegram below so the manager can message them and run polls.</div>
+              <div style={{display:'flex',gap:6}}><input className="inp" style={{flex:1}} value={tgBot} onChange={e=>{setTgBot(e.target.value);setTgBotMsg('');}} placeholder="my_band_bot"/><button className="btn ghost sm" onClick={saveTgBot}>Save</button>{tgBotMsg && <span style={{fontSize:12,color:'var(--ok)',alignSelf:'center'}}>{tgBotMsg}</span>}</div>
               <label className="fl" style={{marginTop:14}}>Manager banner image (this band)</label>
               <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5}}>Add a file named <b style={{color:'var(--text)',userSelect:'all'}} dir="auto">admin-banner-{bandName||'Default'}.jpg</b> to give this band its own manager image. Without one, <b style={{color:'var(--text)'}}>admin-banner-Default.jpg</b> is shown.</div>
             </div>}
+          </div>}
+          {botUser && <div className="card">
+            <div style={{fontSize:13,fontWeight:600,marginBottom:4}}>Your Telegram</div>
+            <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5,marginBottom:8}}>Link your Telegram so the manager can message you and you can answer polls.</div>
+            {tgUser
+              ? <div style={{fontSize:12.5,color:'var(--ok)',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>✓ Linked{tgUser.username?(' as @'+tgUser.username):(tgUser.firstName?(' ('+tgUser.firstName+')'):'')}<button className="btn ghost sm" onClick={connectTg}>Re-link</button></div>
+              : <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}><button className="btn ghost sm" disabled={tgBusy} onClick={connectTg}>{tgBusy?'…':'Connect Telegram'}</button><button className="btn ghost sm" onClick={refreshTg}>Refresh</button></div>}
+            {tgMsg && <div style={{fontSize:11,color:'var(--muted)',marginTop:6}}>{tgMsg}</div>}
           </div>}
           <ChatPanel show={show}/>
         </React.Fragment>

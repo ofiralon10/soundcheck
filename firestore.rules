@@ -71,18 +71,28 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Telegram link codes: the owner creates a one-time code to link their
-    // Telegram; the webhook (Admin SDK) reads/deletes it.
+    // Telegram link codes: any band member can create a one-time code to link
+    // THEIR OWN Telegram to a band they belong to; the webhook (Admin SDK)
+    // reads/deletes it.
+    function bandMemberEmails(bid) { return get(/databases/$(database)/documents/boards/$(bid)).data.memberEmails; }
     match /telegramLinks/{code} {
-      allow create: if isAdmin();
+      allow create: if signedIn()
+                    && request.resource.data.email == email()
+                    && request.resource.data.bandId is string
+                    && email() in bandMemberEmails(request.resource.data.bandId);
       allow read, update, delete: if false;
     }
 
     // Telegram linked-chat registry, written only by the webhook (Admin SDK).
-    // Owner can read to show linked status (owner-only for now).
+    // Any member of the band can read it to show their linked status.
     match /telegramChats/{bandId} {
-      allow read: if isAdmin();
+      allow read: if isAdmin() || (signedIn() && email() in bandMemberEmails(bandId));
       allow write: if false;
+    }
+
+    // Telegram polls — written/read only by the Cloud Functions (Admin SDK).
+    match /telegramPolls/{pollId} {
+      allow read, write: if false;
     }
   }
 }

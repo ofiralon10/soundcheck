@@ -67,6 +67,51 @@ async function sendTelegramToMember(bandId, recipient, message, callerEmail) {
   await tgApi(TELEGRAM_TOKEN.value(), 'sendMessage', { chat_id: target.chatId, text: message });
   return 'Sent a Telegram message to ' + (target.firstName || target.email) + '.';
 }
+// Ask linked members a multiple-choice question with tappable buttons; store the
+// poll so callback answers can be collected against each member.
+async function tgAskMembers(bandId, input, callerEmail) {
+  const token = TELEGRAM_TOKEN.value();
+  const question = (input.question || '').trim();
+  const options = (input.options || []).map(o => String(o).trim()).filter(Boolean).slice(0, 8);
+  if (!question || options.length < 2) return 'Need a question and at least 2 options.';
+  const snap = await db.collection('telegramChats').doc(bandId).get();
+  let users = (snap.exists && Array.isArray(snap.data().users)) ? snap.data().users : [];
+  if (!users.length) return 'No one has linked Telegram yet.';
+  const rec = (input.recipients || 'all').trim().toLowerCase();
+  if (rec && rec !== 'all') {
+    const wanted = rec.split(',').map(x => x.trim().replace(/^@/, '')).filter(Boolean);
+    users = users.filter(u => wanted.includes((u.email || '').toLowerCase()) || wanted.includes((u.firstName || '').toLowerCase()) || wanted.includes((u.username || '').toLowerCase()) || (wanted.includes('me') && u.email === callerEmail));
+  }
+  if (!users.length) return 'None of those members have linked Telegram.';
+  const pollId = genId();
+  const keyboard = { inline_keyboard: options.map((o, i) => [{ text: o, callback_data: 'poll:' + pollId + ':' + i }]) };
+  const recipients = [];
+  for (const u of users) {
+    try {
+      const sent = await tgApi(token, 'sendMessage', { chat_id: u.chatId, text: '❓ ' + question, reply_markup: keyboard });
+      recipients.push({ email: u.email, chatId: u.chatId, firstName: u.firstName || '', messageId: sent.message_id });
+    } catch (e) { logger.error('ask_members send failed for ' + u.email + ': ' + e.message); }
+  }
+  if (!recipients.length) return 'Could not deliver the question to anyone.';
+  await db.collection('telegramPolls').doc(pollId).set({ bandId, question, options, recipients, responses: [], createdBy: callerEmail, createdAt: Date.now() });
+  return 'Asked ' + recipients.length + ' member' + (recipients.length === 1 ? '' : 's') + ': "' + question + '" — I\'ll collect their answers.';
+}
+async function tgPollResults(bandId) {
+  const snap = await db.collection('telegramPolls').where('bandId', '==', bandId).get();
+  if (snap.empty) return 'No questions have been asked yet.';
+  const polls = snap.docs.map(d => d.data()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const p = polls[0];
+  const responses = p.responses || [];
+  const tally = {}; (p.options || []).forEach(o => { tally[o] = 0; });
+  const answered = new Set();
+  responses.forEach(r => { const o = r.optionLabel || (p.options || [])[r.option]; if (o != null) tally[o] = (tally[o] || 0) + 1; answered.add(r.email); });
+  const pending = (p.recipients || []).filter(r => !answered.has(r.email)).map(r => r.firstName || r.email);
+  const lines = ['Question: ' + p.question];
+  Object.keys(tally).forEach(o => lines.push('- ' + o + ': ' + tally[o]));
+  responses.forEach(r => lines.push('  · ' + (r.firstName || r.email) + ' → ' + (r.optionLabel || (p.options || [])[r.option])));
+  if (pending.length) lines.push('Not answered yet: ' + pending.join(', '));
+  return lines.join('\n');
+}
 
 /* ---------- readiness helpers (mirror the app) ---------- */
 const CORE = ['keys', 'drums', 'guitar', 'bass', 'vocals'];
@@ -267,7 +312,9 @@ const MANAGER_TOOLS = [
   { name: 'apply_focus', description: 'Set learn/practice focus on an existing upcoming rehearsal (by R-number).', input_schema: { type: 'object', properties: { rehearsal: { type: 'integer' }, learn: { type: 'array', items: { type: 'integer' } }, practice: { type: 'array', items: { type: 'integer' } }, note: { type: 'string' } }, required: ['rehearsal'] } },
   { name: 'create_rehearsal', description: 'Schedule a new rehearsal for this show.', input_schema: { type: 'object', properties: { date: { type: 'string', description: 'YYYY-MM-DD' }, time: { type: 'string', description: 'HH:MM 24h (default 20:00)' }, durationHours: { type: 'number' }, location: { type: 'string' }, learn: { type: 'array', items: { type: 'integer' } }, practice: { type: 'array', items: { type: 'integer' } } }, required: ['date'] } },
   { name: 'send_notification', description: 'Push a phone notification to the registered device(s). Use only when the member explicitly asks to notify/alert/remind/ping now.', input_schema: { type: 'object', properties: { title: { type: 'string', description: 'Short title (<=6 words)' }, body: { type: 'string', description: 'Short message body' } }, required: ['title', 'body'] } },
-  { name: 'send_telegram', description: 'Send a Telegram direct message to a band member who has linked Telegram. Use when asked to message/DM/telegram someone.', input_schema: { type: 'object', properties: { recipient: { type: 'string', description: 'Member name or email, or "me" for the owner' }, message: { type: 'string' } }, required: ['recipient', 'message'] } }
+  { name: 'send_telegram', description: 'Send a Telegram direct message to a band member who has linked Telegram. Use when asked to message/DM/telegram someone.', input_schema: { type: 'object', properties: { recipient: { type: 'string', description: 'Member name or email, or "me" for the owner' }, message: { type: 'string' } }, required: ['recipient', 'message'] } },
+  { name: 'ask_members', description: 'Ask linked band members a multiple-choice question over Telegram (tappable option buttons) and collect their answers. Use when asked to poll/ask/survey the band with options.', input_schema: { type: 'object', properties: { question: { type: 'string' }, options: { type: 'array', items: { type: 'string' }, description: '2-8 answer options' }, recipients: { type: 'string', description: '"all" for everyone linked, or a comma-separated list of names/emails' } }, required: ['question', 'options'] } },
+  { name: 'get_poll_results', description: 'Read back the answers to the most recent question asked via ask_members (tally + who answered what + who hasn\'t).', input_schema: { type: 'object', additionalProperties: false, properties: {} } }
 ];
 
 function genId() { return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
@@ -405,6 +452,12 @@ exports.managerChat = onCall({ secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN] }, async
             const inp = tu.input || {};
             try { out = await sendTelegramToMember(bandId, inp.recipient || 'me', inp.message || '', email); }
             catch (e) { out = 'Could not send the Telegram message: ' + e.message; }
+          } else if (tu.name === 'ask_members') {
+            try { out = await tgAskMembers(bandId, tu.input || {}, email); }
+            catch (e) { out = 'Could not send the question: ' + e.message; }
+          } else if (tu.name === 'get_poll_results') {
+            try { out = await tgPollResults(bandId); }
+            catch (e) { out = 'Could not read the results: ' + e.message; }
           } else {
             out = applyManagerTool(tu.name, tu.input || {}, ctx, show.id, work, ops);
           }
@@ -451,6 +504,34 @@ exports.telegramWebhook = onRequest({ secrets: [TELEGRAM_TOKEN] }, async (req, r
     const token = TELEGRAM_TOKEN.value();
     if (req.get('X-Telegram-Bot-Api-Secret-Token') !== tgWebhookSecret(token)) { res.status(403).send('no'); return; }
     const update = req.body || {};
+    // Poll button taps
+    const cq = update.callback_query;
+    if (cq) {
+      const mm = (cq.data || '').match(/^poll:([^:]+):(\d+)$/);
+      const chatId = cq.message && cq.message.chat && cq.message.chat.id;
+      if (mm && chatId != null) {
+        const pollId = mm[1], opt = parseInt(mm[2], 10);
+        const pref = db.collection('telegramPolls').doc(pollId);
+        let label = '', question = '';
+        await db.runTransaction(async (tx) => {
+          const s = await tx.get(pref); if (!s.exists) return;
+          const p = s.data(); question = p.question || '';
+          label = (p.options || [])[opt]; if (label == null) return;
+          const responses = Array.isArray(p.responses) ? p.responses : [];
+          const rec = (p.recipients || []).find(r => String(r.chatId) === String(chatId)) || {};
+          const email = rec.email || ('tg:' + (cq.from && cq.from.id));
+          const entry = { email, chatId, firstName: (cq.from && cq.from.first_name) || rec.firstName || '', option: opt, optionLabel: label, ts: Date.now() };
+          const idx = responses.findIndex(r => String(r.chatId) === String(chatId) || r.email === email);
+          if (idx >= 0) responses[idx] = entry; else responses.push(entry);
+          p.responses = responses; tx.set(pref, p);
+        });
+        await tgApi(token, 'answerCallbackQuery', { callback_query_id: cq.id, text: label ? ('Got it: ' + label) : 'This poll has closed.' }).catch(() => {});
+        if (label) { try { await tgApi(token, 'editMessageText', { chat_id: chatId, message_id: cq.message.message_id, text: '❓ ' + question + '\n\n✅ You answered: ' + label }); } catch (_) {} }
+      } else {
+        await tgApi(token, 'answerCallbackQuery', { callback_query_id: cq.id }).catch(() => {});
+      }
+      res.status(200).send('ok'); return;
+    }
     const msg = update.message || update.edited_message;
     if (!msg || !msg.chat) { res.status(200).send('ok'); return; }
     const chatId = msg.chat.id;
