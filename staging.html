@@ -400,7 +400,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.291';
+const VERSION='0.292';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -3730,15 +3730,32 @@ function SongForm({onSave,onCancel}){
   );
 }
 
-function FocusTags({songs,learn,practice,onGoSong}){
+function FocusTags({songs,learn,practice,onGoSong,rich}){
   const row=(ids,color,label)=> ids && ids.length? (
     <div className="focus-tags" style={{marginTop:8}}>
       <span className="ftag" style={{borderColor:color,color:'#15141B',background:color,fontWeight:700}}>{label}</span>
       {ids.map(id=>{ const n=focusName(id,songs); return n?<span className="ftag" key={id} dir="auto" style={onGoSong?{cursor:'pointer'}:null} onClick={onGoSong?()=>onGoSong(id):undefined}>{n}</span>:null;})}
     </div>
   ):null;
+  const richRow=(ids,color,label)=> ids && ids.length? (
+    <div style={{marginTop:8}}>
+      <span className="ftag" style={{borderColor:color,color:'#15141B',background:color,fontWeight:700}}>{label}</span>
+      <div style={{display:'flex',flexDirection:'column',gap:6,marginTop:7}}>
+        {ids.map(id=>{ const other=isOther(id); const s=other?null:songs.find(y=>y.id===id); const name=focusName(id,songs); if(!name) return null;
+          const clickable=onGoSong&&!other;
+          return <div key={id} onClick={clickable?()=>onGoSong(id):undefined} style={{display:'flex',alignItems:'center',gap:9,cursor:clickable?'pointer':'default'}}>
+            <div style={{width:30,height:30,borderRadius:6,flex:'none',overflow:'hidden',background:'var(--surface-3)',border:'1px solid var(--line)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+              {s&&s.cover ? <img src={s.cover} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}}/> : <span style={{fontSize:13,fontWeight:700,color:'var(--muted)'}}>{(name||'?').trim().charAt(0).toUpperCase()}</span>}
+            </div>
+            <span style={{fontSize:13,direction:'ltr',textAlign:'left',minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} dir="auto">{name}</span>
+          </div>;
+        })}
+      </div>
+    </div>
+  ):null;
   if((!learn||!learn.length) && (!practice||!practice.length)) return null;
-  return <React.Fragment>{row(practice,'var(--warn)','Practice')}{row(learn,'var(--learn)','Learn')}</React.Fragment>;
+  const R=rich?richRow:row;
+  return <React.Fragment>{R(practice,'var(--warn)','Practice')}{R(learn,'var(--learn)','Learn')}</React.Fragment>;
 }
 function focusSummary(arr,songs){
   const a=arr||[]; if(!a.length) return 'Choose songs…';
@@ -3896,7 +3913,7 @@ function RehCard({r,state,patch,del,update,goSong}){
           </div>
         </div>
       </div>}
-      <FocusTags songs={songs} learn={r.focusLearn} practice={r.focusPractice} onGoSong={goSong}/>
+      <FocusTags songs={songs} learn={r.focusLearn} practice={r.focusPractice} onGoSong={goSong} rich/>
       {!editFocus
         ? <button className="btn sm ghost" style={{marginTop:11}} onClick={()=>setEditFocus(true)}>{(r.focusLearn&&r.focusLearn.length)||(r.focusPractice&&r.focusPractice.length)?'Edit focus songs':'+ Set focus songs'}</button>
         : <div style={{marginTop:4}}>
