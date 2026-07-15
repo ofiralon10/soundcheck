@@ -316,7 +316,15 @@
   .stem-btns button.sb-files{background:#5BC0EB;border-color:#5BC0EB;color:#15141B}
   .stem-btns button.sb-zoom{background:var(--keys);border-color:var(--keys);color:#fff}
   .stem-btns button.sb-zoom.on{background:var(--muted-2);border-color:var(--muted-2);color:#15141B}
+  .stem-btns button.sb-draw{background:var(--guitar);border-color:var(--guitar);color:#15141B}
+  .stem-btns button.sb-draw.on{background:#fff;border-color:#fff;color:#15141B}
   .stem-btns button.sb-rec{background:var(--drums);border-color:var(--drums);color:#fff}
+  .draw-bar{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:62;display:flex;align-items:center;gap:7px;padding:6px 8px;background:rgba(21,20,27,.94);border:1px solid var(--line-2);border-radius:14px;box-shadow:0 4px 18px rgba(0,0,0,.4)}
+  .draw-bar .draw-swatch{width:34px;height:34px;border-radius:9px;border:2px solid rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
+  .draw-bar .draw-abtn{display:flex;align-items:center;gap:4px;background:var(--surface-2);border:1px solid var(--line-2);color:var(--text);border-radius:9px;padding:7px 10px;font-size:12px;font-weight:700;font-family:var(--mono);cursor:pointer}
+  .draw-bar .draw-abtn.save{background:var(--ok);border-color:var(--ok);color:#0a0a0a}
+  .draw-bar .draw-abtn.done{background:var(--keys);border-color:var(--keys);color:#fff}
+  .draw-bar .draw-abtn:disabled{opacity:.55}
   .stem-btns button.sb-share{background:#2DD4BF;border-color:#2DD4BF;color:#000}
   .stem-btns button.sb-send{background:var(--ok);border-color:var(--ok);color:#000}
   .stem-channels{position:absolute;left:0;right:0;bottom:100%;display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:46vh;overflow-y:auto;padding:10px 14px;background:var(--surface);border-top:1px solid var(--line-2)}
@@ -400,7 +408,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.292';
+const VERSION='0.293';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -561,11 +569,11 @@ function InstrBadge({id,size=28}){
   );
 }
 const DISC=(<g><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></g>);
-function SlideViewer({children,autoOn,navMode,applyRef,captureRef,onTap}){
+function SlideViewer({children,autoOn,navMode,applyRef,captureRef,onTap,drawMode}){
   const ref=useRef(null);
   const inner=useRef(null);
   const st=useRef({scale:1,tx:0,ty:0,dragging:false,startX:0,startY:0,startTx:0,startTy:0,pinchDist:0,tapT:0,tapX:0,tapY:0,tapMoved:false});
-  const pr=useRef({});pr.current={autoOn,navMode,onTap};
+  const pr=useRef({});pr.current={autoOn,navMode,onTap,drawMode};
   const apply=(anim)=>{const c=inner.current;if(c){c.style.transition=anim?'transform .4s ease':'none';c.style.transform='translate('+st.current.tx+'px,'+st.current.ty+'px) scale('+st.current.scale+')';}const el=ref.current;if(el)el.classList.toggle('dragging',st.current.dragging);};
   const clampScale=(s)=>Math.max(0.5,Math.min(s,8));
   // Imperative view application: normalized translate survives container
@@ -582,14 +590,14 @@ function SlideViewer({children,autoOn,navMode,applyRef,captureRef,onTap}){
   },[captureRef]);
   useEffect(()=>{
     const el=ref.current;if(!el)return;
-    const locked=()=>pr.current.autoOn;
+    const locked=()=>pr.current.autoOn||pr.current.drawMode;
     const TAP=12;
     const startTap=(x,y)=>{st.current.tapT=Date.now();st.current.tapX=x;st.current.tapY=y;st.current.tapMoved=false;};
     const moveTap=(x,y)=>{if(Math.abs(x-st.current.tapX)>TAP||Math.abs(y-st.current.tapY)>TAP)st.current.tapMoved=true;};
     // Tap-to-switch fires on 'click' (fires reliably for both mouse and touch
     // taps, and is suppressed by the browser after a real drag). tapMoved and
     // the duration guard block pans/long-presses from switching.
-    const onClick=(e)=>{ if(st.current.tapMoved||(Date.now()-st.current.tapT)>700)return; if(!pr.current.onTap)return; const r=el.getBoundingClientRect(); pr.current.onTap((e.clientX-r.left)<r.width/2?-1:1); };
+    const onClick=(e)=>{ if(pr.current.drawMode)return; if(st.current.tapMoved||(Date.now()-st.current.tapT)>700)return; if(!pr.current.onTap)return; const r=el.getBoundingClientRect(); pr.current.onTap((e.clientX-r.left)<r.width/2?-1:1); };
     const onWheel=(e)=>{if(locked())return;if(!e.ctrlKey&&!e.metaKey)return;e.preventDefault();const d=e.deltaY>0?0.9:1.1;const r=el.getBoundingClientRect();const ox=e.clientX-r.left-r.width/2;const oy=e.clientY-r.top-r.height/2;const ns=clampScale(st.current.scale*d);const f=ns/st.current.scale;st.current.tx=ox-(ox-st.current.tx)*f;st.current.ty=oy-(oy-st.current.ty)*f;st.current.scale=ns;apply();};
     const onMD=(e)=>{if(e.button!==0)return;startTap(e.clientX,e.clientY);if(locked())return;st.current.dragging=true;st.current.startX=e.clientX;st.current.startY=e.clientY;st.current.startTx=st.current.tx;st.current.startTy=st.current.ty;apply();};
     const onMM=(e)=>{moveTap(e.clientX,e.clientY);if(locked()||!st.current.dragging)return;st.current.tx=st.current.startTx+(e.clientX-st.current.startX);st.current.ty=st.current.startTy+(e.clientY-st.current.startY);apply();};
@@ -607,6 +615,54 @@ function SlideViewer({children,autoOn,navMode,applyRef,captureRef,onTap}){
     return()=>{el.removeEventListener('wheel',onWheel);el.removeEventListener('mousedown',onMD);window.removeEventListener('mousemove',onMM);window.removeEventListener('mouseup',onMU);el.removeEventListener('touchstart',onTS);el.removeEventListener('touchmove',onTM);el.removeEventListener('touchend',onTE);el.removeEventListener('dblclick',onDbl);el.removeEventListener('click',onClick);};
   },[]);
   return <div ref={ref} className="practice-slide"><div ref={inner} style={{width:'100%',height:'100%',transformOrigin:'center center',willChange:'transform'}}>{children}</div></div>;
+}
+// Free-drawing overlay for an image slide: the <img> plus a transparent <canvas>
+// sized to the image's natural pixels and laid out at the fitted display size, so
+// strokes ride the same zoom/pan transform (from the parent SlideViewer) as the
+// image. Strokes are stored in canvas-pixel space; any previously-saved annotation
+// PNG (file.ann.url) is loaded as the base layer so drawings persist and stack.
+function DrawSlide({file,drawOn,color,width,ctlRef,onDirty}){
+  const outRef=useRef(null),canRef=useRef(null);
+  const strokes=useRef([]),baseImg=useRef(null),drawing=useRef(false),nat=useRef({w:0,h:0});
+  const [box,setBox]=useState({w:0,h:0});
+  const redraw=()=>{const c=canRef.current;if(!c||!c.width)return;const ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);if(baseImg.current){try{ctx.drawImage(baseImg.current,0,0,c.width,c.height);}catch(_){}}strokes.current.forEach(st=>{ctx.strokeStyle=st.color;ctx.lineWidth=st.width;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();st.pts.forEach((p,i)=>i===0?ctx.moveTo(p[0],p[1]):ctx.lineTo(p[0],p[1]));if(st.pts.length===1)ctx.lineTo(st.pts[0][0]+0.01,st.pts[0][1]+0.01);ctx.stroke();});};
+  const fit=()=>{const out=outRef.current;if(!out||!nat.current.w)return;const cw=out.clientWidth||1,ch=out.clientHeight||1;const r=Math.min(cw/nat.current.w,ch/nat.current.h)||1;setBox({w:Math.max(1,Math.round(nat.current.w*r)),h:Math.max(1,Math.round(nat.current.h*r))});};
+  useEffect(()=>{let alive=true;strokes.current=[];baseImg.current=null;nat.current={w:0,h:0};setBox({w:0,h:0});
+    const im=new Image();im.crossOrigin='anonymous';
+    im.onload=()=>{if(!alive)return;nat.current={w:im.naturalWidth||im.width||1200,h:im.naturalHeight||im.height||1600};const c=canRef.current;if(c){c.width=nat.current.w;c.height=nat.current.h;}fit();
+      if(file&&file.ann&&file.ann.url){const a=new Image();a.crossOrigin='anonymous';a.onload=()=>{if(alive){baseImg.current=a;redraw();}};a.onerror=()=>{if(alive)redraw();};a.src=file.ann.url;}else redraw();};
+    im.onerror=()=>{if(!alive)return;nat.current={w:1200,h:1600};const c=canRef.current;if(c){c.width=1200;c.height=1600;}fit();redraw();};
+    im.src=file.url;
+    return ()=>{alive=false;};
+  },[file&&file.id,file&&file.url,file&&file.ann&&file.ann.url]);
+  useEffect(()=>{const out=outRef.current;if(!out)return;let ro;try{ro=new ResizeObserver(()=>fit());ro.observe(out);}catch(_){}const on=()=>fit();window.addEventListener('resize',on);return ()=>{try{ro&&ro.disconnect();}catch(_){}window.removeEventListener('resize',on);};},[]);
+  useEffect(()=>{const c=canRef.current;if(c&&nat.current.w&&(c.width!==nat.current.w||c.height!==nat.current.h)){c.width=nat.current.w;c.height=nat.current.h;}redraw();},[box.w,box.h]);
+  const toXY=(cx,cy)=>{const c=canRef.current;const r=c.getBoundingClientRect();return [(cx-r.left)/(r.width||1)*c.width,(cy-r.top)/(r.height||1)*c.height];};
+  const penW=()=>{const c=canRef.current;const disp=c.getBoundingClientRect().width||c.width;return Math.max(1,width*(c.width/disp));};
+  const start=(cx,cy)=>{if(!drawOn)return;drawing.current=true;strokes.current.push({color,width:penW(),pts:[toXY(cx,cy)]});redraw();};
+  const move=(cx,cy)=>{if(!drawOn||!drawing.current)return;strokes.current[strokes.current.length-1].pts.push(toXY(cx,cy));redraw();};
+  const end=()=>{if(drawing.current){drawing.current=false;onDirty&&onDirty();}};
+  useEffect(()=>{if(!ctlRef)return;ctlRef.current={
+    undo:()=>{strokes.current.pop();redraw();onDirty&&onDirty();},
+    hasStrokes:()=>strokes.current.length>0,
+    hasContent:()=>strokes.current.length>0||!!baseImg.current,
+    clearAll:()=>{strokes.current=[];baseImg.current=null;redraw();onDirty&&onDirty();},
+    getBlob:()=>new Promise(res=>{const c=canRef.current;if(!c||!c.width){res(null);return;}try{c.toBlob(b=>res(b),'image/png');}catch(_){res(null);}}),
+    dims:()=>({w:nat.current.w,h:nat.current.h})};
+    return ()=>{if(ctlRef)ctlRef.current=null;};});
+  return <div ref={outRef} className="draw-out" style={{width:'100%',height:'100%',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden'}}>
+    <div style={{position:'relative',width:box.w||1,height:box.h||1}}>
+      <img src={file.url} alt={file.name||''} draggable={false} style={{position:'absolute',left:0,top:0,width:'100%',height:'100%',objectFit:'fill',pointerEvents:'none',userSelect:'none'}}/>
+      <canvas ref={canRef} style={{position:'absolute',left:0,top:0,width:'100%',height:'100%',touchAction:'none',pointerEvents:drawOn?'auto':'none',cursor:drawOn?'crosshair':'default'}}
+        onMouseDown={e=>{if(drawOn){e.stopPropagation();start(e.clientX,e.clientY);}}}
+        onMouseMove={e=>{if(drawOn&&drawing.current){e.stopPropagation();move(e.clientX,e.clientY);}}}
+        onMouseUp={e=>{if(drawOn){e.stopPropagation();end();}}}
+        onMouseLeave={()=>{if(drawOn)end();}}
+        onTouchStart={e=>{if(drawOn){e.stopPropagation();const t=e.touches[0];start(t.clientX,t.clientY);}}}
+        onTouchMove={e=>{if(drawOn){e.preventDefault();e.stopPropagation();const t=e.touches[0];move(t.clientX,t.clientY);}}}
+        onTouchEnd={e=>{if(drawOn){e.stopPropagation();end();}}}/>
+    </div>
+  </div>;
 }
 function CoverThumb({src,size=46,radius=10,title}){
   if(src) return <img src={src} alt="" title={title||''} className="cover-thumb" style={{width:size,height:size,borderRadius:radius}}/>;
@@ -2384,6 +2440,15 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const [zoomMenu,setZoomMenu]=useState(false);
   const [zoomIdx,setZoomIdx]=useState(-1);
   const [viewIdx,setViewIdx]=useState(0);
+  // Freehand drawing on the practice slide (image files only).
+  const [drawOn,setDrawOn]=useState(false);
+  const [penColor,setPenColor]=useState('#F2545B');
+  const [penWidth,setPenWidth]=useState(5);
+  const [penDlg,setPenDlg]=useState(false);
+  const [drawBusy,setDrawBusy]=useState(false);
+  const [drawTick,setDrawTick]=useState(0); // bump to re-render Undo/Clear enabled state
+  const drawCtlRef=useRef(null);
+  const PEN_COLORS=['#F2545B','#F4A93C','#F5D442','#3DD68C','#3B82F6','#111111'];
   const [stemPlaying,setStemPlaying]=useState(false);
   const [stemTime,setStemTime]=useState(0);
   const [stemDur,setStemDur]=useState(0);
@@ -2539,6 +2604,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     Object.values(stemAudiosRef.current).forEach(a=>{if(a){a.pause();a.src='';}});
     stemAudiosRef.current={};
     setZoomMenu(false);
+    setDrawOn(false);setPenDlg(false);
     setStemOpen(false);
   };
   const [stemShareBusy,setStemShareBusy]=useState(false);
@@ -2647,7 +2713,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
   const viewOf=(kf)=>kf?{scale:kf.scale,nx:kf.nx,ny:kf.ny}:null;
   const lastAutoIdxRef=useRef(-2);
   // Switching files resets to full and re-applies that file's plan.
-  const toggleView=()=>{ if(viewFiles.length>1){ lastAutoIdxRef.current=-2; setZoomIdx(-1); setViewIdx(i=>(i+1)%viewFiles.length); } };
+  const toggleView=()=>{ if(viewFiles.length>1){ lastAutoIdxRef.current=-2; setZoomIdx(-1); setDrawOn(false); setPenDlg(false); setViewIdx(i=>(i+1)%viewFiles.length); } };
   // Apply the current position's view whenever the index, file, or player changes.
   useEffect(()=>{ if(!stemOpen)return; const kf=(zoomIdx>=0&&zoomIdx<zoomSorted.length)?zoomSorted[zoomIdx]:null; if(zoomApplyRef.current)zoomApplyRef.current(viewOf(kf),true); },[zoomIdx,stemOpen,viewIdx]);
   // On opening / switching to a file that has positions (and not playing), start
@@ -2685,6 +2751,33 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
     setZoomMsg((curView?curView.label+' ':'')+devLabel+' zoom plan cleared');
     clearTimeout(window.__zoomMsgT);window.__zoomMsgT=setTimeout(()=>setZoomMsg(''),1800);
   };
+  // Drawing can only overlay image slides (a canvas can't align to a PDF iframe).
+  const canDraw=!!(curView&&_isImgF(curView.file));
+  const flashMsg=(m,ms)=>{ setZoomMsg(m); clearTimeout(window.__zoomMsgT); window.__zoomMsgT=setTimeout(()=>setZoomMsg(''),ms||1500); };
+  const saveDrawing=async()=>{
+    const ctl=drawCtlRef.current; const vf=curView&&curView.file;
+    if(!ctl||!vf){ return; }
+    setDrawBusy(true);
+    try{
+      const blob=await ctl.getBlob();
+      if(!blob){ setDrawBusy(false); return; }
+      const d=ctl.dims();
+      const path='files/'+BOARD+'/'+vf.id+'-annotation.png';
+      const ref=storage.ref().child(path); await ref.put(blob,{contentType:'image/png'});
+      const url=await ref.getDownloadURL();
+      update(st=>{ const so=st.songs.find(x=>x.id===s.id); if(!so)return st; const f=(so.files||[]).find(x=>x.id===vf.id); if(f) f.ann={path,url,w:d.w,h:d.h}; return st; });
+      flashMsg('Drawing saved');
+    }catch(e){ flashMsg('Save failed — '+(e&&e.message||e),2000); }
+    setDrawBusy(false);
+  };
+  const clearDrawing=()=>{
+    const ctl=drawCtlRef.current; const vf=curView&&curView.file;
+    if(ctl) ctl.clearAll();
+    if(vf&&vf.ann){ const p=vf.ann.path; if(p) deleteStoragePath(p);
+      update(st=>{ const so=st.songs.find(x=>x.id===s.id); if(!so)return st; const f=(so.files||[]).find(x=>x.id===vf.id); if(f) delete f.ann; return st; }); }
+    flashMsg('Drawings cleared');
+  };
+  const undoDraw=()=>{ if(drawCtlRef.current) drawCtlRef.current.undo(); };
 
   const [stemRecPrompt,setStemRecPrompt]=useState(false);
   const [stemRecHp,setStemRecHp]=useState(()=>{try{return localStorage.getItem('sc_rec_hp')==='1';}catch(_){return false;}});
@@ -3570,14 +3663,37 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
       </div>}
       {stemOpen && <div className="practice-full" style={{bottom:stemBarH}}>
         {zoomMsg && <div style={{position:'absolute',top:10,left:'50%',transform:'translateX(-50%)',zIndex:6,background:'rgba(21,20,27,.9)',border:'1px solid var(--line-2)',borderRadius:20,padding:'5px 14px',fontSize:12,fontFamily:'var(--mono)',color:'var(--keys)'}}>{zoomMsg}</div>}
-        <SlideViewer autoOn={zoomAutoOn} navMode={zoomSorted.length>0} applyRef={zoomApplyRef} captureRef={viewCapRef} onTap={zoomTap}>
+        {drawOn && canDraw && <div className="draw-bar">
+          <button className="draw-swatch" onClick={()=>setPenDlg(true)} title="Pen color & thickness" style={{background:penColor}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></button>
+          <button className="draw-abtn" onClick={undoDraw} title="Undo last stroke"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M3 13a9 9 0 1 0 3-7.7L3 8"/></svg><span>Undo</span></button>
+          <button className="draw-abtn" onClick={clearDrawing} title="Clear all drawings on this slide"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/></svg><span>Clear</span></button>
+          <button className="draw-abtn save" onClick={saveDrawing} disabled={drawBusy} title="Save drawings"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg><span>{drawBusy?'…':'Save'}</span></button>
+          <button className="draw-abtn done" onClick={()=>{setDrawOn(false);setPenDlg(false);}} title="Exit drawing mode">Done</button>
+        </div>}
+        <SlideViewer autoOn={zoomAutoOn} navMode={zoomSorted.length>0} applyRef={zoomApplyRef} captureRef={viewCapRef} onTap={zoomTap} drawMode={drawOn&&canDraw}>
           {(()=>{
             if(!curView) return <div className="practice-no-slide">No slide or files</div>;
             const vf=curView.file;
             if(_isPdfF(vf)){const mob=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);const src=mob?'https://docs.google.com/gview?embedded=true&url='+encodeURIComponent(vf.url):vf.url+'#toolbar=0';return <iframe src={src} title={curView.label}/>;}
+            if(_isImgF(vf)) return <DrawSlide file={vf} drawOn={drawOn&&canDraw} color={penColor} width={penWidth} ctlRef={drawCtlRef} onDirty={()=>setDrawTick(t=>t+1)}/>;
             return <img src={vf.url} alt={vf.name||curView.label}/>;
           })()}
         </SlideViewer>
+      </div>}
+      {stemOpen && penDlg && <div className="rec-confirm" onClick={()=>setPenDlg(false)}>
+        <div className="rec-confirm-panel" onClick={e=>e.stopPropagation()}>
+          <div className="modaltitle">Pen</div>
+          <div style={{fontSize:12,color:'var(--muted)',marginBottom:8}}>Color</div>
+          <div style={{display:'flex',gap:10,flexWrap:'wrap',marginBottom:16}}>
+            {PEN_COLORS.map(c=><button key={c} onClick={()=>setPenColor(c)} style={{width:36,height:36,borderRadius:'50%',background:c,border:penColor===c?'3px solid var(--text)':'2px solid var(--line-2)',cursor:'pointer',boxShadow:penColor===c?'0 0 0 2px var(--bg) inset':'none'}}/>)}
+          </div>
+          <div style={{fontSize:12,color:'var(--muted)',marginBottom:8}}>Thickness — <b style={{color:'var(--text)'}}>{penWidth}px</b></div>
+          <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:18}}>
+            <input type="range" min="1" max="24" step="1" value={penWidth} onChange={e=>setPenWidth(+e.target.value)} style={{flex:1}}/>
+            <span style={{width:26,height:26,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}><span style={{width:Math.min(penWidth,24),height:Math.min(penWidth,24),borderRadius:'50%',background:penColor,display:'inline-block'}}/></span>
+          </div>
+          <div className="btnrow"><button className="btn" onClick={()=>setPenDlg(false)}>Done</button></div>
+        </div>
       </div>}
       {stemOpen && stemRecState!=='recording' && <div className="stem-player" ref={stemBarRef}>
         <div className="stem-title-bar">
@@ -3632,6 +3748,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
               </div>}
               <button className={'sb-zoom'+(zoomMenu?' on':'')} onClick={()=>setZoomMenu(v=>!v)} disabled={!stemDur} title={'Zoom/pan plan ('+devLabel+') — tap slide right = next, left = previous'}>⛶{zoomSorted.length?<span style={{fontSize:10,fontFamily:'var(--mono)',marginLeft:3}}>{(zoomIdx>=0?zoomIdx+1:0)+'/'+zoomSorted.length}</span>:null}</button>
             </span>}
+            {!stemRecPlayback && canDraw && <button className={'sb-draw'+(drawOn?' on':'')} onClick={()=>{setDrawOn(v=>!v);setPenDlg(false);}} title="Draw on slide"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></button>}
             {!stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)} title="Channel settings">{ICON_GEAR}</button>}
             {!stemRecPlayback && <button className="sb-rec" onClick={()=>{setStemRecPrompt(true);prefetchBackingStems();}} disabled={!!stemRecState} title="Record your stem"><span style={{width:11,height:11,borderRadius:'50%',background:'#fff',display:'inline-block',flexShrink:0}}/>{MY_INSTRS.slice(0,2).map(id=><InstrIcon key={id} id={id} size={16}/>)}</button>}
             {stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)} title="Channel settings">{ICON_GEAR}</button>}
