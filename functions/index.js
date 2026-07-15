@@ -315,7 +315,8 @@ const MANAGER_TOOLS = [
   { name: 'send_telegram', description: 'Send a Telegram direct message to a band member who has linked Telegram. Use when asked to message/DM/telegram someone.', input_schema: { type: 'object', properties: { recipient: { type: 'string', description: 'Member name or email, or "me" for the owner' }, message: { type: 'string' } }, required: ['recipient', 'message'] } },
   { name: 'ask_members', description: 'Ask linked band members a multiple-choice question over Telegram (tappable option buttons) and collect their answers. Use when asked to poll/ask/survey the band with options.', input_schema: { type: 'object', properties: { question: { type: 'string' }, options: { type: 'array', items: { type: 'string' }, description: '2-8 answer options' }, recipients: { type: 'string', description: '"all" for everyone linked, or a comma-separated list of names/emails' } }, required: ['question', 'options'] } },
   { name: 'get_poll_results', description: 'Read back the answers to the most recent question asked via ask_members (tally + who answered what + who hasn\'t).', input_schema: { type: 'object', additionalProperties: false, properties: {} } },
-  { name: 'show_plan', description: 'Display a rehearsal plan in the app (the "Rehearsal plan" panel under the chat) for the band to see. Use when asked to lay out / show / post a plan. Write song names and docs as plain text.', input_schema: { type: 'object', properties: { summary: { type: 'string', description: 'One or two lines of overview' }, sessions: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { title: { type: 'string', description: 'e.g. "Rehearsal 1 — Sun Mar 8"' }, learn: { type: 'array', items: { type: 'string' } }, practice: { type: 'array', items: { type: 'string' } }, docs: { type: 'array', items: { type: 'string' }, description: 'Docs to prepare, e.g. "slide for Black Bird"' }, note: { type: 'string' } }, required: ['title'] } } }, required: ['sessions'] } }
+  { name: 'show_plan', description: 'Display a rehearsal plan in the app (the "Rehearsal plan" panel under the chat) for the band to see. Use when asked to lay out / show / post a plan. Write song names and docs as plain text.', input_schema: { type: 'object', properties: { summary: { type: 'string', description: 'One or two lines of overview' }, sessions: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { title: { type: 'string', description: 'e.g. "Rehearsal 1 — Sun Mar 8"' }, learn: { type: 'array', items: { type: 'string' } }, practice: { type: 'array', items: { type: 'string' } }, docs: { type: 'array', items: { type: 'string' }, description: 'Docs to prepare, e.g. "slide for Black Bird"' }, note: { type: 'string' } }, required: ['title'] } } }, required: ['sessions'] } },
+  { name: 'set_approval', description: 'Mark whether a player has approved/confirmed their attendance for a rehearsal. Use when a player tells you they can (approved:true) or cannot (approved:false) make a rehearsal.', input_schema: { type: 'object', properties: { rehearsal: { type: 'integer', description: 'R-number of the rehearsal' }, instrument: { type: 'string', enum: ['keys', 'drums', 'guitar', 'bass', 'vocals'] }, approved: { type: 'boolean' } }, required: ['rehearsal', 'instrument', 'approved'] } }
 ];
 
 function genId() { return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
@@ -352,7 +353,12 @@ function buildManagerContextNode(board, show) {
   });
   const reh = (board.rehearsals || []).filter(r => r.showId === show.id && !r.done && r.date).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   const rehIds = reh.map(r => r.id);
-  const rehLines = reh.map((r, i) => 'R' + (i + 1) + ' ' + fmtWhen(r.date) + (r.duration ? (' (' + r.duration + 'h)') : '') + (r.location ? (' @ ' + r.location) : '') + (((r.focusLearn || []).length || (r.focusPractice || []).length) ? ' [focus set]' : ''));
+  const rehLines = reh.map((r, i) => {
+    const a = r.attendance || {};
+    const pend = CORE.filter(id => !a[id]);
+    const appr = pend.length ? ((CORE.length - pend.length) + '/' + CORE.length + ' approved, pending: ' + pend.map(id => LABEL[id]).join(',')) : 'ALL approved';
+    return 'R' + (i + 1) + ' ' + fmtWhen(r.date) + (r.duration ? (' (' + r.duration + 'h)') : '') + (r.location ? (' @ ' + r.location) : '') + (((r.focusLearn || []).length || (r.focusPractice || []).length) ? ' [focus set]' : '') + ' | attendance: ' + appr;
+  });
   const g = (board.managerGuidelines || '').trim();
   const lineup = CORE.map(id => LABEL[id] + ' = ' + ((board.members && board.members[id] && board.members[id].name) || '(unnamed)')).join(', ');
   const context = [
@@ -389,6 +395,9 @@ function applyOpToBoard(op, board) {
     board.rehearsals = board.rehearsals || []; board.rehearsals.push(op.reh);
   } else if (op.type === 'plan') {
     board.managerPlan = op.plan;
+  } else if (op.type === 'approval') {
+    const r = (board.rehearsals || []).find(x => x.id === op.rehId);
+    if (r) { r.attendance = r.attendance || {}; r.attendance[op.instrument] = op.approved; }
   }
 }
 
@@ -419,6 +428,10 @@ function applyManagerTool(name, input, ctx, showId, work, ops) {
     const sessions = (input.sessions || []).map(s => ({ title: s.title || '', learn: s.learn || [], practice: s.practice || [], docs: s.docs || [], note: s.note || '' }));
     op = { type: 'plan', plan: { summary: input.summary || '', sessions, updatedAt: Date.now() } };
     msg = 'Posted the rehearsal plan to the app (' + sessions.length + ' session' + (sessions.length === 1 ? '' : 's') + ').';
+  } else if (name === 'set_approval') {
+    const rehId = ctx.rehIds[(parseInt(input.rehearsal, 10) || 0) - 1]; if (!rehId) return 'No rehearsal R' + input.rehearsal + '.';
+    op = { type: 'approval', rehId, instrument: input.instrument, approved: !!input.approved };
+    msg = (input.approved ? 'Marked ' : 'Un-marked ') + input.instrument + ' as ' + (input.approved ? 'approved' : 'not approved') + ' for rehearsal R' + input.rehearsal + '.';
   } else { return 'Unknown tool.'; }
   ops.push(op); applyOpToBoard(op, work); return msg;
 }

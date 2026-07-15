@@ -400,7 +400,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.290';
+const VERSION='0.291';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -853,6 +853,10 @@ function migrate(s){
     } else { r.proposal=null; }
     if(!Array.isArray(r.coveredSongs)) r.coveredSongs=[];
     if(r.duration===undefined) r.duration='';
+    // Attendance = per-player approval. Default not-approved. Reset existing
+    // upcoming rehearsals to not-approved once (marked so it won't re-wipe).
+    if(!r.attendance||typeof r.attendance!=='object') r.attendance={};
+    if(!r.done && !r.apprReset){ r.attendance={}; r.apprReset=true; }
   });
   if(!Array.isArray(s.activity)) s.activity=[];
   if(!Array.isArray(s.album)) s.album=[];
@@ -1942,7 +1946,7 @@ function Stage({state,go,update,goSong,showId,pickShow}){
       <div className="section-h">Next rehearsal</div>
       {next ?
         <div className={'card'+(isRehLive(next)?' live':'')}>
-          <div className="reh-date">{fmtDate(next.date)}</div>
+          <div className="reh-date">{fmtDate(next.date)}{!next.done && <ApprovalBadge r={next}/>}</div>
           <div className="reh-time">{fmtTimeRange(next.date,next.duration)}{next.location?' · '+next.location:''}</div>
           {isRehLive(next) && <div className="reh-live-dot"><i></i>Rehearsal in progress</div>}
           {plannedCount>0
@@ -3795,7 +3799,7 @@ function Rehearsals({state,update,goSong}){
   const list=[...state.rehearsals].sort((a,b)=>new Date(a.date||0)-new Date(b.date||0));
   const upcoming=list.filter(r=>!r.done);
   const past=list.filter(r=>r.done);
-  const add=(items)=>{ update(s=>{ (Array.isArray(items)?items:[items]).forEach(data=>{ s.rehearsals.push({id:uid(),done:false,attendance:{},focusLearn:[],focusPractice:[],proposal:null,...data}); logAct(s,'scheduled a rehearsal'+(data.date?' for '+fmtDate(data.date):'')); }); return s;}); setAdding(false); };
+  const add=(items)=>{ update(s=>{ (Array.isArray(items)?items:[items]).forEach(data=>{ s.rehearsals.push({id:uid(),done:false,attendance:{},apprReset:true,focusLearn:[],focusPractice:[],proposal:null,...data}); logAct(s,'scheduled a rehearsal'+(data.date?' for '+fmtDate(data.date):'')); }); return s;}); setAdding(false); };
   const patch=(id,fn)=> update(s=>{ const r=s.rehearsals.find(x=>x.id===id); fn(r); return s;});
   const del=(id)=> update(s=>{ const r=s.rehearsals.find(x=>x.id===id); logAct(s,'removed the '+(r&&r.date?fmtDate(r.date)+' ':'')+'rehearsal'); s.rehearsals=s.rehearsals.filter(x=>x.id!==id); return s;});
   return (
@@ -3812,6 +3816,13 @@ function Rehearsals({state,update,goSong}){
       </React.Fragment>}
     </div>
   );
+}
+function rehAllApproved(r){ const a=(r&&r.attendance)||{}; return INSTR.every(i=>!!a[i.id]); }
+function ApprovalBadge({r}){
+  const all=rehAllApproved(r);
+  const n=INSTR.filter(i=>((r&&r.attendance)||{})[i.id]).length;
+  return <span title={all?'All players approved':(n+'/'+INSTR.length+' approved — awaiting the rest')}
+    style={{display:'inline-flex',alignItems:'center',justifyContent:'center',minWidth:18,height:18,padding:'0 5px',borderRadius:9,fontSize:12,fontWeight:800,marginInlineStart:8,verticalAlign:'middle',background:all?'var(--ok)':'var(--drums)',color:'#fff',lineHeight:1}}>{all?'✓':'!'}</span>;
 }
 function RehCard({r,state,patch,del,update,goSong}){
   const rehShow=getShow(state,r.showId);
@@ -3837,7 +3848,7 @@ function RehCard({r,state,patch,del,update,goSong}){
     <div className={'reh'+(r.done?' done':'')+(live?' live':'')}>
       <div className="reh-top">
         <div>
-          <div className="reh-date">{r.date?fmtDate(r.date):'No date set'}</div>
+          <div className="reh-date">{r.date?fmtDate(r.date):'No date set'}{!r.done && <ApprovalBadge r={r}/>}</div>
           <div className="reh-time">{r.date?fmtTimeRange(r.date,r.duration):''}</div>
           {r.location && <div className="reh-loc" dir="auto">{r.location}</div>}
           {rehShow && <div style={{fontSize:11,color:'var(--muted)',marginTop:2}} dir="auto">{rehShow.name||'Untitled show'}</div>}
@@ -3892,6 +3903,7 @@ function RehCard({r,state,patch,del,update,goSong}){
             <FocusPicker songs={songs} learn={r.focusLearn||[]} practice={r.focusPractice||[]} onToggle={onToggle} onSetOther={onSetOther}/>
             <div className="btnrow"><button className="btn sm" onClick={()=>setEditFocus(false)}>Done</button></div>
           </div>}
+      <div style={{fontSize:11,color:'var(--muted)',marginTop:12,marginBottom:2}}>Attendance approvals (tap to confirm):</div>
       <div className="att">
         {INSTR.map(i=>{ const inn=r.attendance && r.attendance[i.id];
           return <button key={i.id} className={'a'+(inn?' in':'')} title={state.members[i.id].name} style={inn?{background:i.color,borderColor:i.color}:{}}
@@ -3909,7 +3921,7 @@ function RehCard({r,state,patch,del,update,goSong}){
 function RehForm({shows,songs,members,guestList:guestListProp,onSave,onCancel}){
   const guestList=guestListProp||[];
   const defaultShow=((shows||[])[0]||{}).id||'';
-  const [f,setF]=useState({date:'',duration:'2',location:'',notes:'',learn:[],practice:[],repeat:'none',occurrences:4,showId:defaultShow,attendance:Object.fromEntries(INSTR.map(i=>[i.id,true]))});
+  const [f,setF]=useState({date:'',duration:'2',location:'',notes:'',learn:[],practice:[],repeat:'none',occurrences:4,showId:defaultShow,attendance:{}});
   const selShow=getShow({shows:shows||[]},f.showId);
   const showEntries=selShow?(selShow.setlist||[]).filter(e=>!e.excluded):[];
   const showSongs=showEntries.map(e=>(songs||[]).find(x=>x.id===e.songId)).filter(Boolean);
@@ -4398,7 +4410,7 @@ function Admin({state,update,user,showId,pickShow}){
   };
   const upcomingRehs=(state.rehearsals||[]).filter(r=>r.showId===showId&&!r.done&&r.date).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const applyPlanToReh=(sess,rehId)=>{ update(s=>{ const r=(s.rehearsals||[]).find(x=>x.id===rehId); if(r){ r.focusLearn=mapPlanSongsToFocus(sess.learn,s.songs); r.focusPractice=mapPlanSongsToFocus(sess.practice,s.songs); const docs=(sess.docs||[]).join('; '); if(docs) r.notes=(r.notes?r.notes+'\n':'')+'Prep — '+docs; logAct(s,'applied a plan session to a rehearsal'); } return s; }); setApplyPlan(null); };
-  const createRehFromPlan=(sess)=>{ if(!newRehDate) return; update(s=>{ s.rehearsals=s.rehearsals||[]; const docs=(sess.docs||[]).join('; '); s.rehearsals.push({id:uid(),showId,date:newRehDate,duration:'2',location:'',notes:docs?('Prep — '+docs):'',focusLearn:mapPlanSongsToFocus(sess.learn,s.songs),focusPractice:mapPlanSongsToFocus(sess.practice,s.songs),attendance:Object.fromEntries(INSTR.map(i=>[i.id,true])),proposal:null,done:false}); logAct(s,'scheduled a rehearsal from the plan'); return s; }); setApplyPlan(null); setNewRehDate(''); };
+  const createRehFromPlan=(sess)=>{ if(!newRehDate) return; update(s=>{ s.rehearsals=s.rehearsals||[]; const docs=(sess.docs||[]).join('; '); s.rehearsals.push({id:uid(),showId,date:newRehDate,duration:'2',location:'',notes:docs?('Prep — '+docs):'',focusLearn:mapPlanSongsToFocus(sess.learn,s.songs),focusPractice:mapPlanSongsToFocus(sess.practice,s.songs),attendance:{},apprReset:true,proposal:null,done:false}); logAct(s,'scheduled a rehearsal from the plan'); return s; }); setApplyPlan(null); setNewRehDate(''); };
   // Per-band image by band name, falling back to admin-banner-Default.jpg then the generic.
   const bandName=(state.band||'').trim();
   const bannerCands=[];
