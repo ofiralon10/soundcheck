@@ -400,7 +400,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.289';
+const VERSION='0.290';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -871,6 +871,15 @@ function isOther(x){ return String(x).indexOf('other:')===0; }
 function getOther(arr){ const e=(arr||[]).find(isOther); return e? e.slice(6):''; }
 function setOtherInArr(arr,text){ const cleaned=(arr||[]).filter(x=>!isOther(x)); return text? [...cleaned,'other:'+text] : cleaned; }
 function focusName(id,songs){ if(isOther(id)) return id.slice(6)||'Other'; const s=songs.find(y=>y.id===id); return s?s.title:null; }
+// Map a plan session's song NAMES (free text from the manager) to focus values:
+// a real song id when the title matches, else an 'other:<name>' free-text tag.
+function mapPlanSongsToFocus(names,songs){
+  return (names||[]).map(name=>{ const n=(name||'').trim(); if(!n) return null; const nl=n.toLowerCase();
+    let s=(songs||[]).find(x=>(x.title||'').trim().toLowerCase()===nl);
+    if(!s) s=(songs||[]).find(x=>{ const t=(x.title||'').trim().toLowerCase(); return t && (t.includes(nl)||nl.includes(t)); });
+    return s? s.id : ('other:'+n);
+  }).filter(Boolean);
+}
 const backHandlers=[];
 let lastBackTime=0;
 function useBackHandler(active,closeFn){
@@ -4361,6 +4370,8 @@ function Admin({state,update,user,showId,pickShow}){
   const show=getShow(state,showId);
   const wide=useWide();
   const [settingsOpen,setSettingsOpen]=useState(false);
+  const [applyPlan,setApplyPlan]=useState(null);
+  const [newRehDate,setNewRehDate]=useState('');
   const [gl,setGl]=useState(state.managerGuidelines||'');
   const [glMsg,setGlMsg]=useState('');
   const saveGl=()=>{ update(s=>{s.managerGuidelines=gl;return s;}); setGlMsg('Saved.'); };
@@ -4385,6 +4396,9 @@ function Admin({state,update,user,showId,pickShow}){
     }catch(e){ setTgMsg('Failed: '+(e.message||e)); }
     setTgBusy(false);
   };
+  const upcomingRehs=(state.rehearsals||[]).filter(r=>r.showId===showId&&!r.done&&r.date).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const applyPlanToReh=(sess,rehId)=>{ update(s=>{ const r=(s.rehearsals||[]).find(x=>x.id===rehId); if(r){ r.focusLearn=mapPlanSongsToFocus(sess.learn,s.songs); r.focusPractice=mapPlanSongsToFocus(sess.practice,s.songs); const docs=(sess.docs||[]).join('; '); if(docs) r.notes=(r.notes?r.notes+'\n':'')+'Prep — '+docs; logAct(s,'applied a plan session to a rehearsal'); } return s; }); setApplyPlan(null); };
+  const createRehFromPlan=(sess)=>{ if(!newRehDate) return; update(s=>{ s.rehearsals=s.rehearsals||[]; const docs=(sess.docs||[]).join('; '); s.rehearsals.push({id:uid(),showId,date:newRehDate,duration:'2',location:'',notes:docs?('Prep — '+docs):'',focusLearn:mapPlanSongsToFocus(sess.learn,s.songs),focusPractice:mapPlanSongsToFocus(sess.practice,s.songs),attendance:Object.fromEntries(INSTR.map(i=>[i.id,true])),proposal:null,done:false}); logAct(s,'scheduled a rehearsal from the plan'); return s; }); setApplyPlan(null); setNewRehDate(''); };
   // Per-band image by band name, falling back to admin-banner-Default.jpg then the generic.
   const bandName=(state.band||'').trim();
   const bannerCands=[];
@@ -4443,6 +4457,19 @@ function Admin({state,update,user,showId,pickShow}){
                   {Array.isArray(s.docs)&&s.docs.length>0 && <div style={{fontSize:12,marginBottom:6}}><span style={{color:'var(--warn)',fontWeight:700}}>Docs: </span><span dir="auto">{s.docs.join(', ')}</span></div>}
                   {Array.isArray(s.practice)&&s.practice.length>0 && <div style={{fontSize:12,marginTop:2}}><span className="plan-tag" style={{background:'var(--warn)'}}>Practice</span> <span className="plan-chips">{s.practice.map((t,j)=><span key={j} className="plan-chip" style={{borderColor:'var(--warn)',color:'var(--warn)'}} dir="auto">{t}</span>)}</span></div>}
                   {Array.isArray(s.learn)&&s.learn.length>0 && <div style={{fontSize:12,marginTop:6}}><span className="plan-tag" style={{background:'var(--learn)'}}>Learn</span> <span className="plan-chips">{s.learn.map((t,j)=><span key={j} className="plan-chip" style={{borderColor:'var(--learn)',color:'var(--learn)'}} dir="auto">{t}</span>)}</span></div>}
+                  {admin && (applyPlan===i
+                    ? <div style={{marginTop:10}}>
+                        <div style={{fontSize:11,color:'var(--muted)',marginBottom:4}}>Apply this session to:</div>
+                        {upcomingRehs.map(r=>(
+                          <button key={r.id} className="btn ghost sm" style={{display:'block',width:'100%',textAlign:'left',marginBottom:4}} onClick={()=>applyPlanToReh(s,r.id)}>{r.date?fmtDate(r.date)+' · '+fmtTime(r.date):'Undated rehearsal'}{r.location?' · '+r.location:''}</button>
+                        ))}
+                        <div style={{display:'flex',gap:6,marginTop:4,alignItems:'center',flexWrap:'wrap'}}>
+                          <input className="inp" type="datetime-local" style={{flex:1,minWidth:150}} value={newRehDate} onChange={e=>setNewRehDate(e.target.value)}/>
+                          <button className="btn sm" disabled={!newRehDate} onClick={()=>createRehFromPlan(s)}>Create new</button>
+                        </div>
+                        <button className="btn ghost sm" style={{marginTop:6}} onClick={()=>{setApplyPlan(null);setNewRehDate('');}}>Cancel</button>
+                      </div>
+                    : <button className="btn ghost sm" style={{marginTop:10}} onClick={()=>{setApplyPlan(i);setNewRehDate('');}}>Apply to a rehearsal</button>)}
                 </div>
               ))}
             </div>
