@@ -320,14 +320,35 @@ const MANAGER_TOOLS = [
 
 function genId() { return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 
+function fileCatOf(f) { return f.cat === 'original' ? 'other' : (f.cat || 'other'); }
+function songFileSummary(song) {
+  const files = song.files || [];
+  const hasSlide = files.some(f => fileCatOf(f) === 'slide' && f.url);
+  const stemCats = [...new Set(files.filter(f => f.stem).map(fileCatOf).filter(c => ['vocals', 'drums', 'bass', 'guitar', 'keys', 'other'].includes(c)))];
+  const recordings = files.filter(f => /recording/i.test(f.name || '')).length;
+  const otherDocs = files.filter(f => !f.stem && fileCatOf(f) !== 'slide' && f.url).length;
+  const parts = ['slide ' + (hasSlide ? '✓' : '✗'), 'stems ' + stemCats.length + '/6' + (stemCats.length ? (' (' + stemCats.join(',') + ')') : '')];
+  if (recordings) parts.push(recordings + ' rec');
+  if (otherDocs) parts.push(otherDocs + ' other doc' + (otherDocs === 1 ? '' : 's'));
+  if (!files.length) return 'no files';
+  return parts.join(', ');
+}
 function buildManagerContextNode(board, show) {
+  const songsAll = board.songs || [];
   const entries = (show.setlist || []).filter(e => !e.excluded);
   const idxToSong = []; const songLines = [];
   entries.forEach(e => {
-    const s = (board.songs || []).find(x => x.id === e.songId); if (!s) return;
+    const s = songsAll.find(x => x.id === e.songId); if (!s) return;
     idxToSong.push(e.songId);
     const parts = CORE.map(id => LABEL[id] + ':' + ((e.parts || {})[id] || 'todo')).join(', ');
-    songLines.push('#' + idxToSong.length + ' "' + (s.title || 'Untitled') + '"' + (s.artist ? (' — ' + s.artist) : '') + ' | overall ' + pct(entryReadiness(e)) + '% | ' + parts);
+    const kt = [s.songKey, s.tempo ? ('~' + s.tempo + 'bpm') : ''].filter(Boolean).join(' ');
+    songLines.push('#' + idxToSong.length + ' "' + (s.title || 'Untitled') + '"' + (s.artist ? (' — ' + s.artist) : '') + (kt ? (' [' + kt + ']') : '') + ' | overall ' + pct(entryReadiness(e)) + '% | ' + parts + ' | files: ' + songFileSummary(s));
+  });
+  const inSet = new Set(entries.map(e => e.songId));
+  const otherLines = songsAll.filter(s => !inSet.has(s.id)).map(s => '- "' + (s.title || 'Untitled') + '"' + (s.artist ? (' — ' + s.artist) : '') + ' | files: ' + songFileSummary(s));
+  const showLines = (board.shows || []).map(sh => {
+    const active = (sh.setlist || []).filter(e => !e.excluded);
+    return '- "' + (sh.name || 'Untitled') + '" — ' + (sh.date ? (fmtWhen(sh.date) + ' (' + daysUntil(sh.date) + ' days out)') : 'no date') + ', ' + active.length + ' songs, ' + pct(showOverall(sh)) + '% ready' + (sh.id === show.id ? ' [current]' : '');
   });
   const reh = (board.rehearsals || []).filter(r => r.showId === show.id && !r.done && r.date).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
   const rehIds = reh.map(r => r.id);
@@ -338,12 +359,15 @@ function buildManagerContextNode(board, show) {
     g ? ('OWNER GUIDELINES (always honor these):\n' + g) : 'OWNER GUIDELINES: (none set)',
     '',
     'BAND: ' + (board.band || ''),
-    'SHOW: ' + (show.name || 'Untitled') + (show.date ? (' on ' + fmtWhen(show.date) + ' (' + daysUntil(show.date) + ' days out)') : ' (no date)'),
     'LINEUP: ' + lineup,
-    'OVERALL READINESS: ' + pct(showOverall(show)) + '%',
     '',
-    'SETLIST (reference songs by #number):',
+    'SHOWS (all shows for this band):',
+    ...(showLines.length ? showLines : ['(none)']),
+    '',
+    'CURRENT SHOW: "' + (show.name || 'Untitled') + '"' + (show.date ? (' on ' + fmtWhen(show.date) + ' (' + daysUntil(show.date) + ' days out)') : ' (no date)') + ' — overall ' + pct(showOverall(show)) + '% ready.',
+    'SETLIST (reference songs by #number; readiness scale todo/learning/practicing/ready; "files" shows what documents each song has):',
     ...(songLines.length ? songLines : ['(empty)']),
+    ...(otherLines.length ? ['', 'OTHER SONGS in the library (not in this show), with their files:', ...otherLines] : []),
     '',
     'UPCOMING REHEARSALS (reference by R-number):',
     ...(rehLines.length ? rehLines : ['(none scheduled)'])
