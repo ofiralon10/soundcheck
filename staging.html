@@ -276,6 +276,9 @@
   .mbub.me{align-self:flex-end;background:var(--keys);color:#fff;border-bottom-right-radius:5px}
   .mbub.mgr{align-self:flex-start;background:var(--surface-3);color:var(--text);border:1px solid var(--line);border-bottom-left-radius:5px}
   .mbub.sys{align-self:center;background:none;color:var(--muted);font-size:11.5px;max-width:100%;padding:2px}
+  .mbub-copy{display:inline-block;margin-top:6px;background:rgba(255,255,255,.14);border:none;color:inherit;border-radius:6px;font-size:10px;padding:2px 7px;cursor:pointer;opacity:.55;font-family:var(--body)}
+  .mbub-copy:hover{opacity:1}
+  .mbub.sys .mbub-copy{display:none}
   .files-cat{margin-bottom:12px;border:1.5px solid var(--line-2);border-radius:12px;padding:12px;transition:border-color .15s,background .15s}
   .files-cat.drop-over{border-color:var(--keys);background:rgba(139,124,246,.08)}
   .files-cat-h{font-family:var(--display);font-weight:600;font-size:13px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
@@ -397,7 +400,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.287';
+const VERSION='0.288';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -672,9 +675,9 @@ async function disableManagerNotifications(){
   try{ localStorage.removeItem('sc_push_token'); }catch(_){}
 }
 // Talk to the always-on manager (server-side; shared key). message='' loads history.
-function managerChatCall(showId,message){
+function managerChatCall(showId,message,clear){
   const fn=firebase.functions().httpsCallable('managerChat');
-  return fn({bandId:BOARD,showId,message:message||''}).then(r=>r.data);
+  return fn({bandId:BOARD,showId,message:message||'',clear:!!clear}).then(r=>r.data);
 }
 async function queryMyBands(email){
   const snap=await db.collection('boards').where('memberEmails','array-contains',email).get();
@@ -768,7 +771,7 @@ async function deleteBandDoc(){ if(boardRef) await boardRef.delete(); }
 /* ---------- state helpers ---------- */
 function defaultState(){
   const members={}; INSTR.forEach(i=>members[i.id]={name:i.label});
-  return {band:'', bandArt:'', shows:[], members, songs:[], rehearsals:[], activity:[], access:{}, memberEmails:[], album:[], managerGuidelines:'', managerChatAllow:[], telegramBot:'', _rev:0, _updatedAt:null};
+  return {band:'', bandArt:'', shows:[], members, songs:[], rehearsals:[], activity:[], access:{}, memberEmails:[], album:[], managerGuidelines:'', managerChatAllow:[], telegramBot:'', managerPlan:null, _rev:0, _updatedAt:null};
 }
 function freshParts(){ const p={}; INSTR.forEach(i=>p[i.id]='todo'); return p; }
 function deriveFromStatus(st){ return st==='ready'?'ready' : (st==='practicing')?'practicing' : (st==='rehearsing'||st==='learning')?'learning' : 'todo'; }
@@ -779,6 +782,7 @@ function migrate(s){
   if(typeof s.managerGuidelines!=='string') s.managerGuidelines='';
   if(!Array.isArray(s.managerChatAllow)) s.managerChatAllow=[];
   if(typeof s.telegramBot!=='string') s.telegramBot='';
+  if(s.managerPlan===undefined) s.managerPlan=null;
   if(!s.members){ s.members={}; INSTR.forEach(i=>s.members[i.id]={name:i.label}); }
   if(!Array.isArray(s.songs)) s.songs=[];
   s.songs.forEach(song=>{
@@ -4168,6 +4172,7 @@ function ChatPanel({show}){
   const [busy,setBusy]=useState(false);
   const [err,setErr]=useState('');
   const [text,setText]=useState('');
+  const [copied,setCopied]=useState(null);
   const scRef=useRef(null);
   const em=e=>{ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e);
     if(/permission-denied/.test(c)) return "You're not on the manager's allowlist.";
@@ -4182,12 +4187,24 @@ function ChatPanel({show}){
     catch(e){ setErr(em(e)); setMsgs(base); setText(t); }
     setBusy(false);
   };
+  const copyMsg=(i,txt)=>{ try{ navigator.clipboard.writeText(txt); setCopied(i); setTimeout(()=>setCopied(c=>c===i?null:c),1200); }catch(_){} };
+  const clearChat=async()=>{ if(busy||loading||!msgs.length) return; if(!window.confirm('Clear the chat history?')) return; setBusy(true); setErr('');
+    try{ const d=await managerChatCall(show.id,'',true); setMsgs((d&&d.messages)||[]); }catch(e){ setErr(em(e)); } setBusy(false);
+  };
   return (
     <div className="card" style={{display:'flex',flexDirection:'column'}}>
+      <div style={{display:'flex',justifyContent:'flex-end',marginBottom:4}}>
+        <button className="btn ghost sm" disabled={busy||loading||!msgs.length} onClick={clearChat}>Clear chat</button>
+      </div>
       <div className="mchat" ref={scRef} style={{maxHeight:'58vh'}}>
         {loading && <div className="mbub sys">Loading…</div>}
         {!loading && msgs.length===0 && <div className="mbub sys">Ask the manager anything about the band, give standing instructions, or tell him to plan/adjust rehearsals.</div>}
-        {msgs.map((m,i)=><div key={i} className={'mbub '+(m.role==='user'?'me':'mgr')} dir="auto">{m.text}</div>)}
+        {msgs.map((m,i)=>(
+          <div key={i} className={'mbub '+(m.role==='user'?'me':'mgr')} dir="auto">
+            {m.text}
+            <button className="mbub-copy" title="Copy" onClick={()=>copyMsg(i,m.text)}>{copied===i?'✓ copied':'⧉ copy'}</button>
+          </div>
+        ))}
         {busy && <div className="mbub mgr" style={{opacity:.7}}>…thinking</div>}
       </div>
       {err && <div style={{fontSize:12,color:'var(--drums)',margin:'6px 2px'}}>{err}</div>}
@@ -4412,6 +4429,24 @@ function Admin({state,update,user,showId,pickShow}){
             {tgMsg && <div style={{fontSize:11,color:'var(--muted)',marginTop:6}}>{tgMsg}</div>}
           </div>}
           <ChatPanel show={show}/>
+          {state.managerPlan&&Array.isArray(state.managerPlan.sessions)&&state.managerPlan.sessions.length>0 && <React.Fragment>
+            <div className="section-h" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <span>Rehearsal plan</span>
+              {admin && <button className="btn ghost sm" onClick={()=>update(s=>{s.managerPlan=null;return s;})}>Clear</button>}
+            </div>
+            {state.managerPlan.summary && <div style={{fontSize:13,color:'var(--muted)',lineHeight:1.5,marginBottom:10}} dir="auto">{state.managerPlan.summary}</div>}
+            <div className={wide?'plan-grid':''}>
+              {state.managerPlan.sessions.map((s,i)=>(
+                <div className="plan-card" key={i}>
+                  <div className="plan-h" dir="auto">{s.title||('Session '+(i+1))}</div>
+                  {s.note && <div style={{fontSize:12,color:'var(--muted)',marginBottom:6}} dir="auto">{s.note}</div>}
+                  {Array.isArray(s.docs)&&s.docs.length>0 && <div style={{fontSize:12,marginBottom:6}}><span style={{color:'var(--warn)',fontWeight:700}}>Docs: </span><span dir="auto">{s.docs.join(', ')}</span></div>}
+                  {Array.isArray(s.learn)&&s.learn.length>0 && <div style={{fontSize:12,marginTop:2}}><span className="plan-tag" style={{background:'var(--learn)'}}>Learn</span> <span className="plan-chips">{s.learn.map((t,j)=><span key={j} className="plan-chip" style={{borderColor:'var(--learn)',color:'var(--learn)'}} dir="auto">{t}</span>)}</span></div>}
+                  {Array.isArray(s.practice)&&s.practice.length>0 && <div style={{fontSize:12,marginTop:6}}><span className="plan-tag" style={{background:'var(--warn)'}}>Practice</span> <span className="plan-chips">{s.practice.map((t,j)=><span key={j} className="plan-chip" style={{borderColor:'var(--warn)',color:'var(--warn)'}} dir="auto">{t}</span>)}</span></div>}
+                </div>
+              ))}
+            </div>
+          </React.Fragment>}
         </React.Fragment>
   );
   return (

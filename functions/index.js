@@ -314,7 +314,8 @@ const MANAGER_TOOLS = [
   { name: 'send_notification', description: 'Push a phone notification to the registered device(s). Use only when the member explicitly asks to notify/alert/remind/ping now.', input_schema: { type: 'object', properties: { title: { type: 'string', description: 'Short title (<=6 words)' }, body: { type: 'string', description: 'Short message body' } }, required: ['title', 'body'] } },
   { name: 'send_telegram', description: 'Send a Telegram direct message to a band member who has linked Telegram. Use when asked to message/DM/telegram someone.', input_schema: { type: 'object', properties: { recipient: { type: 'string', description: 'Member name or email, or "me" for the owner' }, message: { type: 'string' } }, required: ['recipient', 'message'] } },
   { name: 'ask_members', description: 'Ask linked band members a multiple-choice question over Telegram (tappable option buttons) and collect their answers. Use when asked to poll/ask/survey the band with options.', input_schema: { type: 'object', properties: { question: { type: 'string' }, options: { type: 'array', items: { type: 'string' }, description: '2-8 answer options' }, recipients: { type: 'string', description: '"all" for everyone linked, or a comma-separated list of names/emails' } }, required: ['question', 'options'] } },
-  { name: 'get_poll_results', description: 'Read back the answers to the most recent question asked via ask_members (tally + who answered what + who hasn\'t).', input_schema: { type: 'object', additionalProperties: false, properties: {} } }
+  { name: 'get_poll_results', description: 'Read back the answers to the most recent question asked via ask_members (tally + who answered what + who hasn\'t).', input_schema: { type: 'object', additionalProperties: false, properties: {} } },
+  { name: 'show_plan', description: 'Display a rehearsal plan in the app (the "Rehearsal plan" panel under the chat) for the band to see. Use when asked to lay out / show / post a plan. Write song names and docs as plain text.', input_schema: { type: 'object', properties: { summary: { type: 'string', description: 'One or two lines of overview' }, sessions: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { title: { type: 'string', description: 'e.g. "Rehearsal 1 — Sun Mar 8"' }, learn: { type: 'array', items: { type: 'string' } }, practice: { type: 'array', items: { type: 'string' } }, docs: { type: 'array', items: { type: 'string' }, description: 'Docs to prepare, e.g. "slide for Black Bird"' }, note: { type: 'string' } }, required: ['title'] } } }, required: ['sessions'] } }
 ];
 
 function genId() { return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
@@ -362,6 +363,8 @@ function applyOpToBoard(op, board) {
     if (r) { if (op.learn) r.focusLearn = op.learn; if (op.practice) r.focusPractice = op.practice; if (op.note) r.notes = (r.notes ? r.notes + '\n' : '') + op.note; }
   } else if (op.type === 'rehearsal') {
     board.rehearsals = board.rehearsals || []; board.rehearsals.push(op.reh);
+  } else if (op.type === 'plan') {
+    board.managerPlan = op.plan;
   }
 }
 
@@ -388,6 +391,10 @@ function applyManagerTool(name, input, ctx, showId, work, ops) {
     const reh = { id: genId(), showId, date: iso, duration: String(input.durationHours || 2), location: input.location || '', notes: '', focusLearn: L, focusPractice: P, attendance: Object.fromEntries(CORE.map(id => [id, true])), proposal: null, done: false };
     op = { type: 'rehearsal', reh };
     msg = 'Scheduled a rehearsal on ' + input.date + ' ' + t + '.';
+  } else if (name === 'show_plan') {
+    const sessions = (input.sessions || []).map(s => ({ title: s.title || '', learn: s.learn || [], practice: s.practice || [], docs: s.docs || [], note: s.note || '' }));
+    op = { type: 'plan', plan: { summary: input.summary || '', sessions, updatedAt: Date.now() } };
+    msg = 'Posted the rehearsal plan to the app (' + sessions.length + ' session' + (sessions.length === 1 ? '' : 's') + ').';
   } else { return 'Unknown tool.'; }
   ops.push(op); applyOpToBoard(op, work); return msg;
 }
@@ -415,6 +422,7 @@ exports.managerChat = onCall({ secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN] }, async
   if (!allow.includes(email.toLowerCase())) throw new HttpsError('permission-denied', 'You are not allowed to chat with the manager.');
 
   const chatRef = db.collection('managerChat').doc(bandId);
+  if (req.data && req.data.clear) { await chatRef.set({ messages: [] }, { merge: true }); return { messages: [] }; }
   const chatSnap = await chatRef.get();
   let messages = (chatSnap.exists && Array.isArray(chatSnap.data().messages)) ? chatSnap.data().messages : [];
   if (!message || !String(message).trim()) return { messages };   // history load
