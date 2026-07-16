@@ -487,6 +487,25 @@ Currently logged events:
 - SFU helpers: `sfuScore`/`sfuLev`/`sfuCatFromName`/`sfuFileToBlob`/`sfuPdfToTallJpeg` (Setlist
   Files Update). `matchTaShift`/`detectTaOnsets` (recording sync). `loadScript` (lazy CDN loader).
 
+## Cloud Functions deploy gotchas
+
+- **Runtime lives in TWO places**: `firebase.json` → `functions.runtime` AND `functions/package.json`
+  → `engines.node`. **`firebase.json` wins.** Changing only `engines` does nothing.
+- **`firebase deploy` skips functions whose SOURCE hash is unchanged** ("Skipped (No changes
+  detected)") — a runtime-only change in `firebase.json` is silently skipped and the OLD runtime
+  stays live, while the CLI still prints a green "Deploy complete!". Touch `functions/index.js` to
+  change the hash, and **always verify with `firebase functions:list`** (it prints the real runtime)
+  rather than trusting the deploy output.
+- Current: **Node 24** (GA; deprecation 2028-04-30, decommission 2028-10-31), `firebase-functions@7`,
+  `firebase-admin@13`.
+- **`firebase-admin` is pinned to 13.x on purpose**: `firebase-functions@7` peer-requires
+  `^11 || ^12 || ^13`, so v14 fails `npm install` with ERESOLVE. Don't `--force` it. Admin is already
+  imported via the **modular** entry points (`firebase-admin/app|firestore|messaging`) because v14
+  removes the legacy `admin.*` namespace — so the v14 bump is a version change once functions@8
+  allows it.
+- Deploying needs the `ANTHROPIC_KEY` + `TELEGRAM_BOT_TOKEN` secrets to already exist
+  (`firebase functions:secrets:set NAME` — the name is the arg, the value is typed at the prompt).
+
 ## tools/
 - `tools/pptx2pdf.py` (+ `.bat`, `README.md`) — batch-converts every `.pptx`/`.ppt` under a folder
   to PDF (LibreOffice headless, else PowerPoint COM on Windows). Double-click runs it in its own
