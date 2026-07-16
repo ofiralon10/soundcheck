@@ -30,11 +30,14 @@ const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const logger = require('firebase-functions/logger');
-const admin = require('firebase-admin');
+// firebase-admin v14 removed the legacy `admin.*` namespace — modular imports only.
+const { initializeApp } = require('firebase-admin/app');
+const { getFirestore } = require('firebase-admin/firestore');
+const { getMessaging } = require('firebase-admin/messaging');
 const crypto = require('crypto');
 
-admin.initializeApp();
-const db = admin.firestore();
+initializeApp();
+const db = getFirestore();
 const ANTHROPIC_KEY = defineSecret('ANTHROPIC_KEY');
 const TELEGRAM_TOKEN = defineSecret('TELEGRAM_BOT_TOKEN');
 
@@ -158,7 +161,7 @@ async function pushToOwner(title, body) {
   const snap = await db.collection('notifyTokens').where('email', '==', ADMIN_EMAIL).get();
   const tokens = snap.docs.map(d => d.id);
   if (!tokens.length) { logger.warn('no notify tokens registered — nothing to push'); return 0; }
-  const resp = await admin.messaging().sendEachForMulticast({
+  const resp = await getMessaging().sendEachForMulticast({
     tokens,
     notification: { title, body },
     webpush: { fcmOptions: { link: APP_URL } }
