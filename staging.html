@@ -419,7 +419,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.296';
+const VERSION='0.297';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -459,6 +459,10 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
+  '0.297':[
+    'Connect Telegram is now in Setup → Your Telegram, so every band member can link their own Telegram and get manager messages and polls.',
+    'Stage: answer your own attendance for the next rehearsal right from the card, next to Propose new time.',
+  ],
   '0.296':[
     'The manager now writes in colour: bold, italics, bullets, headings and emoji — with red/amber/green for problems, warnings and wins.',
     'It can name a player in their own instrument colour, so messages are easier to scan.',
@@ -1781,7 +1785,35 @@ function ActivityBell({state}){
 }
 
 // Shared time-change proposal UI — used in Rehearsals and on Stage for the next rehearsal.
-function RehearsalProposal({r,update}){
+// Answer your OWN attendance straight from the Stage card, without going to the
+// Rehearsals tab. Marks whichever instrument(s) you play (MY_INSTRS) — if you
+// haven't picked an instrument yet there's nothing we could mark, so it hides.
+// Reuses AttPop, the same ✓/✕ picker as the Rehearsals attendance chips.
+function AttendanceAnswer({r,update}){
+  const [open,setOpen]=useState(false);
+  const mine=INSTR.filter(i=>(MY_INSTRS||[]).includes(i.id));
+  if(!mine.length) return null;
+  const sts=mine.map(i=>attState(((r&&r.attendance)||{})[i.id]));
+  const cur=sts.every(s=>s==='yes')?'yes':sts.every(s=>s==='no')?'no':'none';
+  const set=(v)=>{
+    update(s=>{ const rr=(s.rehearsals||[]).find(x=>x.id===r.id); if(!rr) return s;
+      rr.attendance=rr.attendance||{};
+      mine.forEach(i=>{ if(v) rr.attendance[i.id]=v; else delete rr.attendance[i.id]; });
+      return s; });
+    setOpen(false);
+  };
+  const label=cur==='yes'?"✓ I'm in":cur==='no'?"✕ Can't make it":'Answer attendance';
+  const tone=cur==='yes'?{borderColor:'var(--ok)',color:'var(--ok)'}:cur==='no'?{borderColor:'var(--drums)',color:'var(--drums)'}:null;
+  return <span style={{position:'relative',display:'inline-flex'}}>
+    <button className="btn ghost" style={{width:'auto',...(tone||{})}} onClick={()=>setOpen(o=>!o)}
+      title={'Your attendance ('+mine.map(i=>i.label).join(', ')+') — '+attLabel(cur)}>{label}</button>
+    {open && <React.Fragment>
+      <span onClick={()=>setOpen(false)} style={{position:'fixed',left:0,top:0,right:0,bottom:0,zIndex:40}}/>
+      <AttPop cur={cur} onPick={set}/>
+    </React.Fragment>}
+  </span>;
+}
+function RehearsalProposal({r,update,extra}){
   const [proposing,setProposing]=useState(false);
   const init=r.date?r.date.slice(0,16):'';
   const [day,setDay]=useState(init?init.slice(0,10):'');
@@ -1822,13 +1854,17 @@ function RehearsalProposal({r,update}){
           <button className="btn" onClick={apply}>Apply change</button>
           <button className="btn ghost" onClick={dismiss}>Dismiss</button>
         </div>
+        {extra && <div style={{marginTop:10}}>{extra}</div>}
       </div>
     );
   }
   return (
     <div className="prop">
       {!proposing
-        ? <button className="btn ghost" style={{width:'auto'}} onClick={()=>setProposing(true)}>Propose new time</button>
+        ? <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+            <button className="btn ghost" style={{width:'auto'}} onClick={()=>setProposing(true)}>Propose new time</button>
+            {extra}
+          </div>
         : <div className="propform">
             <div className="prop-h">New day & time</div>
             <div className="row2">
@@ -2035,7 +2071,7 @@ function Stage({state,go,update,goSong,showId,pickShow}){
           {plannedCount>0
             ? <FocusTags songs={state.songs} learn={next.focusLearn} practice={next.focusPractice} onGoSong={goSong}/>
             : <div style={{color:'var(--muted)',fontSize:12.5,marginTop:10}}>No songs planned yet — set the focus in Rehearsals.</div>}
-          <RehearsalProposal r={next} update={update}/>
+          <RehearsalProposal r={next} update={update} extra={!next.done && <AttendanceAnswer r={next} update={update}/>}/>
         </div>
         : <div className="card"><div style={{color:'var(--muted)',fontSize:13}}>None booked. Add one in Rehearsals.</div></div>}
       {songs.length>0 && <React.Fragment>
@@ -4170,6 +4206,39 @@ function RehForm({shows,songs,members,guestList:guestListProp,onSave,onCancel}){
   );
 }
 
+// Link your own Telegram so the manager can DM you and you can answer its polls.
+// This lives in SETUP (every band member sees that tab) rather than in Admin,
+// because the Admin tab is gated to the manager-chat allowlist — linking Telegram
+// must not require granting someone chat access. The bot username itself is still
+// set by the owner in Admin → Manager settings.
+function TelegramCard({state,user}){
+  const [tgUser,setTgUser]=useState(null);
+  const [tgBusy,setTgBusy]=useState(false);
+  const [tgMsg,setTgMsg]=useState('');
+  const botUser=((state.telegramBot||TELEGRAM_BOT||'').trim().replace(/^@/,''));
+  const refreshTg=useCallback(()=>{ db.collection('telegramChats').doc(BOARD).get().then(s=>{ const users=(s.exists&&Array.isArray(s.data().users))?s.data().users:[]; setTgUser(users.find(u=>u.email===(user&&user.email))||null); }).catch(()=>{}); },[user]);
+  useEffect(()=>{ refreshTg(); },[refreshTg]);
+  const connectTg=async()=>{
+    if(!botUser){ setTgMsg('No bot set for this band yet — ask the band owner.'); return; }
+    setTgBusy(true); setTgMsg('');
+    try{ const code=uid()+uid(); await db.collection('telegramLinks').doc(code).set({bandId:BOARD,email:user.email,ts:Date.now()});
+      window.open('https://t.me/'+botUser+'?start='+code,'_blank');
+      setTgMsg('Opening Telegram — tap START there, then come back and tap Refresh.');
+    }catch(e){ setTgMsg('Failed: '+(e.message||e)); }
+    setTgBusy(false);
+  };
+  if(!botUser) return null;
+  return (<React.Fragment>
+    <div className="section-h">Your Telegram</div>
+    <div className="card">
+      <div style={{fontSize:12.5,color:'var(--muted)',lineHeight:1.55,marginBottom:8}}>Link your Telegram so the band manager can message you directly and you can answer its polls (like confirming a rehearsal). Links only your own account.</div>
+      {tgUser
+        ? <div style={{fontSize:12.5,color:'var(--ok)',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>✓ Linked{tgUser.username?(' as @'+tgUser.username):(tgUser.firstName?(' ('+tgUser.firstName+')'):'')}<button className="btn ghost sm" onClick={connectTg}>Re-link</button></div>
+        : <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}><button className="btn ghost sm" disabled={tgBusy} onClick={connectTg}>{tgBusy?'…':'Connect Telegram'}</button><button className="btn ghost sm" onClick={refreshTg}>Refresh</button></div>}
+      {tgMsg && <div style={{fontSize:11,color:'var(--muted)',marginTop:6}}>{tgMsg}</div>}
+    </div>
+  </React.Fragment>);
+}
 function Setup({state,update,user,onSignOut,onSwitch}){
   const [cloneMsg,setCloneMsg]=useState('');
   const [myNameLocal,setMyNameLocal]=useState(MY_NAME);
@@ -4203,6 +4272,8 @@ function Setup({state,update,user,onSignOut,onSwitch}){
         {state._updatedAt && <div style={{fontSize:12,color:'var(--muted)',marginTop:8}}>Last change {timeAgo(state._updatedAt)}</div>}
         <div className="btnrow"><button className="btn ghost" onClick={onSignOut}>Sign out</button></div>
       </div>
+
+      <TelegramCard state={state} user={user}/>
 
       {admin && <React.Fragment>
         <div className="section-h">AI manager notifications</div>
@@ -4625,24 +4696,9 @@ function Admin({state,update,user,showId,pickShow}){
   const [allowEmail,setAllowEmail]=useState('');
   const addAllow=()=>{ const e=allowEmail.trim().toLowerCase(); if(!e) return; update(s=>{ s.managerChatAllow=[...new Set([...(s.managerChatAllow||[]),e])]; return s; }); setAllowEmail(''); };
   const rmAllow=(e)=>update(s=>{ s.managerChatAllow=(s.managerChatAllow||[]).filter(x=>x!==e); return s; });
-  const [tgUser,setTgUser]=useState(null);
-  const [tgBusy,setTgBusy]=useState(false);
-  const [tgMsg,setTgMsg]=useState('');
   const [tgBot,setTgBot]=useState(state.telegramBot||TELEGRAM_BOT||'');
   const [tgBotMsg,setTgBotMsg]=useState('');
   const saveTgBot=()=>{ update(s=>{ s.telegramBot=(tgBot||'').trim().replace(/^@/,''); return s; }); setTgBotMsg('Saved.'); };
-  const botUser=((state.telegramBot||TELEGRAM_BOT||'').trim().replace(/^@/,''));
-  const refreshTg=useCallback(()=>{ db.collection('telegramChats').doc(BOARD).get().then(s=>{ const users=(s.exists&&Array.isArray(s.data().users))?s.data().users:[]; setTgUser(users.find(u=>u.email===(user&&user.email))||null); }).catch(()=>{}); },[user]);
-  useEffect(()=>{ refreshTg(); },[refreshTg]);
-  const connectTg=async()=>{
-    if(!botUser){ setTgMsg('Set this band\'s bot username first, then Save.'); return; }
-    setTgBusy(true); setTgMsg('');
-    try{ const code=uid()+uid(); await db.collection('telegramLinks').doc(code).set({bandId:BOARD,email:user.email,ts:Date.now()});
-      window.open('https://t.me/'+botUser+'?start='+code,'_blank');
-      setTgMsg('Opening Telegram — tap START there, then come back and refresh.');
-    }catch(e){ setTgMsg('Failed: '+(e.message||e)); }
-    setTgBusy(false);
-  };
   const upcomingRehs=(state.rehearsals||[]).filter(r=>r.showId===showId&&!r.done&&r.date).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const applyPlanToReh=(sess,rehId)=>{ update(s=>{ const r=(s.rehearsals||[]).find(x=>x.id===rehId); if(r){ r.focusLearn=mapPlanSongsToFocus(sess.learn,s.songs); r.focusPractice=mapPlanSongsToFocus(sess.practice,s.songs); const docs=(sess.docs||[]).join('; '); if(docs) r.notes=(r.notes?r.notes+'\n':'')+'Prep — '+docs; logAct(s,'applied a plan session to a rehearsal'); } return s; }); setApplyPlan(null); };
   const createRehFromPlan=(sess)=>{ if(!newRehDate) return; update(s=>{ s.rehearsals=s.rehearsals||[]; const docs=(sess.docs||[]).join('; '); s.rehearsals.push({id:uid(),showId,date:newRehDate,duration:'2',location:'',notes:docs?('Prep — '+docs):'',focusLearn:mapPlanSongsToFocus(sess.learn,s.songs),focusPractice:mapPlanSongsToFocus(sess.practice,s.songs),attendance:{},apprReset:true,proposal:null,done:false}); logAct(s,'scheduled a rehearsal from the plan'); return s; }); setApplyPlan(null); setNewRehDate(''); };
@@ -4675,19 +4731,11 @@ function Admin({state,update,user,showId,pickShow}){
               <div style={{display:'flex',gap:6}}><input className="inp" style={{flex:1}} value={allowEmail} onChange={e=>setAllowEmail(e.target.value)} placeholder="bandmate@email.com" onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addAllow();}}}/><button className="btn ghost sm" onClick={addAllow}>Add</button></div>
               <div style={{fontSize:11,color:'var(--muted)',marginTop:6}}>They chat via the shared server key — requires the <b style={{color:'var(--text)'}}>managerChat</b> Cloud Function deployed. The person must sign in with this exact email.</div>
               <label className="fl" style={{marginTop:14}}>Telegram bot (this band)</label>
-              <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5,marginBottom:6}}>Bot username from @BotFather, without the @. Members link their own Telegram below so the manager can message them and run polls.</div>
+              <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5,marginBottom:6}}>Bot username from @BotFather, without the @. Each member links their own Telegram from <b style={{color:'var(--text)'}}>Setup → Your Telegram</b> (no Admin access needed) so the manager can message them and run polls.</div>
               <div style={{display:'flex',gap:6}}><input className="inp" style={{flex:1}} value={tgBot} onChange={e=>{setTgBot(e.target.value);setTgBotMsg('');}} placeholder="my_band_bot"/><button className="btn ghost sm" onClick={saveTgBot}>Save</button>{tgBotMsg && <span style={{fontSize:12,color:'var(--ok)',alignSelf:'center'}}>{tgBotMsg}</span>}</div>
               <label className="fl" style={{marginTop:14}}>Manager banner image (this band)</label>
               <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5}}>Add a file named <b style={{color:'var(--text)',userSelect:'all'}} dir="auto">admin-banner-{bandName||'Default'}.jpg</b> to give this band its own manager image. Without one, <b style={{color:'var(--text)'}}>admin-banner-Default.jpg</b> is shown.</div>
             </div>}
-          </div>}
-          {botUser && <div className="card">
-            <div style={{fontSize:13,fontWeight:600,marginBottom:4}}>Your Telegram</div>
-            <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5,marginBottom:8}}>Link your Telegram so the manager can message you and you can answer polls.</div>
-            {tgUser
-              ? <div style={{fontSize:12.5,color:'var(--ok)',display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>✓ Linked{tgUser.username?(' as @'+tgUser.username):(tgUser.firstName?(' ('+tgUser.firstName+')'):'')}<button className="btn ghost sm" onClick={connectTg}>Re-link</button></div>
-              : <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}><button className="btn ghost sm" disabled={tgBusy} onClick={connectTg}>{tgBusy?'…':'Connect Telegram'}</button><button className="btn ghost sm" onClick={refreshTg}>Refresh</button></div>}
-            {tgMsg && <div style={{fontSize:11,color:'var(--muted)',marginTop:6}}>{tgMsg}</div>}
           </div>}
           <ChatPanel show={show}/>
           {state.managerPlan&&Array.isArray(state.managerPlan.sessions)&&state.managerPlan.sessions.length>0 && <React.Fragment>
