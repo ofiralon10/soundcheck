@@ -1,6 +1,17 @@
 /**
  * Soundcheck — always-on AI band manager (Firebase Cloud Functions, 2nd gen).
  *
+ * Runtime: Node 24 (set in firebase.json "runtime" AND package.json "engines" —
+ * both must agree). NOTE: `firebase deploy` decides what to redeploy from a hash
+ * of THIS source, so a runtime-only change in firebase.json is silently
+ * "Skipped (No changes detected)" and the old runtime stays live. Touch this file
+ * when changing the runtime, and verify with `firebase functions:list`.
+ *
+ * Deps: firebase-admin is pinned to 13.x — firebase-functions@7 peer-requires
+ * ^11 || ^12 || ^13, so admin 14 does not resolve yet. Admin is imported via the
+ * modular entry points (firebase-admin/app|firestore|messaging) because v14
+ * removes the legacy `admin.*` namespace; that keeps the 14 bump a one-liner.
+ *
  * Two scheduled jobs run on Anthropic's/Google's clock even when nobody has the
  * app open:
  *   rehearsalReminders — hourly; ~24h before each upcoming rehearsal it asks
