@@ -372,7 +372,7 @@
   .att-opt.yes{background:var(--ok);color:#0a0a0a}
   .att-opt.no{background:var(--drums);color:#fff}
   .att-opt.clr{background:var(--surface-2);color:var(--muted);border:1px solid var(--line-2)}
-  .focus-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
+  .focus-box{border:1.5px solid;border-radius:12px;padding:9px 11px 11px;margin-top:9px;background:rgba(255,255,255,.03)}
   .ftag{font-size:11px;background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:4px 8px;color:var(--muted)}
   .chip-pick{display:flex;flex-wrap:wrap;gap:7px;margin-top:6px}
   .chip{font-size:12px;padding:7px 11px;border-radius:8px;border:1px solid var(--line-2);color:var(--muted);background:var(--surface-2)}
@@ -418,7 +418,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.294';
+const VERSION='0.295';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -458,6 +458,10 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
+  '0.295':[
+    'Focus songs now look the same on Stage and in Rehearsals: one song per line with its cover art.',
+    'Practice and Learn each sit in their own rounded box, outlined in that group’s color.',
+  ],
   '0.294':[
     "Rehearsal attendance now has three states per player: tap a player to answer ✓ can attend or ✕ can't attend — un-answered stays blank.",
     "The date badge shows a green ✓ when everyone's in, a red ✕ when someone can't make it, and a red ! while answers are still missing.",
@@ -3865,15 +3869,13 @@ function SongForm({onSave,onCancel}){
   );
 }
 
-function FocusTags({songs,learn,practice,onGoSong,rich}){
-  const row=(ids,color,label)=> ids && ids.length? (
-    <div className="focus-tags" style={{marginTop:8}}>
-      <span className="ftag" style={{borderColor:color,color:'#15141B',background:color,fontWeight:700}}>{label}</span>
-      {ids.map(id=>{ const n=focusName(id,songs); return n?<span className="ftag" key={id} dir="auto" style={onGoSong?{cursor:'pointer'}:null} onClick={onGoSong?()=>onGoSong(id):undefined}>{n}</span>:null;})}
-    </div>
-  ):null;
-  const richRow=(ids,color,label)=> ids && ids.length? (
-    <div style={{marginTop:8}}>
+// One shared focus-song view, used by both the Rehearsals cards and the Stage
+// next-rehearsal card: each group (Practice / Learn) is a rounded box outlined in
+// the group's own color, holding its filled title chip and one song per line
+// (cover art + name).
+function FocusTags({songs,learn,practice,onGoSong}){
+  const group=(ids,color,label)=> ids && ids.length? (
+    <div className="focus-box" style={{borderColor:color}}>
       <span className="ftag" style={{borderColor:color,color:'#15141B',background:color,fontWeight:700}}>{label}</span>
       <div style={{display:'flex',flexDirection:'column',gap:6,marginTop:7}}>
         {ids.map(id=>{ const other=isOther(id); const s=other?null:songs.find(y=>y.id===id); const name=focusName(id,songs); if(!name) return null;
@@ -3889,8 +3891,7 @@ function FocusTags({songs,learn,practice,onGoSong,rich}){
     </div>
   ):null;
   if((!learn||!learn.length) && (!practice||!practice.length)) return null;
-  const R=rich?richRow:row;
-  return <React.Fragment>{R(practice,'var(--warn)','Practice')}{R(learn,'var(--learn)','Learn')}</React.Fragment>;
+  return <React.Fragment>{group(practice,'var(--warn)','Practice')}{group(learn,'var(--learn)','Learn')}</React.Fragment>;
 }
 function focusSummary(arr,songs){
   const a=arr||[]; if(!a.length) return 'Choose songs…';
@@ -4070,7 +4071,7 @@ function RehCard({r,state,patch,del,update,goSong}){
           </div>
         </div>
       </div>}
-      <FocusTags songs={songs} learn={r.focusLearn} practice={r.focusPractice} onGoSong={goSong} rich/>
+      <FocusTags songs={songs} learn={r.focusLearn} practice={r.focusPractice} onGoSong={goSong}/>
       {!editFocus
         ? <button className="btn sm ghost" style={{marginTop:11}} onClick={()=>setEditFocus(true)}>{(r.focusLearn&&r.focusLearn.length)||(r.focusPractice&&r.focusPractice.length)?'Edit focus songs':'+ Set focus songs'}</button>
         : <div style={{marginTop:4}}>
