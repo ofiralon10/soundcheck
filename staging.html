@@ -362,6 +362,16 @@
   .att{display:flex;gap:6px;margin-top:11px;flex-wrap:wrap}
   .att .a{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:700;border:1.5px solid var(--line-2);color:var(--muted-2)}
   .att .a.in{color:#15141B}
+  .att .a.out{border-color:var(--drums);opacity:.45}
+  .att-slot{position:relative;display:inline-flex}
+  .att-badge{position:absolute;right:-3px;bottom:-3px;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;line-height:1;color:#fff;border:1.5px solid var(--bg);pointer-events:none}
+  .att-badge.yes{background:var(--ok)}
+  .att-badge.no{background:var(--drums)}
+  .att-pop{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:6px;display:flex;gap:5px;padding:5px;background:var(--surface);border:1px solid var(--line-2);border-radius:11px;box-shadow:0 4px 16px rgba(0,0,0,.45);z-index:41}
+  .att-opt{width:32px;height:32px;border-radius:8px;border:none;font-size:15px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
+  .att-opt.yes{background:var(--ok);color:#0a0a0a}
+  .att-opt.no{background:var(--drums);color:#fff}
+  .att-opt.clr{background:var(--surface-2);color:var(--muted);border:1px solid var(--line-2)}
   .focus-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
   .ftag{font-size:11px;background:var(--surface-2);border:1px solid var(--line);border-radius:6px;padding:4px 8px;color:var(--muted)}
   .chip-pick{display:flex;flex-wrap:wrap;gap:7px;margin-top:6px}
@@ -408,7 +418,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.293';
+const VERSION='0.294';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -448,6 +458,10 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
+  '0.294':[
+    "Rehearsal attendance now has three states per player: tap a player to answer ✓ can attend or ✕ can't attend — un-answered stays blank.",
+    "The date badge shows a green ✓ when everyone's in, a red ✕ when someone can't make it, and a red ! while answers are still missing.",
+  ],
   '0.293':[
     'Practice slides: draw on the slide with your finger, pencil, or mouse. Tap the pencil in the player bar to start drawing.',
     'Pick from 6 colors and any thickness, Undo strokes, and Clear all. Save keeps your notes on that slide — they reappear next time and pan/zoom with the image.',
@@ -3955,12 +3969,33 @@ function Rehearsals({state,update,goSong}){
     </div>
   );
 }
-function rehAllApproved(r){ const a=(r&&r.attendance)||{}; return INSTR.every(i=>!!a[i.id]); }
+// Attendance is tri-state per player: 'yes' (can attend), 'no' (can't), or
+// 'none' (not answered yet). Legacy docs stored a plain boolean where true meant
+// approved and false/absent meant simply un-answered — normalize both here.
+function attState(v){ if(v===true||v==='yes')return 'yes'; if(v==='no')return 'no'; return 'none'; }
+function attLabel(st){ return st==='yes'?'can attend':st==='no'?"can't attend":'not answered'; }
+function rehAllApproved(r){ const a=(r&&r.attendance)||{}; return INSTR.every(i=>attState(a[i.id])==='yes'); }
+function rehAnyDeclined(r){ const a=(r&&r.attendance)||{}; return INSTR.some(i=>attState(a[i.id])==='no'); }
 function ApprovalBadge({r}){
-  const all=rehAllApproved(r);
-  const n=INSTR.filter(i=>((r&&r.attendance)||{})[i.id]).length;
-  return <span title={all?'All players approved':(n+'/'+INSTR.length+' approved — awaiting the rest')}
-    style={{display:'inline-flex',alignItems:'center',justifyContent:'center',minWidth:18,height:18,padding:'0 5px',borderRadius:9,fontSize:12,fontWeight:800,marginInlineStart:8,verticalAlign:'middle',background:all?'var(--ok)':'var(--drums)',color:'#fff',lineHeight:1}}>{all?'✓':'!'}</span>;
+  const a=(r&&r.attendance)||{};
+  const yes=INSTR.filter(i=>attState(a[i.id])==='yes').length;
+  const no=INSTR.filter(i=>attState(a[i.id])==='no');
+  const all=yes===INSTR.length;
+  const declined=no.length>0;
+  const title=all?'All players can attend'
+    :declined?(no.map(i=>i.label).join(', ')+" can't attend ("+yes+'/'+INSTR.length+' confirmed)')
+    :(yes+'/'+INSTR.length+' confirmed — awaiting the rest');
+  return <span title={title}
+    style={{display:'inline-flex',alignItems:'center',justifyContent:'center',minWidth:18,height:18,padding:'0 5px',borderRadius:9,fontSize:12,fontWeight:800,marginInlineStart:8,verticalAlign:'middle',background:all?'var(--ok)':'var(--drums)',color:'#fff',lineHeight:1}}>{all?'✓':declined?'✕':'!'}</span>;
+}
+// Two-option picker shown when a player chip is tapped: ✓ can attend / ✕ can't.
+// If they already answered, a third "—" clears it back to un-answered.
+function AttPop({cur,onPick}){
+  return <span className="att-pop" onClick={e=>e.stopPropagation()}>
+    <button className="att-opt yes" title="Can attend" onClick={()=>onPick('yes')}>✓</button>
+    <button className="att-opt no" title="Can't attend" onClick={()=>onPick('no')}>✕</button>
+    {cur!=='none' && <button className="att-opt clr" title="Clear answer" onClick={()=>onPick(null)}>—</button>}
+  </span>;
 }
 function RehCard({r,state,patch,del,update,goSong}){
   const rehShow=getShow(state,r.showId);
@@ -3968,6 +4003,7 @@ function RehCard({r,state,patch,del,update,goSong}){
   const songs=showEntries.map(e=>state.songs.find(x=>x.id===e.songId)).filter(Boolean);
   const guestList=allShowGuests(state.shows);
   const [editFocus,setEditFocus]=useState(false);
+  const [attPick,setAttPick]=useState(null); // key of the player whose ✓/✕ popover is open
   const [markingDone,setMarkingDone]=useState(false);
   const [covered,setCovered]=useState([]);
   const [editing,setEditing]=useState(false);
@@ -4041,14 +4077,25 @@ function RehCard({r,state,patch,del,update,goSong}){
             <FocusPicker songs={songs} learn={r.focusLearn||[]} practice={r.focusPractice||[]} onToggle={onToggle} onSetOther={onSetOther}/>
             <div className="btnrow"><button className="btn sm" onClick={()=>setEditFocus(false)}>Done</button></div>
           </div>}
-      <div style={{fontSize:11,color:'var(--muted)',marginTop:12,marginBottom:2}}>Attendance approvals (tap to confirm):</div>
+      <div style={{fontSize:11,color:'var(--muted)',marginTop:12,marginBottom:2}}>Attendance (tap a player → ✓ can attend / ✕ can't):</div>
       <div className="att">
-        {INSTR.map(i=>{ const inn=r.attendance && r.attendance[i.id];
-          return <button key={i.id} className={'a'+(inn?' in':'')} title={state.members[i.id].name} style={inn?{background:i.color,borderColor:i.color}:{}}
-            onClick={()=>patch(r.id,x=>{x.attendance=x.attendance||{};x.attendance[i.id]=!x.attendance[i.id];})}><InstrIcon id={i.id} size={16}/></button>; })}
-        {guestList.map(n=>{ const inn=r.attendance && r.attendance['g:'+n];
-          return <button key={n} className={'a'+(inn?' in':'')} title={n} style={inn?{background:GUEST_COLOR,borderColor:GUEST_COLOR}:{}}
-            onClick={()=>patch(r.id,x=>{x.attendance=x.attendance||{};x.attendance['g:'+n]=!x.attendance['g:'+n];})}>{n.trim()[0].toUpperCase()}</button>; })}
+        {attPick && <span onClick={()=>setAttPick(null)} style={{position:'fixed',left:0,top:0,right:0,bottom:0,zIndex:40}}/>}
+        {INSTR.map(i=>{ const stt=attState(r.attendance && r.attendance[i.id]);
+          return <span key={i.id} className="att-slot">
+            <button className={'a'+(stt==='yes'?' in':'')+(stt==='no'?' out':'')} title={state.members[i.id].name+' — '+attLabel(stt)}
+              style={stt==='yes'?{background:i.color,borderColor:i.color}:{}}
+              onClick={()=>setAttPick(p=>p===i.id?null:i.id)}><InstrIcon id={i.id} size={16}/></button>
+            {stt!=='none' && <span className={'att-badge '+stt}>{stt==='yes'?'✓':'✕'}</span>}
+            {attPick===i.id && <AttPop cur={stt} onPick={v=>{ setAttPick(null); patch(r.id,x=>{ x.attendance=x.attendance||{}; if(v) x.attendance[i.id]=v; else delete x.attendance[i.id]; }); }}/>}
+          </span>; })}
+        {guestList.map(n=>{ const k='g:'+n; const stt=attState(r.attendance && r.attendance[k]);
+          return <span key={n} className="att-slot">
+            <button className={'a'+(stt==='yes'?' in':'')+(stt==='no'?' out':'')} title={n+' — '+attLabel(stt)}
+              style={stt==='yes'?{background:GUEST_COLOR,borderColor:GUEST_COLOR}:{}}
+              onClick={()=>setAttPick(p=>p===k?null:k)}>{n.trim()[0].toUpperCase()}</button>
+            {stt!=='none' && <span className={'att-badge '+stt}>{stt==='yes'?'✓':'✕'}</span>}
+            {attPick===k && <AttPop cur={stt} onPick={v=>{ setAttPick(null); patch(r.id,x=>{ x.attendance=x.attendance||{}; if(v) x.attendance[k]=v; else delete x.attendance[k]; }); }}/>}
+          </span>; })}
       </div>
       {r.notes && <div className="reh-loc" style={{marginTop:10}} dir="auto">{r.notes}</div>}
       {!r.done && <RehearsalProposal r={r} update={update}/>}
@@ -4065,7 +4112,7 @@ function RehForm({shows,songs,members,guestList:guestListProp,onSave,onCancel}){
   const showSongs=showEntries.map(e=>(songs||[]).find(x=>x.id===e.songId)).filter(Boolean);
   const onToggleFocus=(group,id)=>setF(p=>{const res=toggleFocus(p.learn,p.practice,group,id);return {...p,learn:res.learn,practice:res.practice};});
   const onSetOther=(group,text)=>setF(p=>({...p,[group]:setOtherInArr(p[group],text)}));
-  const toggleAtt=id=>setF(p=>({...p,attendance:{...p.attendance,[id]:!p.attendance[id]}}));
+  const toggleAtt=id=>setF(p=>{ const a={...p.attendance}; if(attState(a[id])==='yes') delete a[id]; else a[id]='yes'; return {...p,attendance:a}; });
   const occ=Math.max(2,Math.min(12,+f.occurrences||2));
   const buildDates=()=>{ if(!f.date) return ['']; if(f.repeat==='none') return [f.date]; const step=f.repeat==='biweekly'?14:7; const out=[]; for(let k=0;k<occ;k++) out.push(addDaysLocal(f.date,step*k)); return out; };
   const dates=buildDates();
