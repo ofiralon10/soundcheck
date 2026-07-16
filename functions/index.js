@@ -334,6 +334,35 @@ function songFileSummary(song) {
   if (!files.length) return 'no files';
   return parts.join(', ');
 }
+// Sections every song is expected to have material for. Empty ones are called out
+// as MISSING so the manager can spot gaps; 'other'/'metronome'/'stem-rec' are
+// optional and only listed when they actually have files.
+const DOC_SECS = ['slide', 'vocals', 'drums', 'bass', 'guitar', 'keys'];
+const OPT_SECS = ['other', 'metronome'];
+function fmtFileName(f) {
+  return '"' + (f.name || 'unnamed') + '"'
+    + (f.stem ? ' [stem]' : '')
+    + (f.kind === 'link' ? ' [link]' : '')
+    + (f.ver ? ' [v' + f.ver + ']' : '');
+}
+// Full per-section file listing for one song, with names — lets the manager say
+// exactly which section of which song is missing a document.
+function songFilesDetail(song) {
+  const files = (song.files || []).filter(f => f.url);
+  if (!files.length) return '    (NO FILES AT ALL)';
+  const out = [];
+  DOC_SECS.forEach(sec => {
+    const fs = files.filter(f => fileCatOf(f) === sec);
+    out.push('    ' + sec + ': ' + (fs.length ? fs.map(fmtFileName).join(', ') : '*** MISSING ***'));
+  });
+  OPT_SECS.forEach(sec => {
+    const fs = files.filter(f => fileCatOf(f) === sec);
+    if (fs.length) out.push('    ' + sec + ': ' + fs.map(fmtFileName).join(', '));
+  });
+  const recs = files.filter(f => fileCatOf(f) === 'stem-rec');
+  if (recs.length) out.push('    personal stem recordings: ' + recs.map(f => (f.by || '?') + ' — "' + (f.name || '') + '"').join(', '));
+  return out.join('\n');
+}
 function buildManagerContextNode(board, show) {
   const songsAll = board.songs || [];
   const entries = (show.setlist || []).filter(e => !e.excluded);
@@ -347,6 +376,17 @@ function buildManagerContextNode(board, show) {
   });
   const inSet = new Set(entries.map(e => e.songId));
   const otherLines = songsAll.filter(s => !inSet.has(s.id)).map(s => '- "' + (s.title || 'Untitled') + '"' + (s.artist ? (' — ' + s.artist) : '') + ' | files: ' + songFileSummary(s));
+  // Full file inventory, per song, per section — for spotting gaps.
+  const fileDetailLines = [];
+  idxToSong.forEach((sid, i) => {
+    const s = songsAll.find(x => x.id === sid); if (!s) return;
+    fileDetailLines.push('#' + (i + 1) + ' "' + (s.title || 'Untitled') + '"');
+    fileDetailLines.push(songFilesDetail(s));
+  });
+  songsAll.filter(s => !inSet.has(s.id)).forEach(s => {
+    fileDetailLines.push('(not in show) "' + (s.title || 'Untitled') + '"');
+    fileDetailLines.push(songFilesDetail(s));
+  });
   const showLines = (board.shows || []).map(sh => {
     const active = (sh.setlist || []).filter(e => !e.excluded);
     return '- "' + (sh.name || 'Untitled') + '" — ' + (sh.date ? (fmtWhen(sh.date) + ' (' + daysUntil(sh.date) + ' days out)') : 'no date') + ', ' + active.length + ' songs, ' + pct(showOverall(sh)) + '% ready' + (sh.id === show.id ? ' [current]' : '');
@@ -381,6 +421,11 @@ function buildManagerContextNode(board, show) {
     'SETLIST (reference songs by #number; readiness scale todo/learning/practicing/ready; "files" shows what documents each song has):',
     ...(songLines.length ? songLines : ['(empty)']),
     ...(otherLines.length ? ['', 'OTHER SONGS in the library (not in this show), with their files:', ...otherLines] : []),
+    '',
+    'SONG FILES — full inventory of every file, by song and section. A section marked',
+    '*** MISSING *** has no document at all; use this to spot gaps (e.g. a song with no',
+    'slide, or no chart for a specific instrument). [stem] = a real stem audio file.',
+    ...(fileDetailLines.length ? fileDetailLines : ['(no songs)']),
     '',
     'UPCOMING REHEARSALS (reference by R-number):',
     ...(rehLines.length ? rehLines : ['(none scheduled)'])
