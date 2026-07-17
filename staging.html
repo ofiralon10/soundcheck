@@ -398,6 +398,32 @@
   .tab svg{width:21px;height:21px}
   .tab .ind{width:4px;height:4px;border-radius:50%;background:var(--ok);margin-top:1px;opacity:0}
   .tab.on .ind{opacity:1}
+  /* Tab overflow ("More") sheet */
+  .more-back{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:35;display:flex;align-items:flex-end;justify-content:center}
+  .more-sheet{width:100%;max-width:480px;background:var(--surface);border:1px solid var(--line-2);border-bottom:none;border-radius:18px 18px 0 0;padding:10px 12px calc(14px + env(safe-area-inset-bottom));box-shadow:0 -8px 30px rgba(0,0,0,.4)}
+  .more-grip{width:40px;height:4px;border-radius:2px;background:var(--line-2);margin:2px auto 12px}
+  .more-item{display:flex;align-items:center;gap:12px;width:100%;padding:12px 12px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);color:var(--text);font-size:14.5px;font-weight:600;cursor:pointer;margin-bottom:8px}
+  .more-item.on{border-color:var(--ok);color:var(--ok)}
+  .more-item svg{flex:none;color:var(--muted-2)}
+  /* Help tab cards */
+  .help-card{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:14px;border-radius:16px;background:var(--surface);border:2px solid;cursor:pointer}
+  .help-ic{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex:none}
+  .help-title{display:block;font-size:15px;font-weight:700;color:var(--text)}
+  .help-desc{display:block;font-size:12px;color:var(--muted);margin-top:2px;line-height:1.4}
+  .help-chev{font-size:26px;font-weight:700;flex:none;line-height:1}
+  /* Guided-tour (Coach) overlay */
+  .coach-layer{position:fixed;inset:0;z-index:4000}
+  .coach-catch{position:absolute;inset:0}
+  .coach-catch.coach-dim{background:rgba(8,8,12,.7)}
+  .coach-spot{position:absolute;border-radius:12px;border:2px solid var(--keys);box-shadow:0 0 0 9999px rgba(8,8,12,.68),0 0 16px 2px rgba(139,124,246,.7);pointer-events:none;transition:left .18s,top .18s,width .18s,height .18s;animation:coachPulse 1.4s ease-in-out infinite}
+  @keyframes coachPulse{0%,100%{box-shadow:0 0 0 9999px rgba(8,8,12,.68),0 0 0 0 rgba(139,124,246,.55)}50%{box-shadow:0 0 0 9999px rgba(8,8,12,.68),0 0 0 7px rgba(139,124,246,0)}}
+  .coach-point{position:absolute;pointer-events:none;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))}
+  .coach-point.down{animation:coachBobDown 1s ease-in-out infinite}
+  .coach-point.up{animation:coachBobUp 1s ease-in-out infinite}
+  @keyframes coachBobDown{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
+  @keyframes coachBobUp{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+  .coach-card{position:absolute;background:var(--surface);border:1px solid var(--keys);border-radius:14px;padding:13px 14px;box-shadow:0 8px 30px rgba(0,0,0,.5);pointer-events:auto}
+  .coach-done{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(320px,86vw);background:var(--surface);border:1px solid var(--line-2);border-radius:18px;padding:22px 20px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.55)}
   .authwrap{min-height:100vh;display:flex;flex-direction:column}
   .authmid{flex:1;display:flex;align-items:center;justify-content:center;padding:6px 18px 40px}
   .authmid>div{width:100%;max-width:380px}
@@ -422,7 +448,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.300';
+const VERSION='0.301';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -462,6 +488,10 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
+  '0.301':[
+    'New Help tab with guided "Show me how to…" walkthroughs — the app points exactly where to tap. First one: how to practice a song.',
+    'On phones, extra tabs now fold into a "More" (…) button.',
+  ],
   '0.300':[
     'View-only members now see the manager guidelines read-only, with a note to ask the manager in chat to change them.',
   ],
@@ -1535,6 +1565,11 @@ function App(){
   const [user,setUser]=useState(null);
   const [state,setState]=useState(null);
   const [tab,setTab]=useState('stage');
+  // Guided-tour ("Show me how to…") state. `coach` = {id, step, steps, opts} or null.
+  const [coach,setCoach]=useState(null);
+  const startCoach=(id,opts={})=>{ const steps=buildTour(id,opts,state); if(steps&&steps.length){ setCoach({id,opts,step:0,steps}); } };
+  const coachAdvance=()=>setCoach(c=>c?{...c,step:c.step+1}:c);
+  const coachExit=()=>setCoach(null);
   const [selectedShowId,setSelectedShowId]=useState(getSavedShow);
   const pickShow=(id)=>{ setSelectedShowId(id); setSavedShow(id); };
   const [goSongId,setGoSongId]=useState(null);
@@ -1725,7 +1760,9 @@ function App(){
       {tab==='admin'    && canAdmin && <Admin state={state} update={update} user={user} showId={curShowId} pickShow={pickShow} />}
       {tab==='album'    && <Album state={state} update={update} />}
       {tab==='setup'    && <Setup state={state} update={update} user={user} onSignOut={signOut} onSwitch={switchBoard} />}
+      {tab==='help'     && <Help state={state} startCoach={startCoach} />}
       <TabBar tab={tab} setTab={setTab} canAdmin={canAdmin} />
+      {coach && <Coach coach={coach} setTab={setTab} advance={coachAdvance} onExit={coachExit} />}
     </React.Fragment>
   );
 }
@@ -3545,7 +3582,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
             {fileCount>0 && <span className="song-icon-badge">{fileCount}</span>}
           </button>
-          <button className="song-icon-btn" style={{color:stemBtnColor}} onClick={e=>{e.stopPropagation();openStemPlayer();}} title="Practice">
+          <button className="song-icon-btn" data-coach={'practice-'+s.id} style={{color:stemBtnColor}} onClick={e=>{e.stopPropagation();openStemPlayer();}} title="Practice">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
           </button>
           <button className="song-icon-btn" onClick={e=>{e.stopPropagation();setRecPrompt(true);}} title="Record" style={{color:'var(--drums)'}}>
@@ -4945,19 +4982,193 @@ const ICONS={
   shows:'M4 3h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z M7 18h10 M9 15v3 M15 15v3',
   album:'M4 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5z M9 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M4 16l4-4 3 3 4-4 5 5',
   setup:'M10 3h4l.5 3 2 1 3-1.5 2 3.5-2.5 2v2l2.5 2-2 3.5-3-1.5-2 1L14 21h-4l-.5-3-2-1-3 1.5-2-3.5 2.5-2v-2L0 9',
-  admin:'M4 5h16v11H13l-4 3v-3H4z M8 9h8 M8 12h5'
+  admin:'M4 5h16v11H13l-4 3v-3H4z M8 9h8 M8 12h5',
+  help:'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z M9.4 9a2.6 2.6 0 1 1 4.3 2c-.9.7-1.7 1.1-1.7 2.2 M12 17h.01',
+  more:'M5 12h.01 M12 12h.01 M19 12h.01'
 };
-function TabBar({tab,setTab,canAdmin}){
-  const items=[['stage','Stage'],['setlist','Setlist'],['rehearse','Rehearsals'],['shows','Shows'],...(canAdmin?[['admin','Admin']]:[]),['album','Gallery'],['setup','Setup']];
+/* ---------- Help tab + guided tours ("Show me how to…") ---------- */
+// Each tour is a list of steps. A step points at a live DOM element (found by the
+// `sel` CSS selector — some carry a data-coach attribute) on a given tab; the
+// Coach overlay dims everything else, arrows at it, and only the tap on that
+// element advances. `needEnabled` waits for a disabled control (e.g. Play before
+// the audio loads).
+function buildTour(id, opts, state){
+  if(id==='practice'){
+    const song=((state&&state.songs)||[]).find(s=>s.id===opts.songId);
+    if(!song) return null;
+    const t=song.title||'this song';
+    return [
+      { tab:'setlist', sel:'[data-coach="practice-'+song.id+'"]', text:'Tap the ▶ Practice button on “'+t+'” to open the multi-track player.' },
+      { tab:'setlist', sel:'.stem-play', needEnabled:true, text:'Tap Play ▶ to start the backing tracks. Tip: open ⚙ CONFIG to mute your own instrument and play along.' },
+    ];
+  }
+  return null;
+}
+const HELP_TOURS=[
+  { id:'practice', label:'Show me how to practice a song', desc:'Open a song in the multi-track player and start the backing tracks.', color:'#3DD68C', pickSong:true },
+];
+function Help({state, startCoach}){
+  const [pickFor,setPickFor]=useState(null);
+  const songs=(state.songs||[]);
+  useBackHandler(!!pickFor,()=>setPickFor(null));
+  const start=(t)=>{ if(t.pickSong) setPickFor(t.id); else startCoach(t.id,{}); };
   return (
-    <nav className="tabbar">
-      {items.map(([id,label])=>(
-        <button key={id} className={'tab'+(tab===id?' on':'')} onClick={()=>setTab(id)}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d={ICONS[id]}/></svg>
-          {label}<span className="ind"></span>
-        </button>
-      ))}
-    </nav>
+    <div className="page">
+      <div className="section-h">Help</div>
+      <div style={{fontSize:13,color:'var(--muted)',lineHeight:1.55,marginBottom:14}}>Pick a walkthrough — the app takes you to the right screen and points exactly where to tap. Everything else is paused until you do that step.</div>
+      <div style={{display:'flex',flexDirection:'column',gap:11}}>
+        {HELP_TOURS.map(t=>(
+          <button key={t.id} className="help-card" style={{borderColor:t.color}} onClick={()=>start(t)}>
+            <span className="help-ic" style={{background:t.color}}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="#0a0a0a"><path d="M7 5v14l12-7z"/></svg>
+            </span>
+            <span style={{textAlign:'left',minWidth:0,flex:1}}>
+              <span className="help-title">{t.label}</span>
+              <span className="help-desc">{t.desc}</span>
+            </span>
+            <span className="help-chev" style={{color:t.color}}>›</span>
+          </button>
+        ))}
+      </div>
+      {pickFor && (
+        <div className="more-back" onClick={()=>setPickFor(null)}>
+          <div className="more-sheet" onClick={e=>e.stopPropagation()} style={{maxHeight:'72vh',overflowY:'auto'}}>
+            <div className="more-grip"></div>
+            <div style={{fontSize:14,fontWeight:700,padding:'2px 4px 8px'}}>Which song?</div>
+            {songs.length===0 && <div style={{fontSize:13,color:'var(--muted)',padding:'6px 4px'}}>No songs yet — add one in the Setlist tab first.</div>}
+            {songs.map(s=>{ const stems=(s.files||[]).filter(f=>f.stem).length; const col=stems>=6?'var(--ok)':stems>0?'var(--warn)':'var(--drums)';
+              return (
+                <button key={s.id} className="more-item" onClick={()=>{ setPickFor(null); startCoach('practice',{songId:s.id}); }}>
+                  <span style={{width:10,height:10,borderRadius:'50%',background:col,flex:'none'}} title={stems+' backing stems'}></span>
+                  <span style={{direction:'ltr',textAlign:'left',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} dir="auto">{s.title||'Untitled'}</span>
+                  <span style={{fontSize:11,color:'var(--muted)',flex:'none'}}>{stems?stems+'/6 stems':'no stems'}</span>
+                </button>
+              );
+            })}
+            <div style={{fontSize:11,color:'var(--muted)',padding:'8px 4px 2px'}}>Green = full backing tracks. A song with no stems won't have anything to play.</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+// The overlay that runs a tour: locates the target, dims the rest, arrows at it,
+// and lets ONLY a tap on the target advance. Any other tap is swallowed.
+function Coach({coach,setTab,advance,onExit}){
+  const step=coach.steps[coach.step];
+  const done=!step;
+  const [rect,setRect]=useState(null);
+  const [ready,setReady]=useState(false);
+  const elRef=useRef(null);
+  useBackHandler(true,onExit);
+  useEffect(()=>{ if(step&&step.tab) setTab(step.tab); },[coach.step]);
+  useEffect(()=>{
+    if(done){ setRect(null); return; }
+    let alive=true, raf, scrolled=false;
+    elRef.current=null; setRect(null); setReady(false);
+    const loop=()=>{
+      if(!alive) return;
+      const el=document.querySelector(step.sel);
+      if(el){
+        elRef.current=el;
+        if(!scrolled){ scrolled=true; try{ el.scrollIntoView({block:'center',inline:'nearest'}); }catch(_){} }
+        const r=el.getBoundingClientRect();
+        setRect({x:r.left,y:r.top,w:r.width,h:r.height});
+        setReady(!(step.needEnabled && el.disabled));
+      } else { elRef.current=null; setReady(false); }
+      raf=requestAnimationFrame(loop);
+    };
+    loop();
+    return ()=>{ alive=false; cancelAnimationFrame(raf); };
+  },[coach.step]);
+  const tryAct=(e)=>{
+    const r=rect, el=elRef.current; if(!r||!el) return;
+    if(step.needEnabled && el.disabled) return;
+    const pad=10;
+    const inside=e.clientX>=r.x-pad&&e.clientX<=r.x+r.w+pad&&e.clientY>=r.y-pad&&e.clientY<=r.y+r.h+pad;
+    if(inside){ try{ el.click(); }catch(_){} advance(); }
+  };
+  if(done){
+    return (
+      <div className="coach-layer">
+        <div className="coach-catch coach-dim" onClick={onExit}></div>
+        <div className="coach-done" onClick={e=>e.stopPropagation()}>
+          <div style={{fontSize:34}}>🎉</div>
+          <div style={{fontSize:16,fontWeight:700,margin:'6px 0 4px'}}>You're all set!</div>
+          <div style={{fontSize:13,color:'var(--muted)',marginBottom:14,lineHeight:1.5}}>That's how you practice a song. Stop the player any time with ■, and reopen it from any song's ▶ button.</div>
+          <button className="btn" onClick={onExit}>Done</button>
+        </div>
+      </div>
+    );
+  }
+  const vh=window.innerHeight, vw=window.innerWidth;
+  const below=rect ? (rect.y+rect.h/2) < vh*0.5 : true;
+  const cardW=Math.min(300, vw-24);
+  const cx=rect ? Math.max(12, Math.min(rect.x+rect.w/2-cardW/2, vw-cardW-12)) : 12;
+  const cardStyle=rect
+    ? (below ? {left:cx, top:Math.min(rect.y+rect.h+34, vh-190)} : {left:cx, bottom:Math.max(vh-rect.y+34, 96)})
+    : {left:12, bottom:110};
+  return (
+    <div className="coach-layer">
+      <div className="coach-catch" onClick={tryAct}></div>
+      {rect && <div className="coach-spot" style={{left:rect.x-8,top:rect.y-8,width:rect.w+16,height:rect.h+16}}></div>}
+      {rect && (
+        <div className={'coach-point '+(below?'down':'up')} style={below?{left:Math.max(14,Math.min(rect.x+rect.w/2-12,vw-36)),top:rect.y+rect.h+4}:{left:Math.max(14,Math.min(rect.x+rect.w/2-12,vw-36)),top:rect.y-30}}>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--keys)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">{below?<path d="M12 4v13M6 11l6 6 6-6"/>:<path d="M12 20V7M6 13l6-6 6 6"/>}</svg>
+        </div>
+      )}
+      <div className="coach-card" style={{...cardStyle, width:cardW}} onClick={e=>e.stopPropagation()}>
+        <div style={{fontSize:13.5,lineHeight:1.5}}>{step.text}</div>
+        {step.needEnabled && !ready && <div style={{fontSize:11,color:'var(--warn)',marginTop:7}}>Waiting for the player to load… if this song has no backing tracks, tap Exit.</div>}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:11}}>
+          <span style={{fontSize:11,color:'var(--muted)',fontFamily:'var(--mono)'}}>Step {coach.step+1} / {coach.steps.length}</span>
+          <button className="btn ghost sm" onClick={onExit}>Exit guide</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+function TabBar({tab,setTab,canAdmin}){
+  const items=[['stage','Stage'],['setlist','Setlist'],['rehearse','Rehearsals'],['shows','Shows'],...(canAdmin?[['admin','Admin']]:[]),['album','Gallery'],['setup','Setup'],['help','Help']];
+  const wide=useWide(760);
+  const [moreOpen,setMoreOpen]=useState(false);
+  useBackHandler(moreOpen,()=>setMoreOpen(false));
+  // On narrow screens keep the first few tabs inline and fold the rest under "More".
+  const PRIMARY=4;
+  const primary=wide?items:items.slice(0,PRIMARY);
+  const overflow=wide?[]:items.slice(PRIMARY);
+  const overflowActive=overflow.some(([id])=>id===tab);
+  const tabBtn=([id,label],onClick)=>(
+    <button key={id} className={'tab'+(tab===id?' on':'')} onClick={onClick||(()=>setTab(id))}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d={ICONS[id]}/></svg>
+      {label}<span className="ind"></span>
+    </button>
+  );
+  return (
+    <React.Fragment>
+      <nav className="tabbar">
+        {primary.map(it=>tabBtn(it))}
+        {overflow.length>0 && (
+          <button className={'tab'+(overflowActive?' on':'')} onClick={()=>setMoreOpen(true)}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d={ICONS.more}/></svg>
+            More<span className="ind"></span>
+          </button>
+        )}
+      </nav>
+      {moreOpen && (
+        <div className="more-back" onClick={()=>setMoreOpen(false)}>
+          <div className="more-sheet" onClick={e=>e.stopPropagation()}>
+            <div className="more-grip"></div>
+            {overflow.map(([id,label])=>(
+              <button key={id} className={'more-item'+(tab===id?' on':'')} onClick={()=>{setTab(id);setMoreOpen(false);}}>
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d={ICONS[id]}/></svg>
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </React.Fragment>
   );
 }
 
