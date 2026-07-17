@@ -64,6 +64,13 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // Scheduled manager tasks. Created/read/updated ONLY by the Cloud Functions
+    // (Admin SDK, which bypasses these rules) — the manager schedules them and the
+    // managerTasks scheduler runs them. Deny all direct client access.
+    match /managerTasks/{taskId} {
+      allow read, write: if false;
+    }
+
     // Manager chat transcript. Read/written ONLY by the managerChat Cloud
     // Function (Admin SDK, which bypasses these rules). Clients reach it solely
     // through the callable, which enforces the allowlist — so deny direct access.

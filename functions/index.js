@@ -201,6 +201,59 @@ async function loadState(bandId) {
 }
 function saveState(bandId, st) { return db.collection('managerState').doc(bandId).set(st, { merge: true }); }
 
+/* ---------- Scheduled manager tasks ----------
+   The manager can schedule an action for a future time; the `managerTasks`
+   scheduled function (below) runs due ones by re-invoking the agent loop, so it
+   acts even when nobody has the app open. Stored in their own collection (not on
+   the board doc, which the app overwrites wholesale). Client access is denied —
+   only these Admin-SDK functions read/write them. */
+function tasksCol() { return db.collection('managerTasks'); }
+// Offset (ms) that `tz` is ahead of UTC at the given instant.
+function tzOffsetMs(date, tz) {
+  const dtf = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const p = dtf.formatToParts(date).reduce((a, x) => (a[x.type] = x.value, a), {});
+  const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+  return asUTC - date.getTime();
+}
+// Resolve a when-string to epoch ms. Full ISO with Z/offset is used as-is; a bare
+// wall-clock 'YYYY-MM-DDTHH:mm[:ss]' is interpreted in TZ (Asia/Jerusalem).
+function resolveWhen(str) {
+  if (!str || typeof str !== 'string') return null;
+  const s = str.trim();
+  if (/[zZ]$|[+-]\d{2}:?\d{2}$/.test(s)) { const t = Date.parse(s); return isNaN(t) ? null : t; }
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!m) { const t = Date.parse(s); return isNaN(t) ? null : t; }
+  const guess = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6] || 0);
+  return guess - tzOffsetMs(new Date(guess), TZ);
+}
+function fmtWhenMs(ms) { return fmtWhen(new Date(ms).toISOString()); }
+async function loadPendingTasks(bandId) {
+  // Single-field filter (auto-indexed) + status filter in code — no composite index.
+  const snap = await tasksCol().where('bandId', '==', bandId).get();
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(x => x.status === 'pending')
+    .sort((a, b) => (a.runAtMs || 0) - (b.runAtMs || 0));
+}
+async function createScheduledTask(bandId, showId, inp, email) {
+  const ms = resolveWhen(inp.when);
+  if (!ms) return 'I need a valid time like "2026-07-20T09:00" (Asia/Jerusalem). Nothing scheduled.';
+  if (ms < Date.now() - 60000) return 'That time is in the past — give me a future time.';
+  const instruction = (inp.instruction || '').trim();
+  if (!instruction) return 'I need to know what to do at that time. Nothing scheduled.';
+  await tasksCol().doc().set({ bandId, showId: showId || null, runAtMs: ms, whenText: String(inp.when || ''), instruction, title: (inp.title || '').trim(), status: 'pending', createdBy: email || ADMIN_EMAIL, createdAt: Date.now() });
+  return 'Scheduled ✓ — at ' + fmtWhenMs(ms) + ' I will: ' + instruction + ' (runs even with the app closed).';
+}
+async function listScheduledTasksText(bandId) {
+  const t = await loadPendingTasks(bandId);
+  if (!t.length) return 'No pending scheduled tasks.';
+  return 'Pending scheduled tasks:\n' + t.map((x, i) => 'T' + (i + 1) + ' — ' + fmtWhenMs(x.runAtMs) + ': ' + (x.title ? (x.title + ' — ') : '') + x.instruction).join('\n');
+}
+async function cancelScheduledTask(ctx, inp) {
+  const id = (ctx.taskIds || [])[(parseInt(inp.task, 10) || 0) - 1];
+  if (!id) return 'No scheduled task T' + inp.task + '.';
+  await tasksCol().doc(id).set({ status: 'cancelled', cancelledAt: Date.now() }, { merge: true });
+  return 'Cancelled scheduled task T' + inp.task + '.';
+}
+
 /* ---------- brief builders ---------- */
 function weakestSongs(board, show, n) {
   const entries = (show.setlist || []).filter(e => !e.excluded);
@@ -318,6 +371,7 @@ const MANAGER_SYSTEM =
   'You are the band\'s manager, in an ongoing chat with a band member. You have the current band data and the owner\'s standing guidelines below. ' +
   'Answer questions and give concrete, motivating advice. When asked to change something — save a guideline, set a player\'s status, set a rehearsal\'s focus, or schedule a rehearsal — use the tools, then confirm in plain language what you did. ' +
   'When the member explicitly asks you to notify, alert, ping, or remind someone right now, use send_notification to push a phone notification (keep the title <=6 words and the body short). Do not send notifications unprompted. ' +
+  'You CAN run things later, on a schedule, even when nobody has the app open — use schedule_task with a future time (see CURRENT TIME in the context) and a clear instruction to your future self; use list_scheduled_tasks / cancel_scheduled_task to manage them. For a repeating task, re-schedule the next occurrence when each run finishes. Never tell anyone you cannot run background or timed tasks — you can, via schedule_task. ' +
   'Reference songs by their #number and rehearsals by their R-number. Always honor the owner guidelines. Be concise and direct — this is a chat, not a report.\n' +
   'FORMATTING — the chat renders these, so use them to make messages scannable:\n' +
   '  **bold**, *italic*, `code`, "- " bullet lines, and "## " for a small heading.\n' +
@@ -338,7 +392,10 @@ const MANAGER_TOOLS = [
   { name: 'ask_members', description: 'Ask linked band members a multiple-choice question over Telegram (tappable option buttons) and collect their answers. Use when asked to poll/ask/survey the band with options.', input_schema: { type: 'object', properties: { question: { type: 'string' }, options: { type: 'array', items: { type: 'string' }, description: '2-8 answer options' }, recipients: { type: 'string', description: '"all" for everyone linked, or a comma-separated list of names/emails' } }, required: ['question', 'options'] } },
   { name: 'get_poll_results', description: 'Read back the answers to the most recent question asked via ask_members (tally + who answered what + who hasn\'t).', input_schema: { type: 'object', additionalProperties: false, properties: {} } },
   { name: 'show_plan', description: 'Display a rehearsal plan in the app (the "Rehearsal plan" panel under the chat) for the band to see. Use when asked to lay out / show / post a plan. Write song names and docs as plain text.', input_schema: { type: 'object', properties: { summary: { type: 'string', description: 'One or two lines of overview' }, sessions: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { title: { type: 'string', description: 'e.g. "Rehearsal 1 — Sun Mar 8"' }, learn: { type: 'array', items: { type: 'string' } }, practice: { type: 'array', items: { type: 'string' } }, docs: { type: 'array', items: { type: 'string' }, description: 'Docs to prepare, e.g. "slide for Black Bird"' }, note: { type: 'string' } }, required: ['title'] } } }, required: ['sessions'] } },
-  { name: 'set_approval', description: "Record a player's attendance answer for a rehearsal. Use status 'yes' when they confirm they can make it, 'no' when they say they can't, 'maybe' when they're unsure, and 'clear' to reset them to un-answered.", input_schema: { type: 'object', properties: { rehearsal: { type: 'integer', description: 'R-number of the rehearsal' }, instrument: { type: 'string', enum: ['keys', 'drums', 'guitar', 'bass', 'vocals'] }, status: { type: 'string', enum: ['yes', 'no', 'maybe', 'clear'], description: "yes = can attend, no = can't attend, maybe = unsure, clear = un-answered" } }, required: ['rehearsal', 'instrument', 'status'] } }
+  { name: 'set_approval', description: "Record a player's attendance answer for a rehearsal. Use status 'yes' when they confirm they can make it, 'no' when they say they can't, 'maybe' when they're unsure, and 'clear' to reset them to un-answered.", input_schema: { type: 'object', properties: { rehearsal: { type: 'integer', description: 'R-number of the rehearsal' }, instrument: { type: 'string', enum: ['keys', 'drums', 'guitar', 'bass', 'vocals'] }, status: { type: 'string', enum: ['yes', 'no', 'maybe', 'clear'], description: "yes = can attend, no = can't attend, maybe = unsure, clear = un-answered" } }, required: ['rehearsal', 'instrument', 'status'] } },
+  { name: 'schedule_task', description: 'Schedule an action to run automatically at a future time — even when nobody has the app open. At that moment you are re-invoked with the instruction and can use your other tools (send_notification, send_telegram, ask_members, board tools). Use for reminders, follow-ups and time-based nudges. For a REPEATING task, at the end of each run schedule the next occurrence. Times are ' + TZ + '.', input_schema: { type: 'object', properties: { when: { type: 'string', description: 'When to run, as YYYY-MM-DDTHH:MM in ' + TZ + ' local time (or full ISO 8601 with offset). Must be in the future — see CURRENT TIME in the context.' }, instruction: { type: 'string', description: 'Exactly what to do when it runs, written as an instruction to your future self. Be specific: who to message, what to ask or say.' }, title: { type: 'string', description: 'Optional short label.' } }, required: ['when', 'instruction'] } },
+  { name: 'list_scheduled_tasks', description: 'List the pending scheduled tasks you have set for this band (also shown as T-numbers in the context).', input_schema: { type: 'object', additionalProperties: false, properties: {} } },
+  { name: 'cancel_scheduled_task', description: 'Cancel a pending scheduled task by its T-number.', input_schema: { type: 'object', properties: { task: { type: 'integer' } }, required: ['task'] } }
 ];
 
 function genId() { return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
@@ -385,7 +442,8 @@ function songFilesDetail(song) {
   if (recs.length) out.push('    personal stem recordings: ' + recs.map(f => (f.by || '?') + ' — "' + (f.name || '') + '"').join(', '));
   return out.join('\n');
 }
-function buildManagerContextNode(board, show) {
+function buildManagerContextNode(board, show, opts) {
+  opts = opts || {};
   const songsAll = board.songs || [];
   const entries = (show.setlist || []).filter(e => !e.excluded);
   const idxToSong = []; const songLines = [];
@@ -432,8 +490,13 @@ function buildManagerContextNode(board, show) {
   });
   const g = (board.managerGuidelines || '').trim();
   const lineup = CORE.map(id => LABEL[id] + ' = ' + ((board.members && board.members[id] && board.members[id].name) || '(unnamed)')).join(', ');
+  const taskIds = [];
+  const taskLines = (opts.tasks || []).map((t, i) => { taskIds.push(t.id); return 'T' + (i + 1) + ' — ' + fmtWhenMs(t.runAtMs) + ': ' + (t.title ? (t.title + ' — ') : '') + t.instruction; });
+  const nowLine = 'CURRENT TIME: ' + (opts.nowMs ? new Date(opts.nowMs).toLocaleString('en-GB', { timeZone: TZ }) : '(unknown)') + ' (' + TZ + '). Schedule future tasks relative to this.';
   const context = [
     g ? ('OWNER GUIDELINES (always honor these):\n' + g) : 'OWNER GUIDELINES: (none set)',
+    '',
+    nowLine,
     '',
     'BAND: ' + (board.band || ''),
     'LINEUP: ' + lineup,
@@ -452,9 +515,12 @@ function buildManagerContextNode(board, show) {
     ...(fileDetailLines.length ? fileDetailLines : ['(no songs)']),
     '',
     'UPCOMING REHEARSALS (reference by R-number):',
-    ...(rehLines.length ? rehLines : ['(none scheduled)'])
+    ...(rehLines.length ? rehLines : ['(none scheduled)']),
+    '',
+    'SCHEDULED TASKS you have set (reference by T-number; times are ' + TZ + '):',
+    ...(taskLines.length ? taskLines : ['(none)'])
   ].join('\n');
-  return { context, idxToSong, rehIds };
+  return { context, idxToSong, rehIds, taskIds };
 }
 
 function applyOpToBoard(op, board) {
@@ -530,6 +596,61 @@ async function anthropicRaw(key, body) {
   return res.json();
 }
 
+// The shared manager agent loop. Runs the tool-use conversation and returns the
+// reply plus the board `ops` (for the caller to persist) and the tool names used.
+// Used by both managerChat (interactive) and the managerTasks scheduler (autonomous).
+async function runManagerLoop({ bandId, board, show, ctx, apiMsgs, email, key }) {
+  const sys = MANAGER_SYSTEM + '\n\n' + ctx.context;
+  const work = JSON.parse(JSON.stringify(board));   // in-loop tool effects land here
+  const ops = []; const actions = []; let reply = '';
+  for (let step = 0; step < 6; step++) {
+    const data = await anthropicRaw(key, { model: MODEL, max_tokens: 2000, system: sys, messages: apiMsgs, tools: MANAGER_TOOLS });
+    if (data.stop_reason === 'refusal') { reply = 'Sorry — I can\'t help with that one.'; break; }
+    apiMsgs.push({ role: 'assistant', content: data.content });
+    const toolUses = (data.content || []).filter(b => b.type === 'tool_use');
+    if (data.stop_reason === 'tool_use' && toolUses.length) {
+      const results = [];
+      for (const tu of toolUses) {
+        let out; const inp = tu.input || {};
+        if (tu.name === 'send_notification') {
+          try {
+            const n = await pushToOwner(inp.title || 'Band manager', inp.body || '');
+            out = n > 0 ? ('Notification pushed to ' + n + ' device' + (n === 1 ? '' : 's') + '.')
+                        : 'No devices are registered for notifications yet — enable notifications in Setup first.';
+          } catch (e) { out = 'Could not send the notification: ' + e.message; }
+        } else if (tu.name === 'send_telegram') {
+          try { out = await sendTelegramToMember(bandId, inp.recipient || 'me', inp.message || '', email); }
+          catch (e) { out = 'Could not send the Telegram message: ' + e.message; }
+        } else if (tu.name === 'ask_members') {
+          try { out = await tgAskMembers(bandId, inp, email); }
+          catch (e) { out = 'Could not send the question: ' + e.message; }
+        } else if (tu.name === 'get_poll_results') {
+          try { out = await tgPollResults(bandId); }
+          catch (e) { out = 'Could not read the results: ' + e.message; }
+        } else if (tu.name === 'schedule_task') {
+          try { out = await createScheduledTask(bandId, show.id, inp, email); }
+          catch (e) { out = 'Could not schedule that: ' + e.message; }
+        } else if (tu.name === 'list_scheduled_tasks') {
+          try { out = await listScheduledTasksText(bandId); }
+          catch (e) { out = 'Could not list tasks: ' + e.message; }
+        } else if (tu.name === 'cancel_scheduled_task') {
+          try { out = await cancelScheduledTask(ctx, inp); }
+          catch (e) { out = 'Could not cancel: ' + e.message; }
+        } else {
+          out = applyManagerTool(tu.name, inp, ctx, show.id, work, ops);
+        }
+        actions.push(tu.name);
+        results.push({ type: 'tool_result', tool_use_id: tu.id, content: out });
+      }
+      apiMsgs.push({ role: 'user', content: results });
+      continue;
+    }
+    reply = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+    break;
+  }
+  return { reply, ops, actions };
+}
+
 exports.managerChat = onCall({ secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN] }, async (req) => {
   const email = req.auth && req.auth.token && req.auth.token.email;
   if (!email) throw new HttpsError('unauthenticated', 'Please sign in first.');
@@ -551,54 +672,17 @@ exports.managerChat = onCall({ secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN] }, async
   const show = (board.shows || []).find(s => s.id === showId) || (board.shows || [])[0];
   if (!show) throw new HttpsError('failed-precondition', 'No show to discuss.');
 
-  const ctx = buildManagerContextNode(board, show);
-  const sys = MANAGER_SYSTEM + '\n\n' + ctx.context;
+  const nowMs = Date.now();
+  const tasks = await loadPendingTasks(bandId);
+  const ctx = buildManagerContextNode(board, show, { nowMs, tasks });
   const apiMsgs = messages.slice(-20).map(m => ({ role: m.role, content: m.text }));
   apiMsgs.push({ role: 'user', content: String(message) });
 
-  const work = JSON.parse(JSON.stringify(board));   // apply tool effects here for in-loop results
-  const ops = [];
   const key = ANTHROPIC_KEY.value();
-  let reply = ''; const actions = [];
+  let reply = '', actions = [], ops = [];
   try {
-    for (let step = 0; step < 6; step++) {
-      const data = await anthropicRaw(key, { model: MODEL, max_tokens: 2000, system: sys, messages: apiMsgs, tools: MANAGER_TOOLS });
-      if (data.stop_reason === 'refusal') { reply = 'Sorry — I can\'t help with that one.'; break; }
-      apiMsgs.push({ role: 'assistant', content: data.content });
-      const toolUses = (data.content || []).filter(b => b.type === 'tool_use');
-      if (data.stop_reason === 'tool_use' && toolUses.length) {
-        const results = [];
-        for (const tu of toolUses) {
-          let out;
-          if (tu.name === 'send_notification') {
-            const inp = tu.input || {};
-            try {
-              const n = await pushToOwner(inp.title || 'Band manager', inp.body || '');
-              out = n > 0 ? ('Notification pushed to ' + n + ' device' + (n === 1 ? '' : 's') + '.')
-                          : 'No devices are registered for notifications yet — enable notifications in Setup first.';
-            } catch (e) { out = 'Could not send the notification: ' + e.message; }
-          } else if (tu.name === 'send_telegram') {
-            const inp = tu.input || {};
-            try { out = await sendTelegramToMember(bandId, inp.recipient || 'me', inp.message || '', email); }
-            catch (e) { out = 'Could not send the Telegram message: ' + e.message; }
-          } else if (tu.name === 'ask_members') {
-            try { out = await tgAskMembers(bandId, tu.input || {}, email); }
-            catch (e) { out = 'Could not send the question: ' + e.message; }
-          } else if (tu.name === 'get_poll_results') {
-            try { out = await tgPollResults(bandId); }
-            catch (e) { out = 'Could not read the results: ' + e.message; }
-          } else {
-            out = applyManagerTool(tu.name, tu.input || {}, ctx, show.id, work, ops);
-          }
-          actions.push(tu.name);
-          results.push({ type: 'tool_result', tool_use_id: tu.id, content: out });
-        }
-        apiMsgs.push({ role: 'user', content: results });
-        continue;
-      }
-      reply = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
-      break;
-    }
+    const r = await runManagerLoop({ bandId, board, show, ctx, apiMsgs, email, key });
+    reply = r.reply; actions = r.actions; ops = r.ops;
   } catch (e) {
     logger.error('managerChat LLM error: ' + e.message);
     if (/anthropic 401/.test(e.message || '')) throw new HttpsError('failed-precondition', 'The manager\'s Anthropic API key is invalid — reset the ANTHROPIC_KEY secret and redeploy.');
@@ -622,6 +706,72 @@ exports.managerChat = onCall({ secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN] }, async
   }
   return { reply, messages, actions };
 });
+
+/* ==================== SCHEDULED MANAGER TASKS ====================
+   Runs every 15 minutes. Any pending task whose time has arrived is executed by
+   re-invoking the manager loop with the stored instruction, so the manager acts
+   autonomously (sends notifications/Telegram, runs polls, updates the board) even
+   when nobody has the app open. Each run posts a note into the chat so the owner
+   sees what happened, and the task is marked done. */
+const SCHED_PREFIX =
+  '[AUTONOMOUS SCHEDULED RUN — this fired at its scheduled time; nobody is watching the chat. ' +
+  'Carry out the instruction NOW using your tools (send_notification / send_telegram / ask_members / board tools as appropriate) — actually do it, do not just describe it. ' +
+  'If this is a recurring task, schedule the next occurrence with schedule_task before finishing. End with a one-line summary of what you did.]\n\nInstruction: ';
+
+exports.managerTasks = onSchedule(
+  { schedule: 'every 15 minutes', timeZone: TZ, secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN] },
+  async () => {
+    const key = ANTHROPIC_KEY.value();
+    const now = Date.now();
+    const boards = await ownerBoards();
+    for (const board of boards) {
+      const due = (await loadPendingTasks(board.id)).filter(t => (t.runAtMs || 0) <= now);
+      if (!due.length) continue;
+      const boardRef = db.collection('boards').doc(board.id);
+      for (const task of due) {
+        const taskRef = tasksCol().doc(task.id);
+        // Claim atomically so an overlapping run can't execute the same task twice.
+        const claimed = await db.runTransaction(async (tx) => {
+          const s = await tx.get(taskRef);
+          if (!s.exists || s.data().status !== 'pending') return false;
+          tx.set(taskRef, { status: 'running', startedAt: Date.now() }, { merge: true });
+          return true;
+        });
+        if (!claimed) continue;
+        try {
+          const fresh = (await boardRef.get()).data() || board;
+          const show = (fresh.shows || []).find(s => s.id === task.showId) || (fresh.shows || [])[0];
+          if (!show) { await taskRef.set({ status: 'done', ranAt: Date.now(), result: 'no show' }, { merge: true }); continue; }
+          const ctx = buildManagerContextNode(fresh, show, { nowMs: Date.now(), tasks: await loadPendingTasks(board.id) });
+          const apiMsgs = [{ role: 'user', content: SCHED_PREFIX + (task.instruction || '') }];
+          const { reply, ops, actions } = await runManagerLoop({ bandId: board.id, board: fresh, show, ctx, apiMsgs, email: ADMIN_EMAIL, key });
+          if (ops.length) {
+            await db.runTransaction(async (tx) => {
+              const snap = await tx.get(boardRef);
+              if (!snap.exists) return;
+              const b = snap.data();
+              ops.forEach(op => applyOpToBoard(op, b));
+              b._updatedAt = new Date().toISOString();
+              tx.set(boardRef, b);
+            });
+          }
+          // Leave a trace in the chat so the owner sees what the manager did.
+          try {
+            const chatRef = db.collection('managerChat').doc(board.id);
+            const cs = await chatRef.get();
+            const msgs = (cs.exists && Array.isArray(cs.data().messages)) ? cs.data().messages : [];
+            msgs.push({ role: 'assistant', text: '⏰ *Scheduled task ran* — ' + (task.title || task.instruction || '') + '\n\n' + (reply || '(done)'), ts: Date.now() });
+            await chatRef.set({ messages: msgs.slice(-40) }, { merge: true });
+          } catch (e) { logger.error('task chat note failed: ' + e.message); }
+          await taskRef.set({ status: 'done', ranAt: Date.now(), result: (reply || '').slice(0, 500), actions }, { merge: true });
+        } catch (e) {
+          logger.error('managerTask ' + task.id + ' failed: ' + e.message);
+          await taskRef.set({ status: 'error', ranAt: Date.now(), error: (e.message || '').slice(0, 300) }, { merge: true });
+        }
+      }
+    }
+  }
+);
 
 /* ============================ TELEGRAM WEBHOOK ============================
    Telegram POSTs bot updates here. On "/start <code>" it links the sender's
