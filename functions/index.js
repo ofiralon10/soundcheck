@@ -708,7 +708,7 @@ exports.managerChat = onCall({ secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN] }, async
 });
 
 /* ==================== SCHEDULED MANAGER TASKS ====================
-   Runs every 15 minutes. Any pending task whose time has arrived is executed by
+   Runs every 5 minutes. Any pending task whose time has arrived is executed by
    re-invoking the manager loop with the stored instruction, so the manager acts
    autonomously (sends notifications/Telegram, runs polls, updates the board) even
    when nobody has the app open. Each run posts a note into the chat so the owner
@@ -719,7 +719,7 @@ const SCHED_PREFIX =
   'If this is a recurring task, schedule the next occurrence with schedule_task before finishing. End with a one-line summary of what you did.]\n\nInstruction: ';
 
 exports.managerTasks = onSchedule(
-  { schedule: 'every 15 minutes', timeZone: TZ, secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN] },
+  { schedule: 'every 5 minutes', timeZone: TZ, secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN] },
   async () => {
     const key = ANTHROPIC_KEY.value();
     const now = Date.now();
