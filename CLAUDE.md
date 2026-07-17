@@ -39,7 +39,7 @@ You cannot run Firebase locally. To check a change before handing it off:
 - **Versioning.** There's a `const VERSION='x.yyy'` near the top of the script, rendered next
   to the SOUNDCHECK wordmark. **Every change bumps the right-hand number by 1** (0.103 → 0.104).
   Never change the left-hand number unless explicitly told. The owner uses the on-screen version
-  to confirm a deploy landed. Current version: **0.260**.
+  to confirm a deploy landed. Current version: **0.298**.
   **This session ports to BOTH staging.html and index.html by default** (owner's standing
   request); still apply the two index.html fixes below on every port.
 - **Edit staging.html first.** Don't touch `index.html` until the owner asks to port a tested change.
@@ -52,12 +52,22 @@ You cannot run Firebase locally. To check a change before handing it off:
 - **State doc shape** (`boards/{bandId}`): `band`, `bandArt`, `shows[]` (replaces old `concert`),
   `members` (per instrument: keys/drums/guitar/bass/vocals), `songs[]`, `rehearsals[]`,
   `activity[]`, `album[]`, `access`, `memberEmails`, `_rev`, `_updatedAt`.
+  AI-manager fields: `managerGuidelines` (owner's standing guidelines string),
+  `managerChatAllow` (emails allowed to chat + see the Admin tab), `telegramBot`
+  (this band's bot username), `managerPlan` (`{summary, sessions[], updatedAt}` shown
+  in the Admin plan panel).
   Each show: `{id, name, date, venue, setlist[], readinessHistory[]}`.
   Each setlist entry: `{songId, parts:{}, guests:[], encore, excluded}`.
+  Each rehearsal: `{id, showId, date, duration, location, notes, focusLearn[], focusPractice[],
+  attendance:{}, apprReset, coveredSongs[], proposal, done}`. `attendance` is per-participant
+  (`instrumentId` or `g:GuestName` → `'yes'|'no'|'maybe'`; legacy `true` = yes, absent = unanswered).
+  `apprReset` marks that migrate() cleared old approvals once.
   Each song: `{id, title, artist, cover, files[], notes, duration, songKey, tempo, zoomPlans}`.
   Each file: `{id, name, kind:'upload'|'link', url, path, size, type, cat, stem?, by?, ver?,
-  srcName?, sync?}`. `stem:true` marks true stem files (from Get Stems); `ver`/`srcName` track
+  srcName?, sync?, ann?}`. `stem:true` marks true stem files (from Get Stems); `ver`/`srcName` track
   file versions from Setlist Files Update; `sync` (seconds) is the trim/offset on stem-rec files.
+  `ann` = `{path, url, w, h}`, a transparent-PNG freehand-drawing overlay for an image slide
+  (see Practice slide drawing).
   `song.zoomPlans` = per-section, per-device zoom keyframes (see Practice slide section).
   `defaultState()` creates it; `migrate()` defaults/normalizes on every load —
   **add new fields' defaults to `migrate()`** so old docs don't break.
@@ -71,7 +81,11 @@ You cannot run Firebase locally. To check a change before handing it off:
 - **Changelog**: update the `CHANGELOG` object with entries for each version that ships to production.
   The "What's New" modal shows on first load when version changes.
 
-## Tabs & components (staging.html, v0.260)
+## Tabs & components (staging.html, v0.298)
+
+**Tab bar order**: Stage · Setlist · Shows · Rehearsals · Gallery · **Admin** · Setup.
+The **Admin tab** (see "AI Manager" section below) is gated to the manager-chat
+allowlist (owner + `managerChatAllow` emails); everyone else does not see it.
 
 ### Stage tab
 - Show-readiness dashboard: overall %, tick visualization, song count, ready count, set length.
@@ -79,8 +93,12 @@ You cannot run Firebase locally. To check a change before handing it off:
   modal** listing all active songs with inline `StatusPills` for that instrument — allows mass status
   updates without opening songs individually. Layout: song name + artist on one line (LTR forced),
   pills below.
-- **Next rehearsal** card with time range (e.g. "9:00 PM–11:00 PM"), live indicator, focus song tags.
-  Tapping a focus tag navigates to that song in the Setlist tab.
+- **Next rehearsal** card with time range (e.g. "9:00 PM–11:00 PM"), live indicator, and the
+  shared rich focus-song view (`FocusTags`: one song per line, cover art + name, Practice above
+  Learn, each group in a rounded box outlined in its color). Tapping a focus song navigates to it.
+  Card shows an `ApprovalBadge` next to the date (green ✓ all can attend / red ✕ someone can't /
+  red ! answers pending) and an `AttendanceAnswer` button beside "Propose new time" to answer your
+  own attendance (marks your `MY_INSTRS`) via the shared `AttPop` ✓/?/✕ picker.
 - **Readiness graph**: SVG line chart of overall readiness over 52 weeks. Data stored in
   `readinessHistory[]` as `{d:'YYYY-MM-DD', v:0-100}`, one point per day, capped at 365.
   Seeded on first `migrate()` when history is empty and songs exist.
@@ -203,6 +221,18 @@ You cannot run Firebase locally. To check a change before handing it off:
   so manual taps persist). Opening a file that has positions starts on its **first** position
   (v0.250). Plans survive file replacement (keyed by section) and are separate per phone/tablet.
 
+### Practice slide freehand drawing (v0.293)
+- **Draw on image slides** (not PDFs — a canvas can't align to the PDF iframe). A **pencil button**
+  in the transport bar toggles draw mode; a floating `.draw-bar` gives pen (color+thickness dialog:
+  6 colors, 1–24px), **Undo**, **Clear**, **Save**, **Done**.
+- `DrawSlide` renders the `<img>` + an overlaid `<canvas>` at the image's natural resolution, laid
+  out at the fitted display size inside `SlideViewer`, so strokes ride the same zoom/pan transform.
+  While drawing, `SlideViewer` gets `drawMode` (locks pan/zoom + tap-switch) and the canvas captures
+  pointer events. Strokes stored in canvas-pixel space; pen width scaled by current zoom.
+- **Save** exports a transparent PNG to `files/{BOARD}/{fileId}-annotation.png` and stores
+  `file.ann={path,url,w,h}` on the song file; it reloads as the base layer next time so drawings
+  persist and stack. **Clear** deletes the storage object + `file.ann`.
+
 ### Stem recording (v0.187+, heavily reworked through v0.260)
 - **Record your part over backing stems.** Flow: `startStemRec` (prepare) → dialog → GO
   (`beginStemRec`, a direct gesture) → REC → save/discard. States: `preparing`/`ready`/`recording`.
@@ -315,9 +345,13 @@ You cannot run Firebase locally. To check a change before handing it off:
   actually covered. Stores `coveredSongs[]` array on the rehearsal.
 - **Song rehearsal count**: `songRehCount(songId, rehearsals)` counts how many done rehearsals covered
   that song. Shown as `N×` badge on song rows.
-- Focus songs: Practice/Learn split with `FocusPicker` and `FocusTags`. The **Practice/Learn labels
-  are filled** with their color (amber/blue) + dark text (v0.255).
-- Attendance tracking per instrument + guests.
+- Focus songs: Practice/Learn split with `FocusPicker` and `FocusTags`. `FocusTags` renders the
+  shared rich view (one song per line, cover art + name; each group boxed in its color) used on
+  both Stage and Rehearsals (v0.295).
+- **Attendance** per instrument + guests, four-state (v0.298): tap a player chip → `AttPop` picker
+  (✓ can attend / ? maybe / ✕ can't / — clear). Chip shows a corner badge (green ✓ / amber ? /
+  red ✕). Helpers: `attState(v)` normalizes `'yes'|'no'|'maybe'|'none'` (legacy `true`→yes),
+  `attLabel`, `attGlyph`, `rehAllApproved`, `rehAnyDeclined`. Same `ApprovalBadge` as Stage.
 - `RehearsalProposal` for time-change proposals with voting.
 
 ### Gallery tab (formerly "Album")
@@ -333,6 +367,11 @@ You cannot run Firebase locally. To check a change before handing it off:
 - Concert details (name, date, venue).
 - Lineup: per-instrument player names.
 - Members & access: add/remove members by email with role (owner/editor/viewer).
+- **Your Telegram** (`TelegramCard`, v0.297): every member (not just owner) links their own Telegram
+  so the manager can DM them and run polls. Deliberately here, NOT in the allowlist-gated Admin tab,
+  so linking never requires chat access. Only shows when the band has a bot username set (owner sets
+  it in Admin). Connect → opens `t.me/<bot>?start=<code>`, member taps START, then Refresh.
+- **AI manager notifications** (owner-only): enable/disable FCM push per device (`sc_push_token`).
 - **Delete band**: owners can delete non-main bands with confirmation.
 - Reset everything: clears all songs/rehearsals/concert data.
 - Testing & staging: clone live board to staging.
@@ -390,7 +429,9 @@ Currently logged events:
 - Don't introduce `localStorage`/`sessionStorage` assumptions that break first-load; existing keys are
   `sc_name`, `sc_board`, `sc_seen_activity`, `sc_instr` (comma-separated multi-instrument),
   `sc_seen_ver`, `sc_stem_[songId]`, `sc_stemrec_[songId]`, `sc_show`, `sc_rec_hp` (headphones
-  toggle), `sc_sync_out` (remembered Ta output-delay calibration, ms).
+  toggle), `sc_sync_out` (remembered Ta output-delay calibration, ms), `sc_ai_key` (owner's
+  Anthropic key for the in-app planner only — server chat uses a secret), `sc_push_token`
+  (FCM notifications-enabled flag for this device).
 - Adding a new persisted field: update `defaultState()` AND `migrate()`.
 - **scrollIntoView with sticky header**: `scrollIntoView({block:'start'})` positions the element at
   the very top of the viewport, hidden behind the sticky `.topbar`. Use manual `window.scrollTo()`
@@ -486,6 +527,79 @@ Currently logged events:
 - `fileRow(f, onOpen)` — one Files-modal row (tap-to-open + ⋯ Rename/Download/Share/Delete menu).
 - SFU helpers: `sfuScore`/`sfuLev`/`sfuCatFromName`/`sfuFileToBlob`/`sfuPdfToTallJpeg` (Setlist
   Files Update). `matchTaShift`/`detectTaOnsets` (recording sync). `loadScript` (lazy CDN loader).
+- Attendance (app): `attState`/`attLabel`/`attGlyph`/`rehAllApproved`/`rehAnyDeclined`; components
+  `AttPop` (✓/?/✕ picker), `ApprovalBadge`, `AttendanceAnswer` (Stage self-answer).
+- `FocusTags({songs,learn,practice,onGoSong})` — shared rich focus view (colored group boxes).
+- `DrawSlide` — image + canvas freehand overlay for the practice slide (SlideViewer `drawMode`).
+- `TelegramCard({state,user})` — Setup-tab Telegram linking (self-contained).
+- Manager backend (`functions/index.js`): `runManagerLoop` (shared agent loop),
+  `buildManagerContextNode`, `applyManagerTool`/`applyOpToBoard`, `songFilesDetail` (per-section
+  file inventory), `resolveWhen`/`nextRunMs`/`nextFutureRunMs`/`normalizeRepeat` (scheduled-task
+  timing + recurrence), `createScheduledTask`/`loadPendingTasks`, `pushToOwner`, Telegram helpers.
+
+## AI Manager (Admin tab + Cloud Functions backend)
+
+The band has a conversational **AI manager**. Two Anthropic surfaces:
+- **In-app planner** (browser-side): the "Plan Rehearsals" flow uses the owner's own Anthropic key
+  from `localStorage` `sc_ai_key` (`anthropic-dangerous-direct-browser-access`). Structured output.
+- **Manager chat + all autonomous actions** (server-side, `functions/index.js`): uses the
+  `ANTHROPIC_KEY` **secret** — never in any browser. Model `claude-opus-4-8`, manual agentic loop.
+
+### Admin tab (app)
+- Home for the manager: chat (`ChatPanel` — rich text via `{color:...}`/**bold**, copy per message,
+  clear history), collapsible **Manager settings** (owner-only: guidelines, chat allowlist,
+  Telegram bot username, per-band banner note), and the **Rehearsal plan** panel (`managerPlan`,
+  with owner-only Clear + apply-to/create-rehearsal).
+- **Gated**: only the owner (`ADMIN_EMAIL`) + emails in `managerChatAllow` see the tab and can chat.
+  Per-band banner image `admin-banner-<bandName>.jpg` (falls back to `-Default.jpg` then generic).
+
+### Cloud Functions (`functions/index.js`) — 2nd gen, us-central1, Node 24
+- `managerChat` (onCall) — the interactive chat. Enforces the allowlist. Builds context via
+  `buildManagerContextNode(board, show, {nowMs, tasks})` and runs `runManagerLoop(...)` (the shared
+  agent loop, also used by the scheduler). Persists chat + applies board `ops` in a transaction.
+- `rehearsalReminders` (onSchedule hourly) — ~24h pre-rehearsal push to the owner, once each.
+- `weeklyReport` (onSchedule, Mon 09:00) — weekly readiness push.
+- `managerTasks` (onSchedule, **every 5 minutes**) — runs due **scheduled tasks** (see below).
+- `telegramWebhook` (onRequest) — Telegram updates: `/start <code>` linking + poll `callback_query`.
+- Secrets: `ANTHROPIC_KEY`, `TELEGRAM_BOT_TOKEN` (`defineSecret`). TZ `Asia/Jerusalem`.
+
+### Manager tools (`MANAGER_TOOLS`, run inside `runManagerLoop`)
+Board-mutating (collected as `ops`, applied via `applyOpToBoard`): `save_guideline`,
+`set_song_status`, `apply_focus`, `create_rehearsal`, `show_plan`, `set_approval`
+(status `yes/no/maybe/clear`). Side-effecting (executed immediately): `send_notification` (FCM push
+to owner), `send_telegram` (DM a linked member), `ask_members`/`get_poll_results` (Telegram polls),
+`schedule_task`/`list_scheduled_tasks`/`cancel_scheduled_task`. The context includes CURRENT TIME,
+a full per-song **file inventory** (`songFilesDetail`, flags `*** MISSING ***` sections so the
+manager can spot gaps), rehearsals with tri/quad-state attendance, and T-numbered scheduled tasks.
+
+### Scheduled manager tasks (v: this session)
+- The manager can **run timed actions even with the app closed**. `schedule_task` stores a doc in
+  the `managerTasks` collection: `{bandId, showId, runAtMs, whenText, instruction, title, repeat,
+  status:'pending', ...}`. `managerTasks` (every 5 min) claims due pending tasks atomically and
+  re-invokes `runManagerLoop` with the stored instruction (autonomous prompt prefix), so it actually
+  sends notifications/Telegram/polls or updates the board. Each run drops a "⏰ Scheduled task ran"
+  note into the chat; failures push an alert to the owner + a ⚠️ chat note.
+- **Time parsing** (`resolveWhen`): full ISO with Z/offset used as-is; a bare `YYYY-MM-DDTHH:mm` is
+  interpreted in TZ (Asia/Jerusalem) via `tzOffsetMs` (DST-correct).
+- **Recurrence is guaranteed in code**, not by the model: `repeat` = `{unit:'hour'|'day'|'week'|
+  'month', interval}`. After each run the scheduler re-arms the SAME task doc to its next occurrence
+  (`nextFutureRunMs` → skips missed runs, no catch-up storm). `nextRunMs` keeps wall-clock fixed
+  across DST for day/week/month (hourly = real elapsed); **month-end is clamped** to the last valid
+  day (Jan 31 → Feb 28/29). Recurring tasks re-arm even after a failed run. The model is told NOT to
+  self-reschedule recurring tasks.
+
+### Firestore collections (function-written; client rules restrict/deny — see `firestore.rules`)
+`managerChat/{bandId}` (deny client), `managerState/{bandId}` (admin), `managerTasks/{id}` (deny
+client), `notifyTokens/{token}` (admin — FCM device tokens), `telegramLinks/{code}` (member-create
+own),  `telegramChats/{bandId}` (member-read), `telegramPolls/{id}` (deny client). Firestore rules
+are project-wide (staging + prod at once).
+
+### FCM push
+Service worker `firebase-messaging-sw.js` at repo root (served `/soundcheck/...`). VAPID key +
+`sc_push_token` flag in the app; token stored in `notifyTokens/{token}`. Foreground pushes show an
+in-app `.push-toast` banner (web push doesn't auto-display when focused). Enable/disable per device
+in Setup. Registration waits for the SW to reach 'activated' before `getToken` (else FCM falls back
+to a root-scope default SW → 404 on the `/soundcheck/` subpath).
 
 ## Cloud Functions deploy gotchas
 
