@@ -227,6 +227,48 @@ function resolveWhen(str) {
   return guess - tzOffsetMs(new Date(guess), TZ);
 }
 function fmtWhenMs(ms) { return fmtWhen(new Date(ms).toISOString()); }
+function pad2(n) { return String(n).padStart(2, '0'); }
+// Wall-clock components of an instant, as seen in `tz`.
+function wallPartsInTz(ms, tz) {
+  const dtf = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const o = dtf.formatToParts(new Date(ms)).reduce((a, x) => (a[x.type] = x.value, a), {});
+  let h = +o.hour; if (h === 24) h = 0;
+  return { y: +o.year, mo: +o.month, d: +o.day, h, mi: +o.minute };
+}
+// A normalized repeat rule, or null. { unit:'hour'|'day'|'week'|'month', interval:>=1 }.
+function normalizeRepeat(rep) {
+  if (!rep || ['hour', 'day', 'week', 'month'].indexOf(rep.unit) < 0) return null;
+  return { unit: rep.unit, interval: Math.max(1, parseInt(rep.interval, 10) || 1) };
+}
+function repeatText(rep) {
+  const r = normalizeRepeat(rep); if (!r) return '';
+  return 'repeats every ' + (r.interval === 1 ? r.unit : (r.interval + ' ' + r.unit + 's'));
+}
+// Next occurrence after prevMs. Hourly is real elapsed time; day/week/month keep
+// the wall-clock time fixed in TZ (so "daily at 09:00" stays 09:00 across DST).
+function nextRunMs(prevMs, rep) {
+  const r = normalizeRepeat(rep); if (!r) return null;
+  if (r.unit === 'hour') return prevMs + r.interval * 3600000;
+  const p = wallPartsInTz(prevMs, TZ);
+  let base = Date.UTC(p.y, p.mo - 1, p.d, p.h, p.mi, 0);
+  if (r.unit === 'day') base += r.interval * 86400000;
+  else if (r.unit === 'week') base += r.interval * 7 * 86400000;
+  else { const d = new Date(base); d.setUTCMonth(d.getUTCMonth() + r.interval); base = d.getTime(); }
+  const q = new Date(base);
+  const iso = q.getUTCFullYear() + '-' + pad2(q.getUTCMonth() + 1) + '-' + pad2(q.getUTCDate()) + 'T' + pad2(q.getUTCHours()) + ':' + pad2(q.getUTCMinutes());
+  return resolveWhen(iso);
+}
+// Next occurrence strictly in the future — skips any missed ones (no catch-up storm).
+function nextFutureRunMs(prevMs, rep) {
+  let next = nextRunMs(prevMs, rep);
+  let guard = 0;
+  while (next != null && next <= Date.now() && guard++ < 5000) {
+    const n2 = nextRunMs(next, rep);
+    if (n2 == null || n2 <= next) return null;
+    next = n2;
+  }
+  return next;
+}
 async function loadPendingTasks(bandId) {
   // Single-field filter (auto-indexed) + status filter in code — no composite index.
   const snap = await tasksCol().where('bandId', '==', bandId).get();
@@ -239,13 +281,14 @@ async function createScheduledTask(bandId, showId, inp, email) {
   if (ms < Date.now() - 60000) return 'That time is in the past — give me a future time.';
   const instruction = (inp.instruction || '').trim();
   if (!instruction) return 'I need to know what to do at that time. Nothing scheduled.';
-  await tasksCol().doc().set({ bandId, showId: showId || null, runAtMs: ms, whenText: String(inp.when || ''), instruction, title: (inp.title || '').trim(), status: 'pending', createdBy: email || ADMIN_EMAIL, createdAt: Date.now() });
-  return 'Scheduled ✓ — at ' + fmtWhenMs(ms) + ' I will: ' + instruction + ' (runs even with the app closed).';
+  const repeat = normalizeRepeat(inp.repeat);
+  await tasksCol().doc().set({ bandId, showId: showId || null, runAtMs: ms, whenText: String(inp.when || ''), instruction, title: (inp.title || '').trim(), repeat: repeat || null, status: 'pending', createdBy: email || ADMIN_EMAIL, createdAt: Date.now() });
+  return 'Scheduled ✓ — ' + (repeat ? ('starting ' + fmtWhenMs(ms) + ', ' + repeatText(repeat) + ', I will: ') : ('at ' + fmtWhenMs(ms) + ' I will: ')) + instruction + ' (runs even with the app closed; ' + (repeat ? 'repeats automatically' : 'one-time') + ').';
 }
 async function listScheduledTasksText(bandId) {
   const t = await loadPendingTasks(bandId);
   if (!t.length) return 'No pending scheduled tasks.';
-  return 'Pending scheduled tasks:\n' + t.map((x, i) => 'T' + (i + 1) + ' — ' + fmtWhenMs(x.runAtMs) + ': ' + (x.title ? (x.title + ' — ') : '') + x.instruction).join('\n');
+  return 'Pending scheduled tasks:\n' + t.map((x, i) => 'T' + (i + 1) + ' — ' + fmtWhenMs(x.runAtMs) + (x.repeat ? (' (' + repeatText(x.repeat) + ')') : '') + ': ' + (x.title ? (x.title + ' — ') : '') + x.instruction).join('\n');
 }
 async function cancelScheduledTask(ctx, inp) {
   const id = (ctx.taskIds || [])[(parseInt(inp.task, 10) || 0) - 1];
@@ -371,7 +414,7 @@ const MANAGER_SYSTEM =
   'You are the band\'s manager, in an ongoing chat with a band member. You have the current band data and the owner\'s standing guidelines below. ' +
   'Answer questions and give concrete, motivating advice. When asked to change something — save a guideline, set a player\'s status, set a rehearsal\'s focus, or schedule a rehearsal — use the tools, then confirm in plain language what you did. ' +
   'When the member explicitly asks you to notify, alert, ping, or remind someone right now, use send_notification to push a phone notification (keep the title <=6 words and the body short). Do not send notifications unprompted. ' +
-  'You CAN run things later, on a schedule, even when nobody has the app open — use schedule_task with a future time (see CURRENT TIME in the context) and a clear instruction to your future self; use list_scheduled_tasks / cancel_scheduled_task to manage them. For a repeating task, re-schedule the next occurrence when each run finishes. Never tell anyone you cannot run background or timed tasks — you can, via schedule_task. ' +
+  'You CAN run things later, on a schedule, even when nobody has the app open — use schedule_task with a future time (see CURRENT TIME in the context) and a clear instruction to your future self; use list_scheduled_tasks / cancel_scheduled_task to manage them. For a repeating task, set schedule_task\'s `repeat` field — it re-arms itself automatically, so never manually re-schedule a recurring task. Never tell anyone you cannot run background or timed tasks — you can, via schedule_task. ' +
   'Reference songs by their #number and rehearsals by their R-number. Always honor the owner guidelines. Be concise and direct — this is a chat, not a report.\n' +
   'FORMATTING — the chat renders these, so use them to make messages scannable:\n' +
   '  **bold**, *italic*, `code`, "- " bullet lines, and "## " for a small heading.\n' +
@@ -393,7 +436,7 @@ const MANAGER_TOOLS = [
   { name: 'get_poll_results', description: 'Read back the answers to the most recent question asked via ask_members (tally + who answered what + who hasn\'t).', input_schema: { type: 'object', additionalProperties: false, properties: {} } },
   { name: 'show_plan', description: 'Display a rehearsal plan in the app (the "Rehearsal plan" panel under the chat) for the band to see. Use when asked to lay out / show / post a plan. Write song names and docs as plain text.', input_schema: { type: 'object', properties: { summary: { type: 'string', description: 'One or two lines of overview' }, sessions: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { title: { type: 'string', description: 'e.g. "Rehearsal 1 — Sun Mar 8"' }, learn: { type: 'array', items: { type: 'string' } }, practice: { type: 'array', items: { type: 'string' } }, docs: { type: 'array', items: { type: 'string' }, description: 'Docs to prepare, e.g. "slide for Black Bird"' }, note: { type: 'string' } }, required: ['title'] } } }, required: ['sessions'] } },
   { name: 'set_approval', description: "Record a player's attendance answer for a rehearsal. Use status 'yes' when they confirm they can make it, 'no' when they say they can't, 'maybe' when they're unsure, and 'clear' to reset them to un-answered.", input_schema: { type: 'object', properties: { rehearsal: { type: 'integer', description: 'R-number of the rehearsal' }, instrument: { type: 'string', enum: ['keys', 'drums', 'guitar', 'bass', 'vocals'] }, status: { type: 'string', enum: ['yes', 'no', 'maybe', 'clear'], description: "yes = can attend, no = can't attend, maybe = unsure, clear = un-answered" } }, required: ['rehearsal', 'instrument', 'status'] } },
-  { name: 'schedule_task', description: 'Schedule an action to run automatically at a future time — even when nobody has the app open. At that moment you are re-invoked with the instruction and can use your other tools (send_notification, send_telegram, ask_members, board tools). Use for reminders, follow-ups and time-based nudges. For a REPEATING task, at the end of each run schedule the next occurrence. Times are ' + TZ + '.', input_schema: { type: 'object', properties: { when: { type: 'string', description: 'When to run, as YYYY-MM-DDTHH:MM in ' + TZ + ' local time (or full ISO 8601 with offset). Must be in the future — see CURRENT TIME in the context.' }, instruction: { type: 'string', description: 'Exactly what to do when it runs, written as an instruction to your future self. Be specific: who to message, what to ask or say.' }, title: { type: 'string', description: 'Optional short label.' } }, required: ['when', 'instruction'] } },
+  { name: 'schedule_task', description: 'Schedule an action to run automatically at a future time — even when nobody has the app open. At that moment you are re-invoked with the instruction and can use your other tools (send_notification, send_telegram, ask_members, board tools). Use for reminders, follow-ups and time-based nudges. For a REPEATING task, set the `repeat` field and the system re-arms it automatically after each run — do NOT re-schedule it yourself. Times are ' + TZ + '.', input_schema: { type: 'object', properties: { when: { type: 'string', description: 'When to run (first time, if repeating), as YYYY-MM-DDTHH:MM in ' + TZ + ' local time (or full ISO 8601 with offset). Must be in the future — see CURRENT TIME in the context.' }, instruction: { type: 'string', description: 'Exactly what to do when it runs, written as an instruction to your future self. Be specific: who to message, what to ask or say.' }, title: { type: 'string', description: 'Optional short label.' }, repeat: { type: 'object', description: 'Optional — makes the task recurring; it re-arms itself after each run (cancel with cancel_scheduled_task). E.g. {unit:"day",interval:1} = daily, {unit:"week",interval:2} = every 2 weeks.', properties: { unit: { type: 'string', enum: ['hour', 'day', 'week', 'month'] }, interval: { type: 'integer', description: 'Every N units (default 1).' } }, required: ['unit'] } }, required: ['when', 'instruction'] } },
   { name: 'list_scheduled_tasks', description: 'List the pending scheduled tasks you have set for this band (also shown as T-numbers in the context).', input_schema: { type: 'object', additionalProperties: false, properties: {} } },
   { name: 'cancel_scheduled_task', description: 'Cancel a pending scheduled task by its T-number.', input_schema: { type: 'object', properties: { task: { type: 'integer' } }, required: ['task'] } }
 ];
@@ -491,7 +534,7 @@ function buildManagerContextNode(board, show, opts) {
   const g = (board.managerGuidelines || '').trim();
   const lineup = CORE.map(id => LABEL[id] + ' = ' + ((board.members && board.members[id] && board.members[id].name) || '(unnamed)')).join(', ');
   const taskIds = [];
-  const taskLines = (opts.tasks || []).map((t, i) => { taskIds.push(t.id); return 'T' + (i + 1) + ' — ' + fmtWhenMs(t.runAtMs) + ': ' + (t.title ? (t.title + ' — ') : '') + t.instruction; });
+  const taskLines = (opts.tasks || []).map((t, i) => { taskIds.push(t.id); return 'T' + (i + 1) + ' — ' + fmtWhenMs(t.runAtMs) + (t.repeat ? (' (' + repeatText(t.repeat) + ')') : '') + ': ' + (t.title ? (t.title + ' — ') : '') + t.instruction; });
   const nowLine = 'CURRENT TIME: ' + (opts.nowMs ? new Date(opts.nowMs).toLocaleString('en-GB', { timeZone: TZ }) : '(unknown)') + ' (' + TZ + '). Schedule future tasks relative to this.';
   const context = [
     g ? ('OWNER GUIDELINES (always honor these):\n' + g) : 'OWNER GUIDELINES: (none set)',
@@ -716,7 +759,10 @@ exports.managerChat = onCall({ secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN] }, async
 const SCHED_PREFIX =
   '[AUTONOMOUS SCHEDULED RUN — this fired at its scheduled time; nobody is watching the chat. ' +
   'Carry out the instruction NOW using your tools (send_notification / send_telegram / ask_members / board tools as appropriate) — actually do it, do not just describe it. ' +
-  'If this is a recurring task, schedule the next occurrence with schedule_task before finishing. End with a one-line summary of what you did.]\n\nInstruction: ';
+  'End with a one-line summary of what you did.]\n\nInstruction: ';
+// Appended when the task is recurring, so the model doesn't ALSO schedule the next
+// run (the scheduler re-arms it automatically after this run).
+const SCHED_RECUR_NOTE = '\n\n[This is a recurring task; its next run is re-armed automatically. Do NOT call schedule_task for it.]';
 
 exports.managerTasks = onSchedule(
   { schedule: 'every 5 minutes', timeZone: TZ, secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN] },
@@ -743,7 +789,8 @@ exports.managerTasks = onSchedule(
           const show = (fresh.shows || []).find(s => s.id === task.showId) || (fresh.shows || [])[0];
           if (!show) { await taskRef.set({ status: 'done', ranAt: Date.now(), result: 'no show' }, { merge: true }); continue; }
           const ctx = buildManagerContextNode(fresh, show, { nowMs: Date.now(), tasks: await loadPendingTasks(board.id) });
-          const apiMsgs = [{ role: 'user', content: SCHED_PREFIX + (task.instruction || '') }];
+          const recurring = !!normalizeRepeat(task.repeat);
+          const apiMsgs = [{ role: 'user', content: SCHED_PREFIX + (task.instruction || '') + (recurring ? SCHED_RECUR_NOTE : '') }];
           const { reply, ops, actions } = await runManagerLoop({ bandId: board.id, board: fresh, show, ctx, apiMsgs, email: ADMIN_EMAIL, key });
           if (ops.length) {
             await db.runTransaction(async (tx) => {
@@ -763,10 +810,20 @@ exports.managerTasks = onSchedule(
             msgs.push({ role: 'assistant', text: '⏰ *Scheduled task ran* — ' + (task.title || task.instruction || '') + '\n\n' + (reply || '(done)'), ts: Date.now() });
             await chatRef.set({ messages: msgs.slice(-40) }, { merge: true });
           } catch (e) { logger.error('task chat note failed: ' + e.message); }
-          await taskRef.set({ status: 'done', ranAt: Date.now(), result: (reply || '').slice(0, 500), actions }, { merge: true });
+          // Recurrence is guaranteed here, in code — not left to the model. Re-arm
+          // the SAME doc to its next future occurrence (skipping any missed ones).
+          const nextMs = recurring ? nextFutureRunMs(task.runAtMs, task.repeat) : null;
+          if (nextMs != null) {
+            await taskRef.set({ status: 'pending', runAtMs: nextMs, startedAt: null, lastRanAt: Date.now(), lastResult: (reply || '').slice(0, 500), runs: (task.runs || 0) + 1 }, { merge: true });
+          } else {
+            await taskRef.set({ status: 'done', ranAt: Date.now(), result: (reply || '').slice(0, 500), actions, runs: (task.runs || 0) + 1 }, { merge: true });
+          }
         } catch (e) {
           logger.error('managerTask ' + task.id + ' failed: ' + e.message);
-          await taskRef.set({ status: 'error', ranAt: Date.now(), error: (e.message || '').slice(0, 300) }, { merge: true });
+          // Even on failure, re-arm a recurring task so one bad run doesn't kill the series.
+          const nextMs = normalizeRepeat(task.repeat) ? nextFutureRunMs(task.runAtMs, task.repeat) : null;
+          if (nextMs != null) await taskRef.set({ status: 'pending', runAtMs: nextMs, startedAt: null, lastError: (e.message || '').slice(0, 300), lastErrorAt: Date.now() }, { merge: true });
+          else await taskRef.set({ status: 'error', ranAt: Date.now(), error: (e.message || '').slice(0, 300) }, { merge: true });
         }
       }
     }
