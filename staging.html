@@ -451,7 +451,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.303';
+const VERSION='0.304';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -5120,7 +5120,7 @@ function Coach({coach,setTab,advance,onExit}){
     return ()=>{ alive=false; cancelAnimationFrame(raf); if(boundEl) boundEl.removeEventListener(evt,onEvt); };
   },[coach.step]);
   if(done){
-    return (
+    return ReactDOM.createPortal((
       <div className="coach-layer">
         <div className="coach-catch coach-dim" onClick={onExit}></div>
         <div className="coach-done" onClick={e=>e.stopPropagation()}>
@@ -5130,7 +5130,7 @@ function Coach({coach,setTab,advance,onExit}){
           <button className="btn" onClick={onExit}>Done</button>
         </div>
       </div>
-    );
+    ), document.body);
   }
   const vh=window.innerHeight, vw=window.innerWidth;
   const P=6;
@@ -5141,7 +5141,7 @@ function Coach({coach,setTab,advance,onExit}){
     ? (below ? {left:cx, top:Math.min(rect.y+rect.h+34, vh-200)} : {left:cx, bottom:Math.max(vh-rect.y+34, 96)})
     : {left:12, bottom:110};
   const swallow=(e)=>{ e.preventDefault(); e.stopPropagation(); };
-  return (
+  return ReactDOM.createPortal((
     <div className="coach-layer">
       {rect ? (
         <React.Fragment>
@@ -5167,7 +5167,7 @@ function Coach({coach,setTab,advance,onExit}){
         </div>
       </div>
     </div>
-  );
+  ), document.body);
 }
 function TabBar({tab,setTab,canAdmin}){
   const items=[['stage','Stage'],['setlist','Setlist'],['rehearse','Rehearsals'],['shows','Shows'],...(canAdmin?[['admin','Admin']]:[]),['album','Gallery'],['setup','Setup'],['help','Help']];
