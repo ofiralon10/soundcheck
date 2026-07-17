@@ -338,7 +338,7 @@ const MANAGER_TOOLS = [
   { name: 'ask_members', description: 'Ask linked band members a multiple-choice question over Telegram (tappable option buttons) and collect their answers. Use when asked to poll/ask/survey the band with options.', input_schema: { type: 'object', properties: { question: { type: 'string' }, options: { type: 'array', items: { type: 'string' }, description: '2-8 answer options' }, recipients: { type: 'string', description: '"all" for everyone linked, or a comma-separated list of names/emails' } }, required: ['question', 'options'] } },
   { name: 'get_poll_results', description: 'Read back the answers to the most recent question asked via ask_members (tally + who answered what + who hasn\'t).', input_schema: { type: 'object', additionalProperties: false, properties: {} } },
   { name: 'show_plan', description: 'Display a rehearsal plan in the app (the "Rehearsal plan" panel under the chat) for the band to see. Use when asked to lay out / show / post a plan. Write song names and docs as plain text.', input_schema: { type: 'object', properties: { summary: { type: 'string', description: 'One or two lines of overview' }, sessions: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { title: { type: 'string', description: 'e.g. "Rehearsal 1 — Sun Mar 8"' }, learn: { type: 'array', items: { type: 'string' } }, practice: { type: 'array', items: { type: 'string' } }, docs: { type: 'array', items: { type: 'string' }, description: 'Docs to prepare, e.g. "slide for Black Bird"' }, note: { type: 'string' } }, required: ['title'] } } }, required: ['sessions'] } },
-  { name: 'set_approval', description: "Record a player's attendance answer for a rehearsal. Use status 'yes' when they confirm they can make it, 'no' when they say they can't, and 'clear' to reset them to un-answered.", input_schema: { type: 'object', properties: { rehearsal: { type: 'integer', description: 'R-number of the rehearsal' }, instrument: { type: 'string', enum: ['keys', 'drums', 'guitar', 'bass', 'vocals'] }, status: { type: 'string', enum: ['yes', 'no', 'clear'], description: "yes = can attend, no = can't attend, clear = un-answered" } }, required: ['rehearsal', 'instrument', 'status'] } }
+  { name: 'set_approval', description: "Record a player's attendance answer for a rehearsal. Use status 'yes' when they confirm they can make it, 'no' when they say they can't, 'maybe' when they're unsure, and 'clear' to reset them to un-answered.", input_schema: { type: 'object', properties: { rehearsal: { type: 'integer', description: 'R-number of the rehearsal' }, instrument: { type: 'string', enum: ['keys', 'drums', 'guitar', 'bass', 'vocals'] }, status: { type: 'string', enum: ['yes', 'no', 'maybe', 'clear'], description: "yes = can attend, no = can't attend, maybe = unsure, clear = un-answered" } }, required: ['rehearsal', 'instrument', 'status'] } }
 ];
 
 function genId() { return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
@@ -417,14 +417,16 @@ function buildManagerContextNode(board, show) {
   const rehIds = reh.map(r => r.id);
   const rehLines = reh.map((r, i) => {
     const a = r.attendance || {};
-    // Tri-state: 'yes'/true = can attend, 'no' = can't, anything else = un-answered.
-    const st = id => (a[id] === true || a[id] === 'yes') ? 'yes' : (a[id] === 'no' ? 'no' : 'none');
+    // States: 'yes'/true = can attend, 'no' = can't, 'maybe' = unsure, else un-answered.
+    const st = id => (a[id] === true || a[id] === 'yes') ? 'yes' : (a[id] === 'no' ? 'no' : (a[id] === 'maybe' ? 'maybe' : 'none'));
     const yes = CORE.filter(id => st(id) === 'yes');
     const no = CORE.filter(id => st(id) === 'no');
+    const maybe = CORE.filter(id => st(id) === 'maybe');
     const pend = CORE.filter(id => st(id) === 'none');
-    const appr = (!no.length && !pend.length) ? 'ALL can attend'
+    const appr = (!no.length && !maybe.length && !pend.length) ? 'ALL can attend'
       : (yes.length + '/' + CORE.length + ' confirmed'
         + (no.length ? "; CAN'T attend: " + no.map(id => LABEL[id]).join(',') : '')
+        + (maybe.length ? '; MAYBE: ' + maybe.map(id => LABEL[id]).join(',') : '')
         + (pend.length ? '; no answer yet: ' + pend.map(id => LABEL[id]).join(',') : ''));
     return 'R' + (i + 1) + ' ' + fmtWhen(r.date) + (r.duration ? (' (' + r.duration + 'h)') : '') + (r.location ? (' @ ' + r.location) : '') + (((r.focusLearn || []).length || (r.focusPractice || []).length) ? ' [focus set]' : '') + ' | attendance: ' + appr;
   });
@@ -511,9 +513,9 @@ function applyManagerTool(name, input, ctx, showId, work, ops) {
     // `status` is the current shape; tolerate the older boolean `approved`.
     let stt = input.status;
     if (!stt && input.approved !== undefined) stt = input.approved ? 'yes' : 'clear';
-    if (['yes', 'no', 'clear'].indexOf(stt) < 0) return "status must be 'yes', 'no' or 'clear'.";
+    if (['yes', 'no', 'maybe', 'clear'].indexOf(stt) < 0) return "status must be 'yes', 'no', 'maybe' or 'clear'.";
     op = { type: 'approval', rehId, instrument: input.instrument, status: stt };
-    msg = 'Marked ' + input.instrument + ' as ' + (stt === 'yes' ? 'able to attend' : stt === 'no' ? "unable to attend" : 'not answered') + ' for rehearsal R' + input.rehearsal + '.';
+    msg = 'Marked ' + input.instrument + ' as ' + (stt === 'yes' ? 'able to attend' : stt === 'no' ? "unable to attend" : stt === 'maybe' ? 'a maybe' : 'not answered') + ' for rehearsal R' + input.rehearsal + '.';
   } else { return 'Unknown tool.'; }
   ops.push(op); applyOpToBoard(op, work); return msg;
 }

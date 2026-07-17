@@ -364,13 +364,16 @@
   .att .a{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:700;border:1.5px solid var(--line-2);color:var(--muted-2)}
   .att .a.in{color:#15141B}
   .att .a.out{border-color:var(--drums);opacity:.45}
+  .att .a.maybe{border-color:var(--warn);color:var(--warn)}
   .att-slot{position:relative;display:inline-flex}
   .att-badge{position:absolute;right:-3px;bottom:-3px;width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;line-height:1;color:#fff;border:1.5px solid var(--bg);pointer-events:none}
   .att-badge.yes{background:var(--ok)}
   .att-badge.no{background:var(--drums)}
+  .att-badge.maybe{background:var(--warn);color:#15141B}
   .att-pop{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:6px;display:flex;gap:5px;padding:5px;background:var(--surface);border:1px solid var(--line-2);border-radius:11px;box-shadow:0 4px 16px rgba(0,0,0,.45);z-index:41}
   .att-opt{width:32px;height:32px;border-radius:8px;border:none;font-size:15px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1}
   .att-opt.yes{background:var(--ok);color:#0a0a0a}
+  .att-opt.maybe{background:var(--warn);color:#15141B}
   .att-opt.no{background:var(--drums);color:#fff}
   .att-opt.clr{background:var(--surface-2);color:var(--muted);border:1px solid var(--line-2)}
   .focus-box{border:1.5px solid;border-radius:12px;padding:9px 11px 11px;margin-top:9px;background:rgba(255,255,255,.03)}
@@ -419,7 +422,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.297';
+const VERSION='0.298';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -459,6 +462,9 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
+  '0.298':[
+    'Rehearsal attendance now has a fourth answer: ? Maybe (yellow), alongside ✓ can attend and ✕ can’t.',
+  ],
   '0.297':[
     'Connect Telegram is now in Setup → Your Telegram, so every band member can link their own Telegram and get manager messages and polls.',
     'Stage: answer your own attendance for the next rehearsal right from the card, next to Propose new time.',
@@ -1788,13 +1794,13 @@ function ActivityBell({state}){
 // Answer your OWN attendance straight from the Stage card, without going to the
 // Rehearsals tab. Marks whichever instrument(s) you play (MY_INSTRS) — if you
 // haven't picked an instrument yet there's nothing we could mark, so it hides.
-// Reuses AttPop, the same ✓/✕ picker as the Rehearsals attendance chips.
+// Reuses AttPop, the same ✓/?/✕ picker as the Rehearsals attendance chips.
 function AttendanceAnswer({r,update}){
   const [open,setOpen]=useState(false);
   const mine=INSTR.filter(i=>(MY_INSTRS||[]).includes(i.id));
   if(!mine.length) return null;
   const sts=mine.map(i=>attState(((r&&r.attendance)||{})[i.id]));
-  const cur=sts.every(s=>s==='yes')?'yes':sts.every(s=>s==='no')?'no':'none';
+  const cur=sts.every(s=>s==='yes')?'yes':sts.every(s=>s==='no')?'no':sts.every(s=>s==='maybe')?'maybe':'none';
   const set=(v)=>{
     update(s=>{ const rr=(s.rehearsals||[]).find(x=>x.id===r.id); if(!rr) return s;
       rr.attendance=rr.attendance||{};
@@ -1802,8 +1808,8 @@ function AttendanceAnswer({r,update}){
       return s; });
     setOpen(false);
   };
-  const label=cur==='yes'?"✓ I'm in":cur==='no'?"✕ Can't make it":'Answer attendance';
-  const tone=cur==='yes'?{borderColor:'var(--ok)',color:'var(--ok)'}:cur==='no'?{borderColor:'var(--drums)',color:'var(--drums)'}:null;
+  const label=cur==='yes'?"✓ I'm in":cur==='no'?"✕ Can't make it":cur==='maybe'?'? Maybe':'Answer attendance';
+  const tone=cur==='yes'?{borderColor:'var(--ok)',color:'var(--ok)'}:cur==='no'?{borderColor:'var(--drums)',color:'var(--drums)'}:cur==='maybe'?{borderColor:'var(--warn)',color:'var(--warn)'}:null;
   return <span style={{position:'relative',display:'inline-flex'}}>
     <button className="btn ghost" style={{width:'auto',...(tone||{})}} onClick={()=>setOpen(o=>!o)}
       title={'Your attendance ('+mine.map(i=>i.label).join(', ')+') — '+attLabel(cur)}>{label}</button>
@@ -4011,11 +4017,13 @@ function Rehearsals({state,update,goSong}){
     </div>
   );
 }
-// Attendance is tri-state per player: 'yes' (can attend), 'no' (can't), or
+// Attendance per player: 'yes' (can attend), 'no' (can't), 'maybe' (unsure), or
 // 'none' (not answered yet). Legacy docs stored a plain boolean where true meant
 // approved and false/absent meant simply un-answered — normalize both here.
-function attState(v){ if(v===true||v==='yes')return 'yes'; if(v==='no')return 'no'; return 'none'; }
-function attLabel(st){ return st==='yes'?'can attend':st==='no'?"can't attend":'not answered'; }
+function attState(v){ if(v===true||v==='yes')return 'yes'; if(v==='no')return 'no'; if(v==='maybe')return 'maybe'; return 'none'; }
+function attLabel(st){ return st==='yes'?'can attend':st==='no'?"can't attend":st==='maybe'?'might attend':'not answered'; }
+// Glyph shown on the corner badge / in buttons for an answered state.
+function attGlyph(st){ return st==='yes'?'✓':st==='no'?'✕':st==='maybe'?'?':''; }
 function rehAllApproved(r){ const a=(r&&r.attendance)||{}; return INSTR.every(i=>attState(a[i.id])==='yes'); }
 function rehAnyDeclined(r){ const a=(r&&r.attendance)||{}; return INSTR.some(i=>attState(a[i.id])==='no'); }
 function ApprovalBadge({r}){
@@ -4030,11 +4038,12 @@ function ApprovalBadge({r}){
   return <span title={title}
     style={{display:'inline-flex',alignItems:'center',justifyContent:'center',minWidth:18,height:18,padding:'0 5px',borderRadius:9,fontSize:12,fontWeight:800,marginInlineStart:8,verticalAlign:'middle',background:all?'var(--ok)':'var(--drums)',color:'#fff',lineHeight:1}}>{all?'✓':declined?'✕':'!'}</span>;
 }
-// Two-option picker shown when a player chip is tapped: ✓ can attend / ✕ can't.
-// If they already answered, a third "—" clears it back to un-answered.
+// Picker shown when a player chip is tapped: ✓ can attend / ? maybe / ✕ can't.
+// If they already answered, a "—" clears it back to un-answered.
 function AttPop({cur,onPick}){
   return <span className="att-pop" onClick={e=>e.stopPropagation()}>
     <button className="att-opt yes" title="Can attend" onClick={()=>onPick('yes')}>✓</button>
+    <button className="att-opt maybe" title="Might attend" onClick={()=>onPick('maybe')}>?</button>
     <button className="att-opt no" title="Can't attend" onClick={()=>onPick('no')}>✕</button>
     {cur!=='none' && <button className="att-opt clr" title="Clear answer" onClick={()=>onPick(null)}>—</button>}
   </span>;
@@ -4119,23 +4128,23 @@ function RehCard({r,state,patch,del,update,goSong}){
             <FocusPicker songs={songs} learn={r.focusLearn||[]} practice={r.focusPractice||[]} onToggle={onToggle} onSetOther={onSetOther}/>
             <div className="btnrow"><button className="btn sm" onClick={()=>setEditFocus(false)}>Done</button></div>
           </div>}
-      <div style={{fontSize:11,color:'var(--muted)',marginTop:12,marginBottom:2}}>Attendance (tap a player → ✓ can attend / ✕ can't):</div>
+      <div style={{fontSize:11,color:'var(--muted)',marginTop:12,marginBottom:2}}>Attendance (tap a player → ✓ can attend / ? maybe / ✕ can't):</div>
       <div className="att">
         {attPick && <span onClick={()=>setAttPick(null)} style={{position:'fixed',left:0,top:0,right:0,bottom:0,zIndex:40}}/>}
         {INSTR.map(i=>{ const stt=attState(r.attendance && r.attendance[i.id]);
           return <span key={i.id} className="att-slot">
-            <button className={'a'+(stt==='yes'?' in':'')+(stt==='no'?' out':'')} title={state.members[i.id].name+' — '+attLabel(stt)}
+            <button className={'a'+(stt==='yes'?' in':'')+(stt==='no'?' out':'')+(stt==='maybe'?' maybe':'')} title={state.members[i.id].name+' — '+attLabel(stt)}
               style={stt==='yes'?{background:i.color,borderColor:i.color}:{}}
               onClick={()=>setAttPick(p=>p===i.id?null:i.id)}><InstrIcon id={i.id} size={16}/></button>
-            {stt!=='none' && <span className={'att-badge '+stt}>{stt==='yes'?'✓':'✕'}</span>}
+            {stt!=='none' && <span className={'att-badge '+stt}>{attGlyph(stt)}</span>}
             {attPick===i.id && <AttPop cur={stt} onPick={v=>{ setAttPick(null); patch(r.id,x=>{ x.attendance=x.attendance||{}; if(v) x.attendance[i.id]=v; else delete x.attendance[i.id]; }); }}/>}
           </span>; })}
         {guestList.map(n=>{ const k='g:'+n; const stt=attState(r.attendance && r.attendance[k]);
           return <span key={n} className="att-slot">
-            <button className={'a'+(stt==='yes'?' in':'')+(stt==='no'?' out':'')} title={n+' — '+attLabel(stt)}
+            <button className={'a'+(stt==='yes'?' in':'')+(stt==='no'?' out':'')+(stt==='maybe'?' maybe':'')} title={n+' — '+attLabel(stt)}
               style={stt==='yes'?{background:GUEST_COLOR,borderColor:GUEST_COLOR}:{}}
               onClick={()=>setAttPick(p=>p===k?null:k)}>{n.trim()[0].toUpperCase()}</button>
-            {stt!=='none' && <span className={'att-badge '+stt}>{stt==='yes'?'✓':'✕'}</span>}
+            {stt!=='none' && <span className={'att-badge '+stt}>{attGlyph(stt)}</span>}
             {attPick===k && <AttPop cur={stt} onPick={v=>{ setAttPick(null); patch(r.id,x=>{ x.attendance=x.attendance||{}; if(v) x.attendance[k]=v; else delete x.attendance[k]; }); }}/>}
           </span>; })}
       </div>
