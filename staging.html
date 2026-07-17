@@ -422,7 +422,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.299';
+const VERSION='0.300';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -462,6 +462,9 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
+  '0.300':[
+    'View-only members now see the manager guidelines read-only, with a note to ask the manager in chat to change them.',
+  ],
   '0.299':[
     'Anyone allowed to chat with the manager can now see and edit its standing guidelines (one shared set). Managing who can chat, the Telegram bot and banner stay owner-only.',
   ],
@@ -4697,6 +4700,10 @@ function PlanModal({show,state,update,onClose}){
 }
 function Admin({state,update,user,showId,pickShow}){
   const admin=!!(user&&user.email===ADMIN_EMAIL);
+  // Saving guidelines writes the board doc, which Firestore rules allow only for
+  // owner/editor (not viewer). Viewers can still change them by asking in chat.
+  const myRole=(state.access||{})[(user&&user.email)||''];
+  const canEditGl=admin||myRole==='owner'||myRole==='editor';
   const show=getShow(state,showId);
   const wide=useWide();
   const [settingsOpen,setSettingsOpen]=useState(false);
@@ -4733,8 +4740,10 @@ function Admin({state,update,user,showId,pickShow}){
             {settingsOpen && <div style={{marginTop:12}}>
               <label className="fl">Standing guidelines</label>
               <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5,marginBottom:6}}>Persistent instructions that shape the manager's chat, plans and reminders — one shared set, editable by everyone who can chat with the manager. The manager can also update them when told to in chat.</div>
-              <textarea className="inp" rows={4} dir="auto" value={gl} onChange={e=>{setGl(e.target.value);setGlMsg('');}} placeholder="e.g. We rehearse Sundays 8–10pm. Prioritise the encore songs. Keep feedback blunt. Ofir plays vocals + keys."/>
-              <div className="btnrow"><button className="btn ghost sm" onClick={saveGl}>Save guidelines</button>{glMsg && <span style={{fontSize:12,color:'var(--ok)',alignSelf:'center'}}>{glMsg}</span>}</div>
+              <textarea className="inp" rows={4} dir="auto" value={gl} readOnly={!canEditGl} onChange={e=>{setGl(e.target.value);setGlMsg('');}} placeholder="e.g. We rehearse Sundays 8–10pm. Prioritise the encore songs. Keep feedback blunt. Ofir plays vocals + keys." style={canEditGl?null:{opacity:.75}}/>
+              {canEditGl
+                ? <div className="btnrow"><button className="btn ghost sm" onClick={saveGl}>Save guidelines</button>{glMsg && <span style={{fontSize:12,color:'var(--ok)',alignSelf:'center'}}>{glMsg}</span>}</div>
+                : <div style={{fontSize:11,color:'var(--muted)',marginTop:6}}>Your role is view-only, so you can't edit these directly — just ask the manager in chat to change a guideline and it'll update them for everyone.</div>}
               {admin && <React.Fragment>
               <label className="fl" style={{marginTop:14}}>Who can chat with the manager (besides you)</label>
               <div style={{display:'flex',gap:6,flexWrap:'wrap',margin:'6px 0'}}>
