@@ -415,8 +415,9 @@
   .coach-layer{position:fixed;inset:0;z-index:4000}
   .coach-catch{position:absolute;inset:0}
   .coach-catch.coach-dim{background:rgba(8,8,12,.7)}
-  .coach-spot{position:absolute;border-radius:12px;border:2px solid var(--keys);box-shadow:0 0 0 9999px rgba(8,8,12,.68),0 0 16px 2px rgba(139,124,246,.7);pointer-events:none;transition:left .18s,top .18s,width .18s,height .18s;animation:coachPulse 1.4s ease-in-out infinite}
-  @keyframes coachPulse{0%,100%{box-shadow:0 0 0 9999px rgba(8,8,12,.68),0 0 0 0 rgba(139,124,246,.55)}50%{box-shadow:0 0 0 9999px rgba(8,8,12,.68),0 0 0 7px rgba(139,124,246,0)}}
+  .coach-block{position:absolute;background:rgba(8,8,12,.66)}
+  .coach-ring{position:absolute;border-radius:11px;border:2px solid var(--keys);pointer-events:none;transition:left .16s,top .16s,width .16s,height .16s;animation:coachPulse 1.4s ease-in-out infinite}
+  @keyframes coachPulse{0%,100%{box-shadow:0 0 0 0 rgba(139,124,246,.55)}50%{box-shadow:0 0 0 7px rgba(139,124,246,0)}}
   .coach-point{position:absolute;pointer-events:none;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))}
   .coach-point.down{animation:coachBobDown 1s ease-in-out infinite}
   .coach-point.up{animation:coachBobUp 1s ease-in-out infinite}
@@ -448,7 +449,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.301';
+const VERSION='0.302';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -488,8 +489,9 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
-  '0.301':[
-    'New Help tab with guided "Show me how to…" walkthroughs — the app points exactly where to tap. First one: how to practice a song.',
+  '0.302':[
+    'New Help tab with guided "Show me how to…" walkthroughs — the app points exactly where to tap, and pauses everything else until you do that step.',
+    'First walkthrough: a full practice tour — play/pause/stop, the mixer (mute, solo, custom volume, metronome), switching files, and closing.',
     'On phones, extra tabs now fold into a "More" (…) button.',
   ],
   '0.300':[
@@ -3811,10 +3813,10 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         <div className="stem-title-bar">
           <span className="stitle">{s.title}{stemRecPlayback?' — StemRec Player':''}</span>
           <button className="btn ghost sm" style={{fontSize:13,padding:'4px 12px',marginLeft:8}} onClick={()=>{closeStemPlayer();setFilesOpen(true);}}>Files</button>
-          <button className="btn ghost sm" style={{fontSize:13,padding:'4px 12px',marginLeft:8}} onClick={closeStemPlayer}>Close</button>
+          <button className="btn ghost sm" data-coach="stem-close" style={{fontSize:13,padding:'4px 12px',marginLeft:8}} onClick={closeStemPlayer}>Close</button>
         </div>
         {stemCfg && <div className="stem-channels">
-          <button className="btn ghost sm" style={{gridColumn:'1/-1',fontSize:12,padding:'7px'}} onClick={resetChans}>↺ Reset channels</button>
+          <button className="btn ghost sm" data-coach="reset-chans" style={{gridColumn:'1/-1',fontSize:12,padding:'7px'}} onClick={resetChans}>↺ Reset channels</button>
           {stemChans.map(ch=>{
             const instrId=ch.id==='other'||ch.id==='metronome'?null:ch.id;
             const isMetNoFile=ch.id==='metronome'&&!ch.loaded;
@@ -3823,13 +3825,13 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
               <div className="stem-ch-row">
                 {ch.id==='mystem' ? <span style={{width:26,height:26,borderRadius:'50%',background:'var(--drums)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:12,fontWeight:700,color:'#fff'}}>🎙</span> : ch.id==='backing' ? <span style={{width:26,height:26,borderRadius:'50%',background:'#5BC0EB',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:13,fontWeight:700,color:'#fff'}}>♪</span> : ch.id==='metronome' ? <InstrBadge id="metronome" size={20}/> : instrId ? <InstrBadge id={instrId} size={20}/> : ch.id==='other' ? <InstrBadge id="other" size={20}/> : <span style={{width:26,height:26,borderRadius:'50%',background:'var(--surface-3)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:11,fontWeight:700,color:'var(--muted)'}}>+</span>}
                 <div className="stem-ch-modes">
-                  <button className={'stem-mode-btn'+(ch.muted?' on-m':'')} onClick={()=>stemSetMode(ch.id,'mute')}>Mute</button>
-                  <button className={'stem-mode-btn'+(ch.soloed?' on-s':'')} onClick={()=>stemSetMode(ch.id,'solo')}>Solo</button>
-                  <button className={'stem-mode-btn'+(ch.custom?' on-c':'')} onClick={()=>stemSetMode(ch.id,'custom')}>Custom</button>
+                  <button data-coach={'chmute-'+ch.id} className={'stem-mode-btn'+(ch.muted?' on-m':'')} onClick={()=>stemSetMode(ch.id,'mute')}>Mute</button>
+                  <button data-coach={'chsolo-'+ch.id} className={'stem-mode-btn'+(ch.soloed?' on-s':'')} onClick={()=>stemSetMode(ch.id,'solo')}>Solo</button>
+                  <button data-coach={'chcustom-'+ch.id} className={'stem-mode-btn'+(ch.custom?' on-c':'')} onClick={()=>stemSetMode(ch.id,'custom')}>Custom</button>
                 </div>
               </div>
               {ch.custom && <div className="stem-vol">
-                <input type="range" min="0" max="100" value={ch.vol} onChange={e=>stemSetVol(ch.id,+e.target.value)}/>
+                <input type="range" data-coach={'chvol-'+ch.id} min="0" max="100" value={ch.vol} onChange={e=>stemSetVol(ch.id,+e.target.value)}/>
                 <span className="stem-pct">{ch.vol}%</span>
               </div>}
             </div>);
@@ -4997,10 +4999,41 @@ function buildTour(id, opts, state){
     const song=((state&&state.songs)||[]).find(s=>s.id===opts.songId);
     if(!song) return null;
     const t=song.title||'this song';
-    return [
-      { tab:'setlist', sel:'[data-coach="practice-'+song.id+'"]', text:'Tap the ▶ Practice button on “'+t+'” to open the multi-track player.' },
-      { tab:'setlist', sel:'.stem-play', needEnabled:true, text:'Tap Play ▶ to start the backing tracks. Tip: open ⚙ CONFIG to mute your own instrument and play along.' },
+    // Count viewable files (slide + the user's instrument charts) — the Files
+    // switch step only makes sense when there's more than the slide.
+    const catOf=f=>(f.cat==='original'?'other':f.cat||'other');
+    const isImg=f=>/\.(jpe?g|png|webp|gif|bmp|svg)$/i.test(f.name||'');
+    const isPdf=f=>f.type==='pdf'||/\.pdf$/i.test(f.name||'');
+    let views=0;
+    ['slide',...(MY_INSTRS||[]).filter(x=>x!=='metronome')].forEach(sec=>{
+      (song.files||[]).forEach(f=>{ if(f.url&&catOf(f)===sec&&(isImg(f)||isPdf(f))) views++; });
+    });
+    const P='.stem-play', D=(k)=>'[data-coach="'+k+'"]';
+    const steps=[
+      { tab:'setlist', sel:D('practice-'+song.id), text:'Tap the ▶ Practice button on “'+t+'” to open the multi-track player.' },
+      { sel:P, needEnabled:true, text:'Tap Play ▶ to start the backing tracks.' },
+      { sel:P, text:'Now tap the same button (⏸) to pause.' },
+      { sel:P, text:'Tap Play ▶ again to continue from where you paused.' },
+      { sel:'.sb-stop', needEnabled:true, text:'Tap Stop ■ to rewind back to the start.' },
+      { sel:P, text:'Tap Play ▶ once more — it plays from the beginning.' },
+      { sel:'.stem-cfg-btn', text:'Tap ⚙ CONFIG to open the channel mixer.' },
+      { sel:D('chmute-metronome'), text:'The metronome starts muted. Tap Mute on the Metronome channel to turn the click ON.' },
+      { sel:D('chmute-metronome'), text:'Tap Mute again to silence the metronome.' },
+      { sel:D('chmute-drums'), text:'Tap Mute on Drums to silence just that instrument.' },
+      { sel:D('chmute-drums'), text:'Tap Mute again to bring the Drums back.' },
+      { sel:D('chsolo-guitar'), text:'Tap Solo on Guitar to hear only that instrument.' },
+      { sel:D('chsolo-guitar'), text:'Tap Solo again to turn soloing off.' },
+      { sel:D('chcustom-vocals'), text:'Tap Custom on Vocals to give it its own volume — a slider appears.' },
+      { sel:D('chvol-vocals'), event:'change', text:'Drag the Vocals slider down to about 30%.' },
+      { sel:D('reset-chans'), text:'Tap ↺ Reset channels to put every channel back to default.' },
+      { sel:'.stem-cfg-btn', text:'Tap ⚙ CONFIG again to close the mixer.' },
     ];
+    if(views>1){
+      steps.push({ sel:'.sb-files', text:'Tap the Files button to switch the shown document (e.g. your instrument chart).' });
+      steps.push({ sel:'.sb-files', text:'Tap Files again to cycle back toward the slide.' });
+    }
+    steps.push({ sel:D('stem-close'), text:'Finally, tap Close to leave Practice. That’s the whole tour — nicely done! 🎸' });
+    return steps;
   }
   return null;
 }
@@ -5052,42 +5085,38 @@ function Help({state, startCoach}){
     </div>
   );
 }
-// The overlay that runs a tour: locates the target, dims the rest, arrows at it,
-// and lets ONLY a tap on the target advance. Any other tap is swallowed.
+// The overlay that runs a tour. It locates the current step's target element,
+// dims everything with 4 blocker panels that leave ONLY the target exposed, arrows
+// at it, and advances when the target fires its real event (click for buttons,
+// change for the slider). Taps anywhere else hit a blocker and are ignored.
 function Coach({coach,setTab,advance,onExit}){
   const step=coach.steps[coach.step];
   const done=!step;
   const [rect,setRect]=useState(null);
   const [ready,setReady]=useState(false);
-  const elRef=useRef(null);
   useBackHandler(true,onExit);
   useEffect(()=>{ if(step&&step.tab) setTab(step.tab); },[coach.step]);
   useEffect(()=>{
     if(done){ setRect(null); return; }
-    let alive=true, raf, scrolled=false;
-    elRef.current=null; setRect(null); setReady(false);
+    let alive=true, raf, scrolled=false, boundEl=null, acted=false;
+    const evt=step.event||'click';
+    const onEvt=()=>{ if(!alive||acted) return; acted=true; setTimeout(()=>{ if(alive) advance(); }, evt==='click'?70:0); };
+    setRect(null); setReady(false);
     const loop=()=>{
       if(!alive) return;
       const el=document.querySelector(step.sel);
       if(el){
-        elRef.current=el;
+        if(el!==boundEl){ if(boundEl) boundEl.removeEventListener(evt,onEvt); boundEl=el; el.addEventListener(evt,onEvt); }
         if(!scrolled){ scrolled=true; try{ el.scrollIntoView({block:'center',inline:'nearest'}); }catch(_){} }
         const r=el.getBoundingClientRect();
         setRect({x:r.left,y:r.top,w:r.width,h:r.height});
         setReady(!(step.needEnabled && el.disabled));
-      } else { elRef.current=null; setReady(false); }
+      } else { setReady(false); }
       raf=requestAnimationFrame(loop);
     };
     loop();
-    return ()=>{ alive=false; cancelAnimationFrame(raf); };
+    return ()=>{ alive=false; cancelAnimationFrame(raf); if(boundEl) boundEl.removeEventListener(evt,onEvt); };
   },[coach.step]);
-  const tryAct=(e)=>{
-    const r=rect, el=elRef.current; if(!r||!el) return;
-    if(step.needEnabled && el.disabled) return;
-    const pad=10;
-    const inside=e.clientX>=r.x-pad&&e.clientX<=r.x+r.w+pad&&e.clientY>=r.y-pad&&e.clientY<=r.y+r.h+pad;
-    if(inside){ try{ el.click(); }catch(_){} advance(); }
-  };
   if(done){
     return (
       <div className="coach-layer">
@@ -5095,27 +5124,37 @@ function Coach({coach,setTab,advance,onExit}){
         <div className="coach-done" onClick={e=>e.stopPropagation()}>
           <div style={{fontSize:34}}>🎉</div>
           <div style={{fontSize:16,fontWeight:700,margin:'6px 0 4px'}}>You're all set!</div>
-          <div style={{fontSize:13,color:'var(--muted)',marginBottom:14,lineHeight:1.5}}>That's how you practice a song. Stop the player any time with ■, and reopen it from any song's ▶ button.</div>
+          <div style={{fontSize:13,color:'var(--muted)',marginBottom:14,lineHeight:1.5}}>That's the full Practice tour. Reopen the player any time from a song's ▶ button.</div>
           <button className="btn" onClick={onExit}>Done</button>
         </div>
       </div>
     );
   }
   const vh=window.innerHeight, vw=window.innerWidth;
+  const P=6;
   const below=rect ? (rect.y+rect.h/2) < vh*0.5 : true;
   const cardW=Math.min(300, vw-24);
   const cx=rect ? Math.max(12, Math.min(rect.x+rect.w/2-cardW/2, vw-cardW-12)) : 12;
   const cardStyle=rect
-    ? (below ? {left:cx, top:Math.min(rect.y+rect.h+34, vh-190)} : {left:cx, bottom:Math.max(vh-rect.y+34, 96)})
+    ? (below ? {left:cx, top:Math.min(rect.y+rect.h+34, vh-200)} : {left:cx, bottom:Math.max(vh-rect.y+34, 96)})
     : {left:12, bottom:110};
+  const swallow=(e)=>{ e.preventDefault(); e.stopPropagation(); };
   return (
     <div className="coach-layer">
-      <div className="coach-catch" onClick={tryAct}></div>
-      {rect && <div className="coach-spot" style={{left:rect.x-8,top:rect.y-8,width:rect.w+16,height:rect.h+16}}></div>}
-      {rect && (
-        <div className={'coach-point '+(below?'down':'up')} style={below?{left:Math.max(14,Math.min(rect.x+rect.w/2-12,vw-36)),top:rect.y+rect.h+4}:{left:Math.max(14,Math.min(rect.x+rect.w/2-12,vw-36)),top:rect.y-30}}>
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--keys)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">{below?<path d="M12 4v13M6 11l6 6 6-6"/>:<path d="M12 20V7M6 13l6-6 6 6"/>}</svg>
-        </div>
+      {rect ? (
+        <React.Fragment>
+          {/* four blockers leave the target rect exposed so its real control works */}
+          <div className="coach-block" style={{left:0,top:0,width:vw,height:Math.max(0,rect.y-P)}} onClick={swallow}></div>
+          <div className="coach-block" style={{left:0,top:rect.y+rect.h+P,width:vw,height:Math.max(0,vh-rect.y-rect.h-P)}} onClick={swallow}></div>
+          <div className="coach-block" style={{left:0,top:Math.max(0,rect.y-P),width:Math.max(0,rect.x-P),height:rect.h+2*P}} onClick={swallow}></div>
+          <div className="coach-block" style={{left:rect.x+rect.w+P,top:Math.max(0,rect.y-P),width:Math.max(0,vw-rect.x-rect.w-P),height:rect.h+2*P}} onClick={swallow}></div>
+          <div className="coach-ring" style={{left:rect.x-4,top:rect.y-4,width:rect.w+8,height:rect.h+8}}></div>
+          <div className={'coach-point '+(below?'down':'up')} style={below?{left:Math.max(14,Math.min(rect.x+rect.w/2-13,vw-38)),top:rect.y+rect.h+6}:{left:Math.max(14,Math.min(rect.x+rect.w/2-13,vw-38)),top:rect.y-32}}>
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="var(--keys)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">{below?<path d="M12 4v13M6 11l6 6 6-6"/>:<path d="M12 20V7M6 13l6-6 6 6"/>}</svg>
+          </div>
+        </React.Fragment>
+      ) : (
+        <div className="coach-catch coach-dim" onClick={swallow}></div>
       )}
       <div className="coach-card" style={{...cardStyle, width:cardW}} onClick={e=>e.stopPropagation()}>
         <div style={{fontSize:13.5,lineHeight:1.5}}>{step.text}</div>
