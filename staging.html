@@ -451,7 +451,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.305';
+const VERSION='0.306';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -5192,7 +5192,7 @@ function Coach({coach,setTab,advance,onExit}){
   ), document.body);
 }
 function TabBar({tab,setTab,canAdmin}){
-  const items=[['stage','Stage'],['setlist','Setlist'],['rehearse','Rehearsals'],['shows','Shows'],...(canAdmin?[['admin','Admin']]:[]),['album','Gallery'],['setup','Setup'],['help','Help']];
+  const items=[['stage','Stage'],['setlist','Setlist'],['rehearse','Rehearsals'],...(canAdmin?[['admin','Admin']]:[]),['shows','Shows'],['album','Gallery'],['setup','Setup'],['help','Help']];
   const wide=useWide(760);
   const [moreOpen,setMoreOpen]=useState(false);
   useBackHandler(moreOpen,()=>setMoreOpen(false));

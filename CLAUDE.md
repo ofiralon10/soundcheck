@@ -83,7 +83,8 @@ You cannot run Firebase locally. To check a change before handing it off:
 
 ## Tabs & components (staging.html, v0.298)
 
-**Tab bar order**: Stage · Setlist · Shows · Rehearsals · Gallery · **Admin** · Setup.
+**Tab bar order**: Stage · Setlist · Rehearsals · **Admin** · Shows · Gallery · Setup · Help.
+On phones only the first 4 show inline; the rest fold into a "More" (…) sheet.
 The **Admin tab** (see "AI Manager" section below) is gated to the manager-chat
 allowlist (owner + `managerChatAllow` emails); everyone else does not see it.
 
