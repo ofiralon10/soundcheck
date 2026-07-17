@@ -253,7 +253,13 @@ function nextRunMs(prevMs, rep) {
   let base = Date.UTC(p.y, p.mo - 1, p.d, p.h, p.mi, 0);
   if (r.unit === 'day') base += r.interval * 86400000;
   else if (r.unit === 'week') base += r.interval * 7 * 86400000;
-  else { const d = new Date(base); d.setUTCMonth(d.getUTCMonth() + r.interval); base = d.getTime(); }
+  else { // month — clamp the day to the target month's last valid day (Jan 31 -> Feb 28/29)
+    let mo = (p.mo - 1) + r.interval;
+    const y = p.y + Math.floor(mo / 12);
+    mo = ((mo % 12) + 12) % 12;
+    const daysInMonth = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
+    base = Date.UTC(y, mo, Math.min(p.d, daysInMonth), p.h, p.mi, 0);
+  }
   const q = new Date(base);
   const iso = q.getUTCFullYear() + '-' + pad2(q.getUTCMonth() + 1) + '-' + pad2(q.getUTCDate()) + 'T' + pad2(q.getUTCHours()) + ':' + pad2(q.getUTCMinutes());
   return resolveWhen(iso);
@@ -820,8 +826,19 @@ exports.managerTasks = onSchedule(
           }
         } catch (e) {
           logger.error('managerTask ' + task.id + ' failed: ' + e.message);
+          const label = (task.title || task.instruction || 'A scheduled task').slice(0, 90);
+          const recurs = !!normalizeRepeat(task.repeat);
+          // Don't let a failure be silent — push to the owner and leave a chat note.
+          try { await pushToOwner('Scheduled task failed', label + ' — ' + (e.message || 'error').slice(0, 120)); } catch (_) { }
+          try {
+            const chatRef = db.collection('managerChat').doc(board.id);
+            const cs = await chatRef.get();
+            const msgs = (cs.exists && Array.isArray(cs.data().messages)) ? cs.data().messages : [];
+            msgs.push({ role: 'assistant', text: '⚠️ *Scheduled task failed* — ' + label + '\n\n' + (e.message || 'error') + (recurs ? '\n\n(It stays scheduled and will try again next time.)' : '') , ts: Date.now() });
+            await chatRef.set({ messages: msgs.slice(-40) }, { merge: true });
+          } catch (_) { }
           // Even on failure, re-arm a recurring task so one bad run doesn't kill the series.
-          const nextMs = normalizeRepeat(task.repeat) ? nextFutureRunMs(task.runAtMs, task.repeat) : null;
+          const nextMs = recurs ? nextFutureRunMs(task.runAtMs, task.repeat) : null;
           if (nextMs != null) await taskRef.set({ status: 'pending', runAtMs: nextMs, startedAt: null, lastError: (e.message || '').slice(0, 300), lastErrorAt: Date.now() }, { merge: true });
           else await taskRef.set({ status: 'error', ranAt: Date.now(), error: (e.message || '').slice(0, 300) }, { merge: true });
         }
