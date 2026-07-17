@@ -412,10 +412,12 @@
   .help-desc{display:block;font-size:12px;color:var(--muted);margin-top:2px;line-height:1.4}
   .help-chev{font-size:26px;font-weight:700;flex:none;line-height:1}
   /* Guided-tour (Coach) overlay */
-  .coach-layer{position:fixed;inset:0;z-index:4000}
-  .coach-catch{position:absolute;inset:0}
+  /* Layer itself must NOT catch pointer events, or it would block the "hole" over
+     the target too. Only the blockers / card / catch re-enable pointer events. */
+  .coach-layer{position:fixed;inset:0;z-index:4000;pointer-events:none}
+  .coach-catch{position:absolute;inset:0;pointer-events:auto}
   .coach-catch.coach-dim{background:rgba(8,8,12,.7)}
-  .coach-block{position:absolute;background:rgba(8,8,12,.66)}
+  .coach-block{position:absolute;background:rgba(8,8,12,.66);pointer-events:auto}
   .coach-ring{position:absolute;border-radius:11px;border:2px solid var(--keys);pointer-events:none;transition:left .16s,top .16s,width .16s,height .16s;animation:coachPulse 1.4s ease-in-out infinite}
   @keyframes coachPulse{0%,100%{box-shadow:0 0 0 0 rgba(139,124,246,.55)}50%{box-shadow:0 0 0 7px rgba(139,124,246,0)}}
   .coach-point{position:absolute;pointer-events:none;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))}
@@ -424,7 +426,7 @@
   @keyframes coachBobDown{0%,100%{transform:translateY(0)}50%{transform:translateY(6px)}}
   @keyframes coachBobUp{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
   .coach-card{position:absolute;background:var(--surface);border:1px solid var(--keys);border-radius:14px;padding:13px 14px;box-shadow:0 8px 30px rgba(0,0,0,.5);pointer-events:auto}
-  .coach-done{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(320px,86vw);background:var(--surface);border:1px solid var(--line-2);border-radius:18px;padding:22px 20px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.55)}
+  .coach-done{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(320px,86vw);background:var(--surface);border:1px solid var(--line-2);border-radius:18px;padding:22px 20px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.55);pointer-events:auto}
   .authwrap{min-height:100vh;display:flex;flex-direction:column}
   .authmid{flex:1;display:flex;align-items:center;justify-content:center;padding:6px 18px 40px}
   .authmid>div{width:100%;max-width:380px}
@@ -449,7 +451,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.302';
+const VERSION='0.303';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
