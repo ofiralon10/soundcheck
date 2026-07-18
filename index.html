@@ -368,7 +368,8 @@
   .reh-time{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:2px}
   .reh-loc{font-size:12.5px;color:var(--muted);margin-top:4px}
   .att{display:flex;gap:6px;margin-top:11px;flex-wrap:wrap}
-  .att .a{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:700;border:1.5px solid var(--line-2);color:var(--muted-2)}
+  .att .a{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:700;border:1.5px solid var(--line-2);color:var(--muted-2);cursor:pointer}
+  .att .a.ro{cursor:default}
   .att .a.in{color:#15141B}
   .att .a.out{border-color:var(--drums);opacity:.45}
   .att .a.maybe{border-color:var(--warn);color:var(--warn)}
@@ -459,7 +460,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.320';
+const VERSION='0.321';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -499,6 +500,9 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
+  '0.321':[
+    'Rehearsal attendance: you can now only set your own instrument’s availability — everyone else’s shows read-only. (Guests can be set by anyone.)',
+  ],
   '0.319':[
     'Rehearsal time proposals now show the proposed date, per-player ✓/?/✕ availability (same as the main card), plus Apply-as-new-time and Delete buttons.',
   ],
@@ -1837,17 +1841,19 @@ function AttStatusRow({state,r}){
   );
 }
 // Interactive four-state attendance chips (tap a player → AttPop ✓/?/✕/—).
-// `onSet(key, value)` is called with an instrument id or 'g:Name' and
-// 'yes'|'no'|'maybe' or null (clear). Same look & behaviour as the Rehearsals card.
+// You can only edit chips for your OWN instrument(s) (MY_INSTRS) — everyone else's
+// is shown read-only. Guests aren't tied to an instrument, so anyone can set them.
+// `onSet(key, value)` is called with an instrument id or 'g:Name' and a state.
 function AttendanceChips({state,attendance,guestList,onSet}){
   const [pick,setPick]=useState(null);
   const a=attendance||{};
-  const chip=(key,color,content,name)=>{ const stt=attState(a[key]);
+  const canEdit=(key)=> key.indexOf('g:')===0 ? true : (MY_INSTRS||[]).includes(key);
+  const chip=(key,color,content,name)=>{ const stt=attState(a[key]); const editable=canEdit(key);
     return (
       <span key={key} className="att-slot">
-        <button className={'a'+(stt==='yes'?' in':'')+(stt==='no'?' out':'')+(stt==='maybe'?' maybe':'')} title={name+' — '+attLabel(stt)} style={stt==='yes'?{background:color,borderColor:color}:null} onClick={()=>setPick(p=>p===key?null:key)}>{content}</button>
+        <button className={'a'+(stt==='yes'?' in':'')+(stt==='no'?' out':'')+(stt==='maybe'?' maybe':'')+(editable?'':' ro')} title={name+' — '+attLabel(stt)+(editable?'':' (only they set this)')} style={stt==='yes'?{background:color,borderColor:color}:null} onClick={editable?()=>setPick(p=>p===key?null:key):undefined}>{content}</button>
         {stt!=='none' && <span className={'att-badge '+stt}>{attGlyph(stt)}</span>}
-        {pick===key && <AttPop cur={stt} onPick={v=>{ setPick(null); onSet(key,v); }}/>}
+        {editable && pick===key && <AttPop cur={stt} onPick={v=>{ setPick(null); onSet(key,v); }}/>}
       </span>
     );
   };
@@ -4095,7 +4101,6 @@ function RehCard({r,state,patch,del,update,goSong}){
   const songs=showEntries.map(e=>state.songs.find(x=>x.id===e.songId)).filter(Boolean);
   const guestList=allShowGuests(state.shows);
   const [editFocus,setEditFocus]=useState(false);
-  const [attPick,setAttPick]=useState(null); // key of the player whose ✓/✕ popover is open
   const [markingDone,setMarkingDone]=useState(false);
   const [covered,setCovered]=useState([]);
   const [editing,setEditing]=useState(false);
@@ -4172,26 +4177,9 @@ function RehCard({r,state,patch,del,update,goSong}){
             <FocusPicker songs={songs} learn={r.focusLearn||[]} practice={r.focusPractice||[]} onToggle={onToggle} onSetOther={onSetOther}/>
             <div className="btnrow"><button className="btn sm" onClick={()=>setEditFocus(false)}>Done</button></div>
           </div>}
-      <div style={{fontSize:11,color:'var(--muted)',marginTop:12,marginBottom:2}}>Attendance (tap a player → ✓ can attend / ? maybe / ✕ can't):</div>
-      <div className="att">
-        {attPick && <span onClick={()=>setAttPick(null)} style={{position:'fixed',left:0,top:0,right:0,bottom:0,zIndex:40}}/>}
-        {INSTR.map(i=>{ const stt=attState(r.attendance && r.attendance[i.id]);
-          return <span key={i.id} className="att-slot">
-            <button className={'a'+(stt==='yes'?' in':'')+(stt==='no'?' out':'')+(stt==='maybe'?' maybe':'')} title={state.members[i.id].name+' — '+attLabel(stt)}
-              style={stt==='yes'?{background:i.color,borderColor:i.color}:{}}
-              onClick={()=>setAttPick(p=>p===i.id?null:i.id)}><InstrIcon id={i.id} size={16}/></button>
-            {stt!=='none' && <span className={'att-badge '+stt}>{attGlyph(stt)}</span>}
-            {attPick===i.id && <AttPop cur={stt} onPick={v=>{ setAttPick(null); patch(r.id,x=>{ x.attendance=x.attendance||{}; if(v) x.attendance[i.id]=v; else delete x.attendance[i.id]; }); }}/>}
-          </span>; })}
-        {guestList.map(n=>{ const k='g:'+n; const stt=attState(r.attendance && r.attendance[k]);
-          return <span key={n} className="att-slot">
-            <button className={'a'+(stt==='yes'?' in':'')+(stt==='no'?' out':'')+(stt==='maybe'?' maybe':'')} title={n+' — '+attLabel(stt)}
-              style={stt==='yes'?{background:GUEST_COLOR,borderColor:GUEST_COLOR}:{}}
-              onClick={()=>setAttPick(p=>p===k?null:k)}>{n.trim()[0].toUpperCase()}</button>
-            {stt!=='none' && <span className={'att-badge '+stt}>{attGlyph(stt)}</span>}
-            {attPick===k && <AttPop cur={stt} onPick={v=>{ setAttPick(null); patch(r.id,x=>{ x.attendance=x.attendance||{}; if(v) x.attendance[k]=v; else delete x.attendance[k]; }); }}/>}
-          </span>; })}
-      </div>
+      <div style={{fontSize:11,color:'var(--muted)',marginTop:12,marginBottom:2}}>Attendance — tap <b style={{color:'var(--text)'}}>your</b> player to answer (✓ can / ? maybe / ✕ can't):</div>
+      <AttendanceChips state={state} attendance={r.attendance} guestList={guestList}
+        onSet={(key,v)=>patch(r.id,x=>{ x.attendance=x.attendance||{}; if(v) x.attendance[key]=v; else delete x.attendance[key]; })}/>
       {r.notes && <div className="reh-loc" style={{marginTop:10}} dir="auto">{r.notes}</div>}
       {!r.done && <RehearsalProposal r={r} update={update} state={state}/>}
       <div className="btnrow"><button className="btn danger sm" onClick={()=>del(r.id)}>Delete</button></div>
