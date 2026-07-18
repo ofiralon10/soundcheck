@@ -320,6 +320,10 @@
   .stem-btns button.sb-draw{background:var(--guitar);border-color:var(--guitar);color:#15141B}
   .stem-btns button.sb-draw.on{background:#fff;border-color:#fff;color:#15141B}
   .stem-btns button.sb-rec{background:var(--drums);border-color:var(--drums);color:#fff}
+  .stem-btns button.sb-bandrec{background:#fff;border-color:#fff;color:#15141B;display:inline-flex;align-items:center;gap:5px}
+  .stem-btns button.sb-bandrec.recording{background:#fff;border-color:var(--drums);color:var(--drums)}
+  .brec-circle{width:11px;height:11px;border-radius:50%;background:var(--drums);display:inline-block;flex-shrink:0}
+  .brec-dot{width:11px;height:11px;border-radius:50%;background:var(--drums);display:inline-block;flex-shrink:0;animation:pulse 1.1s infinite}
   .draw-bar{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:62;display:flex;align-items:center;gap:7px;padding:6px 8px;background:rgba(21,20,27,.94);border:1px solid var(--line-2);border-radius:14px;box-shadow:0 4px 18px rgba(0,0,0,.4)}
   .draw-bar .draw-swatch{width:34px;height:34px;border-radius:9px;border:2px solid rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
   .draw-bar .draw-abtn{display:flex;align-items:center;gap:4px;background:var(--surface-2);border:1px solid var(--line-2);color:var(--text);border-radius:9px;padding:7px 10px;font-size:12px;font-weight:700;font-family:var(--mono);cursor:pointer}
@@ -453,7 +457,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.313';
+const VERSION='0.314';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -493,6 +497,9 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
+  '0.314':[
+    'Band recording moved into Practice: a white REC button (right of Stop) records the whole band while you keep using the doc — change positions, switch files, all live. The button shows the time; tap it again to stop and save.',
+  ],
   '0.307':[
     'Stage → Next rehearsal now shows each player’s attendance status (✓ / ? / ✕) at a glance, plus the location beside the time.',
   ],
@@ -3645,9 +3652,6 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           <button className="song-icon-btn" data-coach={'practice-'+s.id} style={{color:stemBtnColor}} onClick={e=>{e.stopPropagation();openStemPlayer();}} title="Practice">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
           </button>
-          <button className="song-icon-btn" onClick={e=>{e.stopPropagation();setRecPrompt(true);}} title="Record" style={{color:'var(--drums)'}}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-          </button>
         </div>
       </div>
       <div className="song-prog"><div className="pf" style={{width:(r*100)+'%',background:meterColor(r)}}/></div>
@@ -3773,7 +3777,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           {fileMsg && <div className="filemsg">{fileMsg}</div>}
         </div>
       </div>}
-      {recState && <div className="rec-overlay">
+      {recState && !stemOpen && <div className="rec-overlay">
         <div className="rec-panel">
           <div className="rec-dot"></div>
           <div className="rec-label">{recState==='recording'?'Recording':'Paused'}</div>
@@ -3911,6 +3915,11 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           <div className="stem-btns">
             <button className="stem-play" onClick={stemPlaying?stemPause:stemPlay} disabled={!stemDur} title={stemPlaying?'Pause':'Play'}>{stemPlaying?<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4.5" height="14" rx="1"/><rect x="13.5" y="5" width="4.5" height="14" rx="1"/></svg>:<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5v14l12-7z"/></svg>}</button>
             <button className="sb-stop" onClick={stemStop} disabled={!stemDur} title="Stop — reset to start"><span className="sb-square"/></button>
+            {!stemRecPlayback && <button className={'sb-bandrec'+(recState?' recording':'')} onClick={()=> recState ? stopRec() : setRecPrompt(true)} title={recState?'Stop recording the band':'Record the band (audio) while you follow the doc'}>
+              {recState
+                ? <React.Fragment><span className="brec-dot"/><span style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:700}}>{fmtSecs(recTime)}</span></React.Fragment>
+                : <React.Fragment><span className="brec-circle"/><span style={{fontSize:10,fontWeight:700,letterSpacing:'.04em'}}>REC</span></React.Fragment>}
+            </button>}
             {!stemRecPlayback && <button className="sb-files" onClick={toggleView} disabled={viewFiles.length<2} title={'Switch shown file'+(curView?' — '+curView.label:'')}>{ICON_FILE}{viewFiles.length>1?<span style={{fontSize:10,fontFamily:'var(--mono)'}}>{Math.min(viewIdx,viewFiles.length-1)+1}/{viewFiles.length}</span>:null}</button>}
             {!stemRecPlayback && <span>
               {zoomMenu && <div style={{position:'absolute',bottom:'100%',left:0,marginBottom:6,display:'flex',flexDirection:'column',gap:4,zIndex:70}}>
