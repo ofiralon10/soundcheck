@@ -451,7 +451,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.307';
+const VERSION='0.308';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -4155,10 +4155,17 @@ function RehCard({r,state,patch,del,update,goSong}){
           {live && <div className="reh-live-dot"><i></i>Rehearsal in progress</div>}
         </div>
         <div style={{display:'flex',gap:6}}>
-          {!r.done && <button className="btn sm ghost" onClick={openEdit}>Edit</button>}
-          {r.done
-            ? <button className="btn sm ghost" onClick={()=>patch(r.id,x=>{x.done=false;})}>Reopen</button>
-            : <button className="btn sm ghost" onClick={startMarkDone}>Mark done</button>}
+          {editing
+            ? <React.Fragment>
+                <button className="btn ghost sm" onClick={()=>setEditing(false)}>Cancel</button>
+                <button className="btn sm" onClick={saveEdit}>Save</button>
+              </React.Fragment>
+            : <React.Fragment>
+                {!r.done && <button className="btn sm ghost" onClick={openEdit}>Edit</button>}
+                {r.done
+                  ? <button className="btn sm ghost" onClick={()=>patch(r.id,x=>{x.done=false;})}>Reopen</button>
+                  : <button className="btn sm ghost" onClick={startMarkDone}>Mark done</button>}
+              </React.Fragment>}
         </div>
       </div>
       {editing && <div style={{padding:'10px 0',borderBottom:'1px solid var(--line)'}}>
@@ -4173,10 +4180,6 @@ function RehCard({r,state,patch,del,update,goSong}){
             <select className="inp" value={editShow} onChange={e=>setEditShow(e.target.value)}>
               {state.shows.map(sh=><option key={sh.id} value={sh.id}>{sh.name||'Untitled show'}</option>)}
             </select></div>}
-        </div>
-        <div className="btnrow" style={{marginTop:8}}>
-          <button className="btn ghost sm" onClick={()=>setEditing(false)}>Cancel</button>
-          <button className="btn sm" onClick={saveEdit}>Save</button>
         </div>
       </div>}
       {markingDone && <div className="done-modal" onClick={e=>{if(e.target===e.currentTarget) setMarkingDone(false);}}>
