@@ -427,6 +427,8 @@
   @keyframes coachBobUp{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
   .coach-card{position:absolute;background:var(--surface);border:1px solid var(--keys);border-radius:14px;padding:13px 14px;box-shadow:0 8px 30px rgba(0,0,0,.5);pointer-events:auto}
   .coach-done{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(320px,86vw);background:var(--surface);border:1px solid var(--line-2);border-radius:18px;padding:22px 20px;text-align:center;box-shadow:0 10px 40px rgba(0,0,0,.55);pointer-events:auto}
+  .coach-hide{position:absolute;top:8px;right:8px;width:24px;height:24px;border-radius:7px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--muted);font-size:18px;line-height:1;cursor:pointer;pointer-events:auto;display:flex;align-items:center;justify-content:center}
+  .coach-pill{position:absolute;right:14px;bottom:100px;pointer-events:auto;background:var(--keys);color:#fff;border:none;border-radius:20px;padding:9px 15px;font-size:12.5px;font-weight:700;font-family:var(--mono);box-shadow:0 4px 16px rgba(0,0,0,.45);cursor:pointer;animation:coachPulse 1.6s ease-in-out infinite}
   .authwrap{min-height:100vh;display:flex;flex-direction:column}
   .authmid{flex:1;display:flex;align-items:center;justify-content:center;padding:6px 18px 40px}
   .authmid>div{width:100%;max-width:380px}
@@ -451,7 +453,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.309';
+const VERSION='0.310';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -5172,8 +5174,10 @@ function Coach({coach,setTab,advance,onExit}){
   const done=!step;
   const [rect,setRect]=useState(null);
   const [ready,setReady]=useState(false);
+  const [infoHidden,setInfoHidden]=useState(false); // info card collapsed to a pill
   useBackHandler(true,onExit);
   useEffect(()=>{ if(step&&step.tab) setTab(step.tab); },[coach.step]);
+  useEffect(()=>{ setInfoHidden(false); },[coach.step]); // each step starts with the card shown
   useEffect(()=>{
     if(done||step.info){ setRect(null); return; }
     let alive=true, raf, scrolled=false, boundEl=null, acted=false;
@@ -5215,14 +5219,17 @@ function Coach({coach,setTab,advance,onExit}){
     const iw=Math.min(320, window.innerWidth-24);
     return ReactDOM.createPortal((
       <div className="coach-layer">
-        <div className="coach-card coach-info" style={{left:'50%',bottom:100,transform:'translateX(-50%)',width:iw}} onClick={e=>e.stopPropagation()}>
-          <div style={{fontSize:13,color:'var(--keys)',fontWeight:700,fontFamily:'var(--mono)',marginBottom:5}}>Try it 👆</div>
-          <div style={{fontSize:13.5,lineHeight:1.5}}>{step.text}</div>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:11}}>
-            <button className="btn ghost sm" onClick={onExit}>Exit guide</button>
-            <button className="btn sm" onClick={advance}>Next ▸</button>
-          </div>
-        </div>
+        {infoHidden
+          ? <button className="coach-pill" onClick={()=>setInfoHidden(false)}>▸ Show guide</button>
+          : <div className="coach-card coach-info" style={{left:'50%',bottom:100,transform:'translateX(-50%)',width:iw}} onClick={e=>e.stopPropagation()}>
+              <button className="coach-hide" onClick={()=>setInfoHidden(true)} title="Hide — use the whole screen, then bring it back">–</button>
+              <div style={{fontSize:13,color:'var(--keys)',fontWeight:700,fontFamily:'var(--mono)',marginBottom:5,paddingRight:24}}>Try it 👆</div>
+              <div style={{fontSize:13.5,lineHeight:1.5}}>{step.text}</div>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:11}}>
+                <button className="btn ghost sm" onClick={onExit}>Exit guide</button>
+                <button className="btn sm" onClick={advance}>Next ▸</button>
+              </div>
+            </div>}
       </div>
     ), document.body);
   }
