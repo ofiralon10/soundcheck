@@ -295,17 +295,18 @@
   .song-icon-badge{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--text);pointer-events:none;line-height:1}
   .stem-player{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:none;z-index:60;background:var(--bg);border-top:2px solid var(--line-2);transition:transform .25s ease}
   @media(min-width:900px){.stem-player{max-width:none}}
-  .stem-transport{padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:var(--surface)}
+  .stem-transport{padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:var(--surface);position:relative}
+  .zoom-menu{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:8px;display:flex;flex-direction:column;gap:4px;z-index:70}
   .stem-scrub{display:flex;align-items:center;gap:8px;margin-bottom:8px}
   .stem-scrub input[type=range]{flex:1;-webkit-appearance:none;height:4px;border-radius:2px;background:var(--line-2);outline:none}
   .stem-scrub input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--ok);cursor:pointer;box-shadow:0 0 4px rgba(0,0,0,.4)}
   .stem-time{font-family:var(--mono);font-size:11px;color:var(--muted);min-width:38px;text-align:center}
-  .stem-btns{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
-  .stem-btns>span{flex:1;display:flex;position:relative}
-  .stem-btns>span>button{flex:1}
-  /* narrow phones: content-sized icon buttons (positions/zoom stays compact) */
-  @media(max-width:640px){ .stem-btns>button,.stem-btns>span{flex:0 0 auto;min-width:46px} }
-  .stem-btns button{flex:1;min-width:0;height:42px;padding:0 8px;border-radius:10px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);font-family:var(--display);font-size:12px;font-weight:700;letter-spacing:.04em;cursor:pointer;white-space:nowrap;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;gap:4px}
+  /* one wide row that scrolls horizontally when the buttons overflow */
+  .stem-btns{display:flex;gap:8px;flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;scrollbar-width:thin;padding-bottom:3px}
+  .stem-btns::-webkit-scrollbar{height:5px}
+  .stem-btns::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:3px}
+  .stem-btns::-webkit-scrollbar-track{background:transparent}
+  .stem-btns button{flex:0 0 auto;min-width:64px;height:44px;padding:0 18px;border-radius:10px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);font-family:var(--display);font-size:12px;font-weight:700;letter-spacing:.04em;cursor:pointer;white-space:nowrap;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;gap:5px}
   .stem-btns button svg{display:block}
   .stem-btns button:disabled{opacity:.5}
   .stem-btns button.sb-stop{background:var(--drums);border-color:var(--drums);color:#fff}
@@ -455,7 +456,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.316';
+const VERSION='0.317';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -3808,6 +3809,11 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           <span style={{fontSize:10,color:'var(--muted)',flex:1,textAlign:'right'}}>My Stem late? tap +</span>
         </div>}
         <div className="stem-transport">
+          {!stemRecPlayback && zoomMenu && <div className="zoom-menu">
+            <button data-coach="zoom-set" style={{background:'var(--keys)',color:'#fff',border:'none',borderRadius:8,padding:'8px 16px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:100}} onClick={()=>{captureZoom();setZoomMenu(false);}}>Set position</button>
+            <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'8px 16px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:100}} onClick={()=>{resetZoom();setZoomMenu(false);}}>Clear all</button>
+            <button style={{background:'var(--surface-2)',color:'var(--text)',border:'1px solid var(--line-2)',borderRadius:8,padding:'8px 16px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:100}} onClick={()=>setZoomMenu(false)}>Cancel</button>
+          </div>}
           <div className="stem-scrub">
             <span className="stem-time">{fmtSecs(Math.floor(stemTime))}</span>
             <input type="range" min="0" max="1000" value={stemDur?(stemTime/stemDur*1000):0} step="1" onChange={e=>stemSeek(+e.target.value/1000*stemDur)} disabled={!stemDur}/>
@@ -3822,14 +3828,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
                 : <React.Fragment><span className="brec-circle"/><span style={{fontSize:10,fontWeight:700,letterSpacing:'.04em'}}>REC</span></React.Fragment>}
             </button>}
             {!stemRecPlayback && <button className="sb-files" onClick={toggleView} disabled={viewFiles.length<2} title={'Switch shown file'+(curView?' — '+curView.label:'')}>{ICON_FILE}{viewFiles.length>1?<span style={{fontSize:10,fontFamily:'var(--mono)'}}>{Math.min(viewIdx,viewFiles.length-1)+1}/{viewFiles.length}</span>:null}</button>}
-            {!stemRecPlayback && <span>
-              {zoomMenu && <div style={{position:'absolute',bottom:'100%',left:0,marginBottom:6,display:'flex',flexDirection:'column',gap:4,zIndex:70}}>
-                <button data-coach="zoom-set" style={{background:'var(--keys)',color:'#fff',border:'none',borderRadius:8,padding:'7px 14px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:92,height:'auto'}} onClick={()=>{captureZoom();setZoomMenu(false);}}>Set</button>
-                <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'7px 14px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:92,height:'auto'}} onClick={()=>{resetZoom();setZoomMenu(false);}}>Clear</button>
-                <button style={{background:'var(--surface-2)',color:'var(--text)',border:'1px solid var(--line-2)',borderRadius:8,padding:'7px 14px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:92,height:'auto'}} onClick={()=>setZoomMenu(false)}>Cancel</button>
-              </div>}
-              <button className={'sb-zoom'+(zoomMenu?' on':'')} onClick={()=>setZoomMenu(v=>!v)} disabled={!stemDur} title={'Zoom/pan plan ('+devLabel+') — tap slide right = next, left = previous'}>⛶{zoomSorted.length?<span style={{fontSize:10,fontFamily:'var(--mono)',marginLeft:3}}>{(zoomIdx>=0?zoomIdx+1:0)+'/'+zoomSorted.length}</span>:null}</button>
-            </span>}
+            {!stemRecPlayback && <button className={'sb-zoom'+(zoomMenu?' on':'')} onClick={()=>setZoomMenu(v=>!v)} disabled={!stemDur} title={'Zoom/pan plan ('+devLabel+') — tap slide right = next, left = previous'}>⛶{zoomSorted.length?<span style={{fontSize:10,fontFamily:'var(--mono)',marginLeft:3}}>{(zoomIdx>=0?zoomIdx+1:0)+'/'+zoomSorted.length}</span>:null}</button>}
             {!stemRecPlayback && canDraw && <button className={'sb-draw'+(drawOn?' on':'')} onClick={()=>{setDrawOn(v=>!v);setPenDlg(false);}} title="Draw on slide"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></button>}
             {!stemRecPlayback && <button className={'stem-cfg-btn'+(stemCfg?' open':'')} onClick={()=>setStemCfg(v=>!v)} title="Channel settings">{ICON_GEAR}</button>}
             {!stemRecPlayback && <button className="sb-rec" onClick={()=>{setStemRecPrompt(true);prefetchBackingStems();}} disabled={!!stemRecState} title="Record your stem"><span style={{width:11,height:11,borderRadius:'50%',background:'#fff',display:'inline-block',flexShrink:0}}/>{MY_INSTRS.slice(0,2).map(id=><InstrIcon key={id} id={id} size={16}/>)}</button>}
