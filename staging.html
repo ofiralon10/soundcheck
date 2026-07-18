@@ -451,7 +451,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.308';
+const VERSION='0.309';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -3681,7 +3681,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:14}}>
             <div className="modaltitle" style={{margin:0}}>Files — {s.title}</div>
             <div style={{display:'flex',gap:8,alignItems:'center'}}>
-              <button className="btn ghost sm" style={{color:stemBtnColor,borderColor:stemBtnColor,fontSize:16,padding:'6px 14px'}} onClick={()=>{setFilesOpen(false);openStemPlayer();}}>▶ Practice</button>
+              <button className="btn ghost sm" data-coach="files-practice" style={{color:stemBtnColor,borderColor:stemBtnColor,fontSize:16,padding:'6px 14px'}} onClick={()=>{setFilesOpen(false);openStemPlayer();}}>▶ Practice</button>
               <button className="xbtn" style={{fontSize:23,width:46,height:52}} onClick={()=>{setFilesOpen(false);setPickCat(null);setLinkMode(false);}}>×</button>
             </div>
           </div>
@@ -3700,7 +3700,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
                     {cat.instr && <InstrBadge id={cat.instr} size={20}/>}
                     {cat.label}
                   </div>
-                  <label className="fbtn" style={{cursor:'pointer',fontSize:11,opacity:busy==='file'?.5:1}}>+ Add<input type="file" hidden disabled={busy==='file'} onChange={e=>onUpload(e,cat.id)}/></label>
+                  <label className="fbtn" data-coach={'addfile-'+cat.id} style={{cursor:'pointer',fontSize:11,opacity:busy==='file'?.5:1}}>+ Add<input type="file" hidden disabled={busy==='file'} onChange={e=>onUpload(e,cat.id)}/></label>
                 </div>
                 {catFiles.length===0 && <div className="files-na">N/A</div>}
                 {catFiles.map(f=>fileRow(f,ff=>ff.type==='audio'?openPlayer(ff):openFile(ff)))}
@@ -3810,8 +3810,8 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
         {drawOn && canDraw && <div className="draw-bar">
           <button className="draw-swatch" onClick={()=>setPenDlg(true)} title="Pen color & thickness" style={{background:penColor}}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></button>
           <button className="draw-abtn" onClick={undoDraw} title="Undo last stroke"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7v6h6"/><path d="M3 13a9 9 0 1 0 3-7.7L3 8"/></svg><span>Undo</span></button>
-          <button className="draw-abtn" onClick={clearDrawing} title="Clear all drawings on this slide"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/></svg><span>Clear</span></button>
-          <button className="draw-abtn save" onClick={saveDrawing} disabled={drawBusy} title="Save drawings"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg><span>{drawBusy?'…':'Save'}</span></button>
+          <button className="draw-abtn" data-coach="draw-clear" onClick={clearDrawing} title="Clear all drawings on this slide"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/></svg><span>Clear</span></button>
+          <button className="draw-abtn save" data-coach="draw-save" onClick={saveDrawing} disabled={drawBusy} title="Save drawings"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg><span>{drawBusy?'…':'Save'}</span></button>
           <button className="draw-abtn done" onClick={()=>{setDrawOn(false);setPenDlg(false);}} title="Exit drawing mode">Done</button>
         </div>}
         <SlideViewer autoOn={zoomAutoOn} navMode={zoomSorted.length>0} applyRef={zoomApplyRef} captureRef={viewCapRef} onTap={zoomTap} drawMode={drawOn&&canDraw}>
@@ -3886,7 +3886,7 @@ function SongRow({s,num,members,open,toggle,update,onExclude,onToggleEncore,comp
             {!stemRecPlayback && <button className="sb-files" onClick={toggleView} disabled={viewFiles.length<2} title={'Switch shown file'+(curView?' — '+curView.label:'')}>{ICON_FILE}{viewFiles.length>1?<span style={{fontSize:10,fontFamily:'var(--mono)'}}>{Math.min(viewIdx,viewFiles.length-1)+1}/{viewFiles.length}</span>:null}</button>}
             {!stemRecPlayback && <span>
               {zoomMenu && <div style={{position:'absolute',bottom:'100%',left:0,marginBottom:6,display:'flex',flexDirection:'column',gap:4,zIndex:70}}>
-                <button style={{background:'var(--keys)',color:'#fff',border:'none',borderRadius:8,padding:'7px 14px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:92,height:'auto'}} onClick={()=>{captureZoom();setZoomMenu(false);}}>Set</button>
+                <button data-coach="zoom-set" style={{background:'var(--keys)',color:'#fff',border:'none',borderRadius:8,padding:'7px 14px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:92,height:'auto'}} onClick={()=>{captureZoom();setZoomMenu(false);}}>Set</button>
                 <button style={{background:'var(--drums)',color:'#fff',border:'none',borderRadius:8,padding:'7px 14px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:92,height:'auto'}} onClick={()=>{resetZoom();setZoomMenu(false);}}>Clear</button>
                 <button style={{background:'var(--surface-2)',color:'var(--text)',border:'1px solid var(--line-2)',borderRadius:8,padding:'7px 14px',fontSize:11,fontWeight:700,fontFamily:'var(--mono)',cursor:'pointer',whiteSpace:'nowrap',minWidth:92,height:'auto'}} onClick={()=>setZoomMenu(false)}>Cancel</button>
               </div>}
@@ -5086,11 +5086,37 @@ function buildTour(id, opts, state){
       { sel:'.sb-send', text:'Tap Send to share the mix (on a computer it downloads the file instead). All done! 🎧' },
     ];
   }
+  if(id==='instrfile'){
+    const song=((state&&state.songs)||[]).find(s=>s.id===opts.songId);
+    if(!song) return null;
+    const t=song.title||'this song';
+    const D=(k)=>'[data-coach="'+k+'"]';
+    const myCat=(MY_INSTRS.filter(x=>x!=='metronome')[0])||'other';
+    const myLabel=(INSTR.find(i=>i.id===myCat)||{label:'Other'}).label;
+    return [
+      { tab:'setlist', sel:D('files-'+song.id), text:'Open the Files screen for “'+t+'” — tap its Files icon.' },
+      { sel:D('addfile-'+myCat), text:'In your '+myLabel+' section, tap + Add. Choose a JPG or PNG (a chart or notes) — images show best in the player.' },
+      { info:true, text:'Pick a JPG or PNG in the file dialog, and wait for it to appear in your '+myLabel+' section. Then tap Next.' },
+      { sel:D('files-practice'), text:'Now tap ▶ Practice to open the player with your files.' },
+      { sel:'.sb-files', needEnabled:true, text:'Tap the Files button to switch the shown document — cycle to your '+myLabel+' image. (This needs the song to have a slide too.)' },
+      { info:true, text:'Pinch — or Ctrl+scroll on a computer — to zoom into part of the image, and drag to pan. Set the view how you want, then tap Next.' },
+      { sel:'.sb-zoom', needEnabled:true, text:'Tap the ⛶ positions button. (If it’s greyed out, this song has no backing stems — positions need a timeline. Tap Exit and pick a song with stems.)' },
+      { sel:D('zoom-set'), text:'Tap Set to save this zoom as a position at the current playhead time.' },
+      { info:true, text:'To add more: seek to another point in the song, zoom to a different spot, then ⛶ → Set again. Tap the RIGHT half of the image to jump to the next position and the LEFT half for the previous — during playback they follow the song automatically. Try it, then tap Next.' },
+      { sel:'.sb-files', text:'Tap Files to switch back to the Slide.' },
+      { sel:'.sb-files', text:'Tap Files again to return to your '+myLabel+' image.' },
+      { sel:'.sb-draw', text:'Tap the ✎ pencil to start drawing on your image.' },
+      { info:true, text:'Draw a note or comment on the image with your finger or mouse. Use the pen button to pick a color and thickness. Then tap Next.' },
+      { sel:D('draw-save'), text:'Tap Save to store your drawing — it reloads on this image next time.' },
+      { sel:D('draw-clear'), text:'Finally, tap Clear to wipe all drawings from this image. That’s the whole tour! 🎨' },
+    ];
+  }
   return null;
 }
 const HELP_TOURS=[
   { id:'practice', label:'Show me how to practice a song', desc:'Open a song in the multi-track player and start the backing tracks.', color:'#3DD68C', pickSong:true },
   { id:'record', label:'Show me how to record & share my part', desc:'Record your instrument over the backing, save it, then share the mix.', color:'#F2545B', pickSong:true },
+  { id:'instrfile', label:'Show me how to add & use my instrument file', desc:'Add an image for your instrument, set zoom positions, switch files, and draw notes on it.', color:'#8B7CF6', pickSong:true },
 ];
 function Help({state, startCoach}){
   const [pickFor,setPickFor]=useState(null);
@@ -5149,7 +5175,7 @@ function Coach({coach,setTab,advance,onExit}){
   useBackHandler(true,onExit);
   useEffect(()=>{ if(step&&step.tab) setTab(step.tab); },[coach.step]);
   useEffect(()=>{
-    if(done){ setRect(null); return; }
+    if(done||step.info){ setRect(null); return; }
     let alive=true, raf, scrolled=false, boundEl=null, acted=false;
     const evt=step.event||'click';
     const onEvt=()=>{ if(!alive||acted) return; acted=true; setTimeout(()=>{ if(alive) advance(); }, evt==='click'?70:0); };
@@ -5176,8 +5202,26 @@ function Coach({coach,setTab,advance,onExit}){
         <div className="coach-done" onClick={e=>e.stopPropagation()}>
           <div style={{fontSize:34}}>🎉</div>
           <div style={{fontSize:16,fontWeight:700,margin:'6px 0 4px'}}>You're all set!</div>
-          <div style={{fontSize:13,color:'var(--muted)',marginBottom:14,lineHeight:1.5}}>That's the full Practice tour. Reopen the player any time from a song's ▶ button.</div>
+          <div style={{fontSize:13,color:'var(--muted)',marginBottom:14,lineHeight:1.5}}>That's the walkthrough — nicely done. You can start any guide again from the Help tab.</div>
           <button className="btn" onClick={onExit}>Done</button>
+        </div>
+      </div>
+    ), document.body);
+  }
+  // Informational step: a floating card with a Next button. The layer stays
+  // pointer-events:none so the app underneath is fully usable — this is how the
+  // gesture steps work (pinch to zoom, draw, tap slide halves), then tap Next.
+  if(step.info){
+    const iw=Math.min(320, window.innerWidth-24);
+    return ReactDOM.createPortal((
+      <div className="coach-layer">
+        <div className="coach-card coach-info" style={{left:'50%',bottom:100,transform:'translateX(-50%)',width:iw}} onClick={e=>e.stopPropagation()}>
+          <div style={{fontSize:13,color:'var(--keys)',fontWeight:700,fontFamily:'var(--mono)',marginBottom:5}}>Try it 👆</div>
+          <div style={{fontSize:13.5,lineHeight:1.5}}>{step.text}</div>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:11}}>
+            <button className="btn ghost sm" onClick={onExit}>Exit guide</button>
+            <button className="btn sm" onClick={advance}>Next ▸</button>
+          </div>
         </div>
       </div>
     ), document.body);
