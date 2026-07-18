@@ -453,7 +453,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.311';
+const VERSION='0.312';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -791,26 +791,31 @@ async function enableManagerNotifications(email){
   const ua=navigator.userAgent||'';
   const isIOS=/iPad|iPhone|iPod/.test(ua);
   const standalone=(window.navigator.standalone===true)||(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches);
-  // iPhone/iPad only allow web push inside an installed PWA (Home Screen app),
-  // never in a normal Safari tab — give a clear instruction instead of a cryptic SW error.
+  // In-app browsers (opened from Telegram/WhatsApp/Facebook/Instagram or an Android
+  // WebView) usually can't register service workers or receive push at all.
+  const inApp=/(FBAN|FBAV|Instagram|Line\/|Telegram|WhatsApp|Snapchat|; wv\))/i.test(ua);
   if(isIOS && !standalone) throw new Error('On iPhone/iPad, first add Soundcheck to your Home Screen (Share → Add to Home Screen) and open it from there — Safari tabs can\'t receive notifications.');
-  if(!('serviceWorker' in navigator) || !firebase.messaging || !firebase.messaging.isSupported || !firebase.messaging.isSupported()) throw new Error('This browser/device can\'t receive web push.');
+  if(inApp) throw new Error('Open Soundcheck in Chrome (not inside another app). If you opened this link from Telegram or WhatsApp, tap the ⋯ menu → "Open in browser", then enable notifications there.');
+  if(!('serviceWorker' in navigator)) throw new Error('This browser can\'t receive web push (no service worker support).');
+  let supported=true; try{ const r=firebase.messaging&&firebase.messaging.isSupported&&firebase.messaging.isSupported(); supported=(r&&typeof r.then==='function')?await r:!!r; }catch(_){ supported=false; }
+  if(!supported) throw new Error('This browser/device can\'t receive web push.');
   const perm=await Notification.requestPermission();
   if(perm!=='granted') throw new Error('Notifications permission was not granted.');
-  let reg=await navigator.serviceWorker.register('firebase-messaging-sw.js');
-  // Wait until THIS registration has an ACTIVE worker before getToken. Passing an
-  // inactive registration makes FCM fall back to a root-scope default SW that 404s
-  // on this /soundcheck/ subpath (the "unable to register the default service
-  // worker" error). Poll reg.active (definitive) up to 12s — mobiles activate slower.
-  if(!reg.active){ await new Promise(res=>{ const iv=setInterval(()=>{ if(reg.active){ clearInterval(iv); clearTimeout(to); res(); } },150); const to=setTimeout(()=>{ clearInterval(iv); res(); },12000); }); }
-  try{ const rdy=await navigator.serviceWorker.ready; if(rdy&&rdy.active&&((rdy.active.scriptURL||'').indexOf('firebase-messaging-sw')!==-1)) reg=rdy; }catch(_){}
+  // Make sure the SW file is actually reachable at this path before registering —
+  // a 404/redirect here is what makes FCM fall back to the root default worker.
+  try{ const probe=await fetch('firebase-messaging-sw.js',{method:'GET',cache:'no-store'}); if(!probe.ok) throw new Error('HTTP '+probe.status); }
+  catch(e){ throw new Error('The notifications worker file couldn\'t be loaded ('+(e&&e.message||e)+'). Reload the app and try again.'); }
+  let reg;
+  try{ reg=await navigator.serviceWorker.register('firebase-messaging-sw.js'); }
+  catch(e){ throw new Error('Couldn\'t install the notifications worker: '+(e&&e.message||e)); }
+  // Wait for an ACTIVE worker (serviceWorker.ready resolves only once one controls
+  // the page); poll reg.active as a backstop. An inactive reg makes FCM use the
+  // root default SW that 404s here ("unable to register the default service worker").
+  try{ const rdy=await Promise.race([navigator.serviceWorker.ready, new Promise(r=>setTimeout(()=>r(null),12000))]); if(rdy&&rdy.active) reg=rdy; }catch(_){}
+  if(!reg.active){ await new Promise(res=>{ const iv=setInterval(()=>{ if(reg.active){ clearInterval(iv); clearTimeout(to); res(); } },150); const to=setTimeout(()=>{ clearInterval(iv); res(); },8000); }); }
   let token='';
   try{ token=await firebase.messaging().getToken({vapidKey:VAPID_KEY,serviceWorkerRegistration:reg}); }
-  catch(e){
-    // One retry via the ready registration, then a friendly message.
-    try{ const rdy=await navigator.serviceWorker.ready; token=await firebase.messaging().getToken({vapidKey:VAPID_KEY,serviceWorkerRegistration:rdy||reg}); }
-    catch(e2){ throw new Error('Couldn\'t set up notifications on this device'+(isIOS?' — open the app from your Home Screen icon and try again.':' — reload and try again.')); }
-  }
+  catch(e){ throw new Error('Notification setup failed: '+(e&&e.message||e)); }
   if(!token) throw new Error('Could not obtain a push token.');
   await db.collection('notifyTokens').doc(token).set({email,ts:Date.now(),ua:ua.slice(0,180)});
   try{ localStorage.setItem('sc_push_token',token); }catch(_){}
