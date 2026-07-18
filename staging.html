@@ -458,7 +458,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.318';
+const VERSION='0.319';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -498,6 +498,9 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
+  '0.319':[
+    'Rehearsal time proposals now show the proposed date, per-player ✓/?/✕ availability (same as the main card), plus Apply-as-new-time and Delete buttons.',
+  ],
   '0.316':[
     'Removed browser push notifications — the manager now reaches you via Telegram instead. Rehearsal reminders and the weekly report are sent to the owner on Telegram.',
   ],
@@ -1832,46 +1835,69 @@ function AttStatusRow({state,r}){
     </div>
   );
 }
-function RehearsalProposal({r,update,extra}){
+// Interactive four-state attendance chips (tap a player → AttPop ✓/?/✕/—).
+// `onSet(key, value)` is called with an instrument id or 'g:Name' and
+// 'yes'|'no'|'maybe' or null (clear). Same look & behaviour as the Rehearsals card.
+function AttendanceChips({state,attendance,guestList,onSet}){
+  const [pick,setPick]=useState(null);
+  const a=attendance||{};
+  const chip=(key,color,content,name)=>{ const stt=attState(a[key]);
+    return (
+      <span key={key} className="att-slot">
+        <button className={'a'+(stt==='yes'?' in':'')+(stt==='no'?' out':'')+(stt==='maybe'?' maybe':'')} title={name+' — '+attLabel(stt)} style={stt==='yes'?{background:color,borderColor:color}:null} onClick={()=>setPick(p=>p===key?null:key)}>{content}</button>
+        {stt!=='none' && <span className={'att-badge '+stt}>{attGlyph(stt)}</span>}
+        {pick===key && <AttPop cur={stt} onPick={v=>{ setPick(null); onSet(key,v); }}/>}
+      </span>
+    );
+  };
+  return (
+    <div className="att">
+      {pick && <span onClick={()=>setPick(null)} style={{position:'fixed',left:0,top:0,right:0,bottom:0,zIndex:40}}/>}
+      {INSTR.map(i=>chip(i.id,i.color,<InstrIcon id={i.id} size={16}/>,((state&&state.members&&state.members[i.id]&&state.members[i.id].name)||i.label)))}
+      {(guestList||[]).map(n=>chip('g:'+n,GUEST_COLOR,n.trim()[0].toUpperCase(),n))}
+    </div>
+  );
+}
+function RehearsalProposal({r,update,extra,state}){
   const [proposing,setProposing]=useState(false);
   const init=r.date?r.date.slice(0,16):'';
   const [day,setDay]=useState(init?init.slice(0,10):'');
   const [time,setTime]=useState(init?init.slice(11,16):'');
   const p=r.proposal;
+  const guestList=state?allShowGuests(state.shows):[];
 
   const submit=()=>{
     if(!day||!time) return;
     const newDate=day+'T'+time;
     update(s=>{ const rr=s.rehearsals.find(x=>x.id===r.id); if(!rr) return s;
-      rr.proposal={ id:uid(), by:actorName(), date:newDate, votes:{[actorName()]:'up'}, ts:new Date().toISOString() };
+      rr.proposal={ id:uid(), by:actorName(), date:newDate, attendance:{}, ts:new Date().toISOString() };
       logAct(s,'proposed moving the '+(r.date?fmtDate(r.date)+' ':'')+'rehearsal to '+fmtDate(newDate)+' '+fmtTime(newDate));
       return s; });
     setProposing(false);
   };
-  const vote=(dir)=>update(s=>{ const rr=s.rehearsals.find(x=>x.id===r.id); if(!rr||!rr.proposal) return s;
-    if(rr.proposal.votes[actorName()]===dir) delete rr.proposal.votes[actorName()];
-    else rr.proposal.votes[actorName()]=dir; return s; });
+  // Members mark their availability for the proposed time (same as the main card).
+  const setProposalAtt=(key,v)=>update(s=>{ const rr=s.rehearsals.find(x=>x.id===r.id); if(!rr||!rr.proposal) return s;
+    rr.proposal.attendance=rr.proposal.attendance||{}; if(v) rr.proposal.attendance[key]=v; else delete rr.proposal.attendance[key]; return s; });
+  // Apply: move the rehearsal to the proposed time, carry the proposal's approvals
+  // over as the rehearsal's approvals, and clear the proposal.
   const apply=()=>update(s=>{ const rr=s.rehearsals.find(x=>x.id===r.id); if(!rr||!rr.proposal) return s;
-    const nd=rr.proposal.date; rr.date=nd; rr.proposal=null;
+    const nd=rr.proposal.date; rr.date=nd; rr.attendance=Object.assign({},rr.proposal.attendance||{}); rr.proposal=null;
     logAct(s,'moved the rehearsal to '+fmtDate(nd)+' '+fmtTime(nd)); return s; });
   const dismiss=()=>update(s=>{ const rr=s.rehearsals.find(x=>x.id===r.id); if(rr) rr.proposal=null; return s; });
 
   if(p){
-    const vals=Object.values(p.votes||{});
-    const ups=vals.filter(v=>v==='up').length, downs=vals.filter(v=>v==='down').length;
-    const mine=p.votes?p.votes[actorName()]:null;
     return (
       <div className="prop">
-        <div className="prop-h">Proposed time change</div>
+        <div className="prop-h">Proposed new time</div>
         <div className="prop-new">{fmtDate(p.date)} · {fmtTime(p.date)}</div>
         <div className="prop-by">by {p.by} · was {fmtDate(r.date)} {fmtTime(r.date)}</div>
-        <div className="prop-votes">
-          <button className={'vbtn up'+(mine==='up'?' on':'')} onClick={()=>vote('up')}>👍 {ups}</button>
-          <button className={'vbtn down'+(mine==='down'?' on':'')} onClick={()=>vote('down')}>👎 {downs}</button>
-        </div>
+        {state && <React.Fragment>
+          <div style={{fontSize:11,color:'var(--muted)',marginTop:9,marginBottom:1}}>Can you make the new time? (tap your player)</div>
+          <AttendanceChips state={state} attendance={p.attendance} guestList={guestList} onSet={setProposalAtt}/>
+        </React.Fragment>}
         <div className="prop-act">
-          <button className="btn" onClick={apply}>Apply change</button>
-          <button className="btn ghost" onClick={dismiss}>Dismiss</button>
+          <button className="btn" onClick={apply}>Apply as new time</button>
+          <button className="btn ghost" onClick={dismiss}>Delete</button>
         </div>
         {extra && <div style={{marginTop:10}}>{extra}</div>}
       </div>
@@ -2091,7 +2117,7 @@ function Stage({state,go,update,goSong,showId,pickShow}){
           {plannedCount>0
             ? <FocusTags songs={state.songs} learn={next.focusLearn} practice={next.focusPractice} onGoSong={goSong}/>
             : <div style={{color:'var(--muted)',fontSize:12.5,marginTop:10}}>No songs planned yet — set the focus in Rehearsals.</div>}
-          <RehearsalProposal r={next} update={update} extra={!next.done && <AttendanceAnswer r={next} update={update}/>}/>
+          <RehearsalProposal r={next} update={update} state={state} extra={!next.done && <AttendanceAnswer r={next} update={update}/>}/>
         </div>
         : <div className="card"><div style={{color:'var(--muted)',fontSize:13}}>None booked. Add one in Rehearsals.</div></div>}
       {songs.length>0 && <React.Fragment>
@@ -4166,7 +4192,7 @@ function RehCard({r,state,patch,del,update,goSong}){
           </span>; })}
       </div>
       {r.notes && <div className="reh-loc" style={{marginTop:10}} dir="auto">{r.notes}</div>}
-      {!r.done && <RehearsalProposal r={r} update={update}/>}
+      {!r.done && <RehearsalProposal r={r} update={update} state={state}/>}
       <div className="btnrow"><button className="btn danger sm" onClick={()=>del(r.id)}>Delete</button></div>
     </div>
   );
