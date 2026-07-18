@@ -269,7 +269,6 @@
   .abt{position:absolute;left:16px;bottom:12px;right:16px;font-family:var(--display);font-size:22px;font-weight:700;color:#fff;text-shadow:0 2px 14px rgba(0,0,0,.85);letter-spacing:.02em;pointer-events:none;z-index:1}
   .abt small{display:block;font-size:12px;font-weight:500;opacity:.9;letter-spacing:.03em;margin-top:2px;font-family:var(--body)}
   .admin-hero::after,.admin-side::after{content:'';position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.55),rgba(0,0,0,0) 50%);pointer-events:none}
-  .push-toast{position:fixed;top:calc(10px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:90;width:min(92vw,460px);background:var(--surface-3);border:1px solid var(--keys);border-radius:14px;padding:11px 13px;box-shadow:0 8px 30px rgba(0,0,0,.5);cursor:pointer;animation:toastIn .25s ease}
   @keyframes toastIn{from{opacity:0;transform:translate(-50%,-12px)}to{opacity:1;transform:translate(-50%,0)}}
   .mchat{display:flex;flex-direction:column;gap:8px;overflow-y:auto;padding:4px 2px;min-height:120px}
   .mbub{max-width:82%;padding:9px 12px;border-radius:14px;font-size:13px;line-height:1.5;white-space:pre-wrap}
@@ -451,13 +450,12 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-functions-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.315';
+const VERSION='0.316';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -497,6 +495,9 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
+  '0.316':[
+    'Removed browser push notifications — the manager now reaches you via Telegram instead. Rehearsal reminders and the weekly report are sent to the owner on Telegram.',
+  ],
   '0.314':[
     'Band recording moved into Practice: a white REC button (right of Stop) records the whole band while you keep using the doc — change positions, switch files, all live. The button shows the time; tap it again to stop and save.',
   ],
@@ -607,12 +608,6 @@ const firebaseConfig = {
   messagingSenderId: "720440182108",
   appId: "1:720440182108:web:48fd85d99bd4cc7da32d99"
 };
-// Web-Push public key for the always-on manager notifications. Get it in the
-// Firebase console: Project settings -> Cloud Messaging -> Web configuration
-// -> "Web Push certificates" -> generate/copy the key pair. This is a PUBLIC
-// key, safe to embed. Until it's set, the Enable-notifications button explains
-// that push isn't configured yet.
-const VAPID_KEY='BFoMYHQS6TFLOi_nZ-MFQQjjWvK4tQ5e19Nqw_VlDYwNQ0lRpT4mKBS8wDJbqPzWXxyPO7g23rDdW2sYT_vhXMc';
 // Telegram bot username (without @) for the manager. Set after creating the bot
 // via @BotFather. Empty = Telegram linking disabled in the UI.
 const TELEGRAM_BOT='ashashiot_admin_bot';
@@ -792,62 +787,13 @@ function selectBoard(id){
   try{ localStorage.setItem('sc_board',BOARD); }catch(_){}
 }
 function isStaging(){ return BOARD==='staging'; }
-// Register this device to receive the always-on manager's push notifications.
-async function enableManagerNotifications(email){
-  if(!VAPID_KEY || VAPID_KEY.indexOf('PASTE')===0) throw new Error('Push isn\'t set up yet — add the Web Push key (VAPID_KEY) first.');
-  const ua=navigator.userAgent||'';
-  const isIOS=/iPad|iPhone|iPod/.test(ua);
-  const standalone=(window.navigator.standalone===true)||(window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches);
-  // In-app browsers (opened from Telegram/WhatsApp/Facebook/Instagram or an Android
-  // WebView) usually can't register service workers or receive push at all.
-  const inApp=/(FBAN|FBAV|Instagram|Line\/|Telegram|WhatsApp|Snapchat|; wv\))/i.test(ua);
-  if(isIOS && !standalone) throw new Error('On iPhone/iPad, first add Soundcheck to your Home Screen (Share → Add to Home Screen) and open it from there — Safari tabs can\'t receive notifications.');
-  if(inApp) throw new Error('Open Soundcheck in Chrome (not inside another app). If you opened this link from Telegram or WhatsApp, tap the ⋯ menu → "Open in browser", then enable notifications there.');
-  if(!('serviceWorker' in navigator)) throw new Error('This browser can\'t receive web push (no service worker support).');
-  let supported=true; try{ const r=firebase.messaging&&firebase.messaging.isSupported&&firebase.messaging.isSupported(); supported=(r&&typeof r.then==='function')?await r:!!r; }catch(_){ supported=false; }
-  if(!supported) throw new Error('This browser/device can\'t receive web push.');
-  const perm=await Notification.requestPermission();
-  if(perm!=='granted') throw new Error('Notifications permission was not granted.');
-  // Make sure the SW file is actually reachable at this path before registering —
-  // a 404/redirect here is what makes FCM fall back to the root default worker.
-  try{ const probe=await fetch('firebase-messaging-sw.js',{method:'GET',cache:'no-store'}); if(!probe.ok) throw new Error('HTTP '+probe.status); }
-  catch(e){ throw new Error('The notifications worker file couldn\'t be loaded ('+(e&&e.message||e)+'). Reload the app and try again.'); }
-  let reg;
-  try{ reg=await navigator.serviceWorker.register('firebase-messaging-sw.js'); }
-  catch(e){ throw new Error('Couldn\'t install the notifications worker: '+(e&&e.message||e)); }
-  // Wait for an ACTIVE worker (serviceWorker.ready resolves only once one controls
-  // the page); poll reg.active as a backstop. An inactive reg makes FCM use the
-  // root default SW that 404s here ("unable to register the default service worker").
-  try{ const rdy=await Promise.race([navigator.serviceWorker.ready, new Promise(r=>setTimeout(()=>r(null),12000))]); if(rdy&&rdy.active) reg=rdy; }catch(_){}
-  if(!reg.active){ await new Promise(res=>{ const iv=setInterval(()=>{ if(reg.active){ clearInterval(iv); clearTimeout(to); res(); } },150); const to=setTimeout(()=>{ clearInterval(iv); res(); },8000); }); }
-  let token='';
-  try{ token=await firebase.messaging().getToken({vapidKey:VAPID_KEY,serviceWorkerRegistration:reg}); }
-  catch(e){ throw new Error('Notification setup failed: '+(e&&e.message||e)); }
-  if(!token) throw new Error('Could not obtain a push token.');
-  await db.collection('notifyTokens').doc(token).set({email,ts:Date.now(),ua:ua.slice(0,180)});
-  try{ localStorage.setItem('sc_push_token',token); }catch(_){}
-  return token;
-}
-// Turn off notifications on this device: drop the token from Firestore + unregister the SW.
-// Deliberately avoids firebase.messaging().getToken()/deleteToken() with no registration —
-// those trigger FCM's default root-scope SW registration, which 404s on this subpath.
-async function disableManagerNotifications(){
-  let token=''; try{ token=localStorage.getItem('sc_push_token')||''; }catch(_){}
-  if(token){ try{ await db.collection('notifyTokens').doc(token).delete(); }catch(_){} }
-  try{
-    const regs=await navigator.serviceWorker.getRegistrations();
-    for(const r of regs){ const u=(r.active&&r.active.scriptURL)||(r.waiting&&r.waiting.scriptURL)||(r.installing&&r.installing.scriptURL)||''; if(u.indexOf('firebase-messaging-sw')!==-1) await r.unregister(); }
-  }catch(_){}
-  try{ localStorage.removeItem('sc_push_token'); }catch(_){}
-}
-// One-time cleanup on load: remove any service worker registered OUTSIDE this app's
-// path (e.g. a stale root-scope FCM worker left by an old version), which can throw
-// ghost "unable to register the default service worker" 404s.
+// Push notifications were removed (v0.316) in favour of Telegram. Clean up any
+// service worker left by the old FCM setup so no ghost registrations remain.
 if(typeof navigator!=='undefined' && navigator.serviceWorker && navigator.serviceWorker.getRegistrations){
   try{
-    const base=location.pathname.replace(/[^/]*$/,'');
-    navigator.serviceWorker.getRegistrations().then(regs=>{ regs.forEach(r=>{ try{ if(new URL(r.scope).pathname.indexOf(base)!==0) r.unregister(); }catch(_){} }); }).catch(()=>{});
+    navigator.serviceWorker.getRegistrations().then(regs=>{ regs.forEach(r=>{ try{ r.unregister(); }catch(_){} }); }).catch(()=>{});
   }catch(_){}
+  try{ localStorage.removeItem('sc_push_token'); }catch(_){}
 }
 // Talk to the always-on manager (server-side; shared key). message='' loads history.
 function managerChatCall(showId,message,clear){
@@ -1632,50 +1578,6 @@ function App(){
   useBackHandler(showInstrPrompt,closeInstrPrompt);
   const inited=useRef(false);
   const startBoardFn=useRef(null);
-  const [pushToast,setPushToast]=useState(null);
-  const pushToastTimer=useRef(null);
-  const showPushToast=useCallback((title,body)=>{ setPushToast({title,body}); if(pushToastTimer.current) clearTimeout(pushToastTimer.current); pushToastTimer.current=setTimeout(()=>setPushToast(null),8000); },[]);
-
-  // Foreground push: when the app is open/focused the browser hands the message
-  // to the page instead of auto-showing it, so display it ourselves.
-  useEffect(()=>{
-    let hasToken=false; try{ hasToken=!!localStorage.getItem('sc_push_token'); }catch(_){}
-    if(!hasToken || !('serviceWorker' in navigator)) return;
-    let unsub=null, cancelled=false;
-    (async()=>{
-      try{
-        const ua=navigator.userAgent||'';
-        // In-app browsers (Telegram/WhatsApp/etc.) can't register SWs; calling
-        // getToken there makes FCM fall back to the root default worker (404).
-        if(/(FBAN|FBAV|Instagram|Line\/|Telegram|WhatsApp|Snapchat|; wv\))/i.test(ua)) return;
-        let sup=firebase.messaging&&firebase.messaging.isSupported&&firebase.messaging.isSupported();
-        if(sup&&typeof sup.then==='function') sup=await sup;
-        if(!firebase.messaging || sup===false) return;
-        // Register OUR worker and wait until it's ACTIVE. Only call getToken with an
-        // active registration — otherwise FCM registers a root-scope default worker
-        // (which 404s on /soundcheck/), the "unable to register default SW" error.
-        let reg=null;
-        try{ reg=await navigator.serviceWorker.register('firebase-messaging-sw.js'); }catch(_){ return; }
-        try{ const rdy=await Promise.race([navigator.serviceWorker.ready,new Promise(r=>setTimeout(()=>r(null),12000))]); if(rdy&&rdy.active) reg=rdy; }catch(_){}
-        if(!reg||!reg.active) return;   // never call getToken without an active reg
-        if(cancelled) return;
-        const m=firebase.messaging();
-        try{ await m.getToken({vapidKey:VAPID_KEY,serviceWorkerRegistration:reg}); }catch(_){}
-        if(cancelled) return;
-        unsub=m.onMessage(payload=>{
-          const n=(payload&&payload.notification)||{};
-          const title=n.title||'Band manager', body=n.body||'';
-          // Always show an in-app banner (works on every device even when the OS
-          // suppresses notifications for a focused app), plus try a system one.
-          showPushToast(title,body);
-          if(('Notification' in window)&&Notification.permission==='granted'){
-            try{ reg.showNotification(title,{body,icon:'admin-banner.jpg'}); }catch(_){}
-          }
-        });
-      }catch(_){}
-    })();
-    return ()=>{ cancelled=true; try{ unsub&&unsub(); }catch(_){} };
-  },[]);
   useEffect(()=>{
     if(!configReady()){ setPhase('config'); return; }
     if(!initFirebase()){ setPhase('config'); return; }
@@ -1765,16 +1667,6 @@ function App(){
 
   return (
     <React.Fragment>
-      {pushToast && <div className="push-toast" onClick={()=>{setPushToast(null);setTab('admin');}}>
-        <div style={{display:'flex',alignItems:'center',gap:10}}>
-          <span style={{fontSize:18}}>◆</span>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontWeight:700,fontSize:13}} dir="auto">{pushToast.title}</div>
-            {pushToast.body && <div style={{fontSize:12,color:'var(--muted)',marginTop:1}} dir="auto">{pushToast.body}</div>}
-          </div>
-          <button onClick={e=>{e.stopPropagation();setPushToast(null);}} style={{background:'none',border:'none',color:'var(--muted)',fontSize:18,cursor:'pointer',padding:'0 2px'}}>×</button>
-        </div>
-      </div>}
       <Header state={state} update={update} onSwitch={switchBoard} showId={curShowId} />
       {isStaging() && <div className="stagingbar">STAGING COPY · changes here don't touch the live board</div>}
       {showChangelog && <div className="files-modal" onClick={e=>{if(e.target===e.currentTarget) dismissChangelog();}}>
@@ -4382,13 +4274,6 @@ function Setup({state,update,user,onSignOut,onSwitch}){
   const canDelete=admin||myRole==='owner';
   const [confirmReset,setConfirmReset]=useState(false);
   const [confirmDelete,setConfirmDelete]=useState(false);
-  const [notifMsg,setNotifMsg]=useState('');
-  const [notifBusy,setNotifBusy]=useState(false);
-  const [pushOn,setPushOn]=useState(()=>{ try{ return !!localStorage.getItem('sc_push_token'); }catch(_){ return false; } });
-  const toggleNotif=async()=>{ setNotifBusy(true); setNotifMsg(''); try{
-      if(pushOn){ await disableManagerNotifications(); setPushOn(false); setNotifMsg('Notifications turned off on this device.'); }
-      else { await enableManagerNotifications(myEmail); setPushOn(true); setNotifMsg('Done — this device will now receive manager notifications.'); }
-    }catch(e){ setNotifMsg(e.message||String(e)); } setNotifBusy(false); };
   const delBand=async()=>{ try{ await deleteBandDoc(); if(onSwitch) onSwitch(); }catch(e){ alert('Failed: '+prettyErr(e)); setConfirmDelete(false); } };
   const setBand=(v)=>update(s=>{s.band=v;return s;});
   const setMember=(id,v)=>update(s=>{s.members[id].name=v;return s;});
@@ -4407,16 +4292,6 @@ function Setup({state,update,user,onSignOut,onSwitch}){
       </div>
 
       <TelegramCard state={state} user={user}/>
-
-      {admin && <React.Fragment>
-        <div className="section-h">AI manager notifications</div>
-        <div className="card">
-          <div style={{fontSize:12.5,color:'var(--muted)',lineHeight:1.55}}>Get rehearsal reminders (~24h ahead) and a weekly readiness report pushed to this device from the always-on manager. Owner-only. Enable it on each device you want notified.</div>
-          <div className="btnrow"><button className="btn ghost" disabled={notifBusy} onClick={toggleNotif}>{notifBusy?(pushOn?'Turning off…':'Enabling…'):(pushOn?'Disable on this device':'Enable on this device')}</button></div>
-          {notifMsg && <div style={{fontSize:12,color:'var(--muted)',marginTop:6}}>{notifMsg}</div>}
-          <div style={{fontSize:11,color:'var(--muted)',marginTop:8}}>Manage the AI manager's guidelines, chat and who can use it in the <b style={{color:'var(--text)'}}>Admin</b> tab.</div>
-        </div>
-      </React.Fragment>}
 
       <div className="section-h">Testing & staging</div>
       <div className="card">

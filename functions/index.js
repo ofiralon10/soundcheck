@@ -15,12 +15,13 @@
  * Two scheduled jobs run on Anthropic's/Google's clock even when nobody has the
  * app open:
  *   rehearsalReminders — hourly; ~24h before each upcoming rehearsal it asks
- *                        Claude for a short manager note and pushes it to the
- *                        owner's phone(s). Sent once per rehearsal.
+ *                        Claude for a short manager note and DMs it to the owner
+ *                        on Telegram. Sent once per rehearsal.
  *   weeklyReport       — weekly; a readiness/progress summary + priorities.
  *
- * Owner-only for now: both read the owner's boards and push only to the
- * owner's registered devices (collection `notifyTokens`, email == ADMIN_EMAIL).
+ * Owner-only for now: both read the owner's boards and DM only the owner on
+ * Telegram (via pushToOwner → sendTelegramToMember 'me'). FCM web push was
+ * removed in favour of Telegram.
  *
  * The Anthropic API key lives server-side as a secret (ANTHROPIC_KEY) — it is
  * never in any browser. State (which reminders were sent, last weekly time) is
@@ -44,7 +45,6 @@ const logger = require('firebase-functions/logger');
 // firebase-admin v14 removed the legacy `admin.*` namespace — modular imports only.
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
-const { getMessaging } = require('firebase-admin/messaging');
 const crypto = require('crypto');
 
 initializeApp();
@@ -167,27 +167,15 @@ async function askClaude(key, system, user) {
   return JSON.parse(txt);
 }
 
-/* ---------- push ---------- */
-async function pushToOwner(title, body) {
-  const snap = await db.collection('notifyTokens').where('email', '==', ADMIN_EMAIL).get();
-  const tokens = snap.docs.map(d => d.id);
-  if (!tokens.length) { logger.warn('no notify tokens registered — nothing to push'); return 0; }
-  const resp = await getMessaging().sendEachForMulticast({
-    tokens,
-    notification: { title, body },
-    webpush: { fcmOptions: { link: APP_URL } }
-  });
-  // prune dead tokens
-  const dead = [];
-  resp.responses.forEach((r, i) => {
-    if (!r.success) {
-      const code = r.error && r.error.code;
-      if (code === 'messaging/registration-token-not-registered' || code === 'messaging/invalid-registration-token') dead.push(tokens[i]);
-    }
-  });
-  await Promise.all(dead.map(t => db.collection('notifyTokens').doc(t).delete().catch(() => {})));
-  logger.info('pushed "' + title + '" — ok ' + resp.successCount + ', fail ' + resp.failureCount);
-  return resp.successCount;
+/* ---------- notify owner (via Telegram; FCM push was removed) ---------- */
+// Reminders/reports/alerts now DM the owner on Telegram instead of web push.
+// Requires the owner to have linked Telegram (Setup → Your Telegram); otherwise
+// it no-ops gracefully. `title`/`body` are combined into one message.
+async function pushToOwner(bandId, title, body) {
+  const text = [title, body].filter(t => t && String(t).trim()).join('\n');
+  if (!text) return 0;
+  try { await sendTelegramToMember(bandId, 'me', text, ADMIN_EMAIL); return 1; }
+  catch (e) { logger.error('pushToOwner (telegram) failed for ' + bandId + ': ' + e.message); return 0; }
 }
 
 /* ---------- owner's boards ---------- */
@@ -331,7 +319,7 @@ const REMINDER_SYSTEM =
   'and a body under 55 words that names the focus and the 1-2 things to nail. Warm, direct, specific. No filler, no emoji spam.';
 
 exports.rehearsalReminders = onSchedule(
-  { schedule: 'every 60 minutes', timeZone: TZ, secrets: [ANTHROPIC_KEY] },
+  { schedule: 'every 60 minutes', timeZone: TZ, secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN] },
   async () => {
     const key = ANTHROPIC_KEY.value();
     const boards = await ownerBoards();
@@ -360,7 +348,7 @@ exports.rehearsalReminders = onSchedule(
         ].filter(Boolean).join('\n');
         try {
           const msg = await askClaude(key, REMINDER_SYSTEM, 'Write the reminder.\n\n' + brief);
-          await pushToOwner(msg.title || 'Rehearsal soon', msg.body || '');
+          await pushToOwner(board.id, msg.title || 'Rehearsal soon', msg.body || '');
           sent.add(r.id);
         } catch (e) { logger.error('reminder failed for ' + board.id + '/' + r.id + ': ' + e.message); }
       }
@@ -380,7 +368,7 @@ const WEEKLY_SYSTEM =
   'Motivating and concrete. If the timeline is tight, say so.';
 
 exports.weeklyReport = onSchedule(
-  { schedule: 'every monday 09:00', timeZone: TZ, secrets: [ANTHROPIC_KEY] },
+  { schedule: 'every monday 09:00', timeZone: TZ, secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN] },
   async () => {
     const key = ANTHROPIC_KEY.value();
     const boards = await ownerBoards();
@@ -403,7 +391,7 @@ exports.weeklyReport = onSchedule(
       ].join('\n');
       try {
         const msg = await askClaude(key, WEEKLY_SYSTEM, 'Write the weekly check-in.\n\n' + brief);
-        await pushToOwner(msg.title || 'Weekly band check-in', msg.body || '');
+        await pushToOwner(board.id, msg.title || 'Weekly band check-in', msg.body || '');
         await saveState(board.id, { lastWeekly: new Date().toISOString() });
       } catch (e) { logger.error('weekly failed for ' + board.id + ': ' + e.message); }
     }
@@ -419,7 +407,7 @@ exports.weeklyReport = onSchedule(
 const MANAGER_SYSTEM =
   'You are the band\'s manager, in an ongoing chat with a band member. You have the current band data and the owner\'s standing guidelines below. ' +
   'Answer questions and give concrete, motivating advice. When asked to change something — save a guideline, set a player\'s status, set a rehearsal\'s focus, or schedule a rehearsal — use the tools, then confirm in plain language what you did. ' +
-  'When the member explicitly asks you to notify, alert, ping, or remind someone right now, use send_notification to push a phone notification (keep the title <=6 words and the body short). Do not send notifications unprompted. ' +
+  'When the member explicitly asks you to notify, alert, ping, remind, or message someone, use send_telegram to DM a linked member (recipient "me" is the owner). Keep it short. Do not message people unprompted. ' +
   'You CAN run things later, on a schedule, even when nobody has the app open — use schedule_task with a future time (see CURRENT TIME in the context) and a clear instruction to your future self; use list_scheduled_tasks / cancel_scheduled_task to manage them. For a repeating task, set schedule_task\'s `repeat` field — it re-arms itself automatically, so never manually re-schedule a recurring task. Never tell anyone you cannot run background or timed tasks — you can, via schedule_task. ' +
   'Reference songs by their #number and rehearsals by their R-number. Always honor the owner guidelines. Be concise and direct — this is a chat, not a report.\n' +
   'FORMATTING — the chat renders these, so use them to make messages scannable:\n' +
@@ -436,13 +424,12 @@ const MANAGER_TOOLS = [
   { name: 'set_song_status', description: 'Set one player\'s readiness on a setlist song.', input_schema: { type: 'object', properties: { song: { type: 'integer', description: '#number from the setlist' }, instrument: { type: 'string', enum: ['keys', 'drums', 'guitar', 'bass', 'vocals'] }, status: { type: 'string', enum: ['todo', 'learning', 'practicing', 'ready'] } }, required: ['song', 'instrument', 'status'] } },
   { name: 'apply_focus', description: 'Set learn/practice focus on an existing upcoming rehearsal (by R-number).', input_schema: { type: 'object', properties: { rehearsal: { type: 'integer' }, learn: { type: 'array', items: { type: 'integer' } }, practice: { type: 'array', items: { type: 'integer' } }, note: { type: 'string' } }, required: ['rehearsal'] } },
   { name: 'create_rehearsal', description: 'Schedule a new rehearsal for this show.', input_schema: { type: 'object', properties: { date: { type: 'string', description: 'YYYY-MM-DD' }, time: { type: 'string', description: 'HH:MM 24h (default 20:00)' }, durationHours: { type: 'number' }, location: { type: 'string' }, learn: { type: 'array', items: { type: 'integer' } }, practice: { type: 'array', items: { type: 'integer' } } }, required: ['date'] } },
-  { name: 'send_notification', description: 'Push a phone notification to the registered device(s). Use only when the member explicitly asks to notify/alert/remind/ping now.', input_schema: { type: 'object', properties: { title: { type: 'string', description: 'Short title (<=6 words)' }, body: { type: 'string', description: 'Short message body' } }, required: ['title', 'body'] } },
   { name: 'send_telegram', description: 'Send a Telegram direct message to a band member who has linked Telegram. Use when asked to message/DM/telegram someone.', input_schema: { type: 'object', properties: { recipient: { type: 'string', description: 'Member name or email, or "me" for the owner' }, message: { type: 'string' } }, required: ['recipient', 'message'] } },
   { name: 'ask_members', description: 'Ask linked band members a multiple-choice question over Telegram (tappable option buttons) and collect their answers. Use when asked to poll/ask/survey the band with options.', input_schema: { type: 'object', properties: { question: { type: 'string' }, options: { type: 'array', items: { type: 'string' }, description: '2-8 answer options' }, recipients: { type: 'string', description: '"all" for everyone linked, or a comma-separated list of names/emails' } }, required: ['question', 'options'] } },
   { name: 'get_poll_results', description: 'Read back the answers to the most recent question asked via ask_members (tally + who answered what + who hasn\'t).', input_schema: { type: 'object', additionalProperties: false, properties: {} } },
   { name: 'show_plan', description: 'Display a rehearsal plan in the app (the "Rehearsal plan" panel under the chat) for the band to see. Use when asked to lay out / show / post a plan. Write song names and docs as plain text.', input_schema: { type: 'object', properties: { summary: { type: 'string', description: 'One or two lines of overview' }, sessions: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { title: { type: 'string', description: 'e.g. "Rehearsal 1 — Sun Mar 8"' }, learn: { type: 'array', items: { type: 'string' } }, practice: { type: 'array', items: { type: 'string' } }, docs: { type: 'array', items: { type: 'string' }, description: 'Docs to prepare, e.g. "slide for Black Bird"' }, note: { type: 'string' } }, required: ['title'] } } }, required: ['sessions'] } },
   { name: 'set_approval', description: "Record a player's attendance answer for a rehearsal. Use status 'yes' when they confirm they can make it, 'no' when they say they can't, 'maybe' when they're unsure, and 'clear' to reset them to un-answered.", input_schema: { type: 'object', properties: { rehearsal: { type: 'integer', description: 'R-number of the rehearsal' }, instrument: { type: 'string', enum: ['keys', 'drums', 'guitar', 'bass', 'vocals'] }, status: { type: 'string', enum: ['yes', 'no', 'maybe', 'clear'], description: "yes = can attend, no = can't attend, maybe = unsure, clear = un-answered" } }, required: ['rehearsal', 'instrument', 'status'] } },
-  { name: 'schedule_task', description: 'Schedule an action to run automatically at a future time — even when nobody has the app open. At that moment you are re-invoked with the instruction and can use your other tools (send_notification, send_telegram, ask_members, board tools). Use for reminders, follow-ups and time-based nudges. For a REPEATING task, set the `repeat` field and the system re-arms it automatically after each run — do NOT re-schedule it yourself. Times are ' + TZ + '.', input_schema: { type: 'object', properties: { when: { type: 'string', description: 'When to run (first time, if repeating), as YYYY-MM-DDTHH:MM in ' + TZ + ' local time (or full ISO 8601 with offset). Must be in the future — see CURRENT TIME in the context.' }, instruction: { type: 'string', description: 'Exactly what to do when it runs, written as an instruction to your future self. Be specific: who to message, what to ask or say.' }, title: { type: 'string', description: 'Optional short label.' }, repeat: { type: 'object', description: 'Optional — makes the task recurring; it re-arms itself after each run (cancel with cancel_scheduled_task). E.g. {unit:"day",interval:1} = daily, {unit:"week",interval:2} = every 2 weeks.', properties: { unit: { type: 'string', enum: ['hour', 'day', 'week', 'month'] }, interval: { type: 'integer', description: 'Every N units (default 1).' } }, required: ['unit'] } }, required: ['when', 'instruction'] } },
+  { name: 'schedule_task', description: 'Schedule an action to run automatically at a future time — even when nobody has the app open. At that moment you are re-invoked with the instruction and can use your other tools (send_telegram, ask_members, board tools). Use for reminders, follow-ups and time-based nudges. For a REPEATING task, set the `repeat` field and the system re-arms it automatically after each run — do NOT re-schedule it yourself. Times are ' + TZ + '.', input_schema: { type: 'object', properties: { when: { type: 'string', description: 'When to run (first time, if repeating), as YYYY-MM-DDTHH:MM in ' + TZ + ' local time (or full ISO 8601 with offset). Must be in the future — see CURRENT TIME in the context.' }, instruction: { type: 'string', description: 'Exactly what to do when it runs, written as an instruction to your future self. Be specific: who to message, what to ask or say.' }, title: { type: 'string', description: 'Optional short label.' }, repeat: { type: 'object', description: 'Optional — makes the task recurring; it re-arms itself after each run (cancel with cancel_scheduled_task). E.g. {unit:"day",interval:1} = daily, {unit:"week",interval:2} = every 2 weeks.', properties: { unit: { type: 'string', enum: ['hour', 'day', 'week', 'month'] }, interval: { type: 'integer', description: 'Every N units (default 1).' } }, required: ['unit'] } }, required: ['when', 'instruction'] } },
   { name: 'list_scheduled_tasks', description: 'List the pending scheduled tasks you have set for this band (also shown as T-numbers in the context).', input_schema: { type: 'object', additionalProperties: false, properties: {} } },
   { name: 'cancel_scheduled_task', description: 'Cancel a pending scheduled task by its T-number.', input_schema: { type: 'object', properties: { task: { type: 'integer' } }, required: ['task'] } }
 ];
@@ -663,13 +650,7 @@ async function runManagerLoop({ bandId, board, show, ctx, apiMsgs, email, key })
       const results = [];
       for (const tu of toolUses) {
         let out; const inp = tu.input || {};
-        if (tu.name === 'send_notification') {
-          try {
-            const n = await pushToOwner(inp.title || 'Band manager', inp.body || '');
-            out = n > 0 ? ('Notification pushed to ' + n + ' device' + (n === 1 ? '' : 's') + '.')
-                        : 'No devices are registered for notifications yet — enable notifications in Setup first.';
-          } catch (e) { out = 'Could not send the notification: ' + e.message; }
-        } else if (tu.name === 'send_telegram') {
+        if (tu.name === 'send_telegram') {
           try { out = await sendTelegramToMember(bandId, inp.recipient || 'me', inp.message || '', email); }
           catch (e) { out = 'Could not send the Telegram message: ' + e.message; }
         } else if (tu.name === 'ask_members') {
@@ -766,7 +747,7 @@ exports.managerChat = onCall({ secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN] }, async
    sees what happened, and the task is marked done. */
 const SCHED_PREFIX =
   '[AUTONOMOUS SCHEDULED RUN — this fired at its scheduled time; nobody is watching the chat. ' +
-  'Carry out the instruction NOW using your tools (send_notification / send_telegram / ask_members / board tools as appropriate) — actually do it, do not just describe it. ' +
+  'Carry out the instruction NOW using your tools (send_telegram / ask_members / board tools as appropriate) — actually do it, do not just describe it. ' +
   'End with a one-line summary of what you did.]\n\nInstruction: ';
 // Appended when the task is recurring, so the model doesn't ALSO schedule the next
 // run (the scheduler re-arms it automatically after this run).
@@ -831,7 +812,7 @@ exports.managerTasks = onSchedule(
           const label = (task.title || task.instruction || 'A scheduled task').slice(0, 90);
           const recurs = !!normalizeRepeat(task.repeat);
           // Don't let a failure be silent — push to the owner and leave a chat note.
-          try { await pushToOwner('Scheduled task failed', label + ' — ' + (e.message || 'error').slice(0, 120)); } catch (_) { }
+          try { await pushToOwner(board.id, 'Scheduled task failed', label + ' — ' + (e.message || 'error').slice(0, 120)); } catch (_) { }
           try {
             const chatRef = db.collection('managerChat').doc(board.id);
             const cs = await chatRef.get();
