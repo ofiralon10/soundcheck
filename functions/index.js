@@ -33,7 +33,7 @@
 const ADMIN_EMAIL = 'ofiralon10@gmail.com';        // must match ADMIN_EMAIL in the app
 const TZ = 'Asia/Jerusalem';                       // schedule timezone
 const REMINDER_LEAD_HOURS = 24;                    // how far ahead to remind
-const MODEL = 'claude-opus-4-8';
+const MODEL = 'claude-haiku-4-5';   // cheapest tier; flip to 'claude-sonnet-5' if the manager needs to be sharper
 const APP_URL = 'https://ofiralon10.github.io/soundcheck/'; // opened when a push is tapped
 /* -------------------------------------- */
 
@@ -505,15 +505,13 @@ function buildManagerContextNode(board, show, opts) {
   });
   const inSet = new Set(entries.map(e => e.songId));
   const otherLines = songsAll.filter(s => !inSet.has(s.id)).map(s => '- "' + (s.title || 'Untitled') + '"' + (s.artist ? (' — ' + s.artist) : '') + ' | files: ' + songFileSummary(s));
-  // Full file inventory, per song, per section — for spotting gaps.
+  // Full file inventory per section — only for the CURRENT show's songs (the ones
+  // being prepped) to keep the prompt small. Library songs still appear with their
+  // one-line file summary in OTHER SONGS above.
   const fileDetailLines = [];
   idxToSong.forEach((sid, i) => {
     const s = songsAll.find(x => x.id === sid); if (!s) return;
     fileDetailLines.push('#' + (i + 1) + ' "' + (s.title || 'Untitled') + '"');
-    fileDetailLines.push(songFilesDetail(s));
-  });
-  songsAll.filter(s => !inSet.has(s.id)).forEach(s => {
-    fileDetailLines.push('(not in show) "' + (s.title || 'Untitled') + '"');
     fileDetailLines.push(songFilesDetail(s));
   });
   const showLines = (board.shows || []).map(sh => {
@@ -558,9 +556,10 @@ function buildManagerContextNode(board, show, opts) {
     ...(songLines.length ? songLines : ['(empty)']),
     ...(otherLines.length ? ['', 'OTHER SONGS in the library (not in this show), with their files:', ...otherLines] : []),
     '',
-    'SONG FILES — full inventory of every file, by song and section. A section marked',
-    '*** MISSING *** has no document at all; use this to spot gaps (e.g. a song with no',
-    'slide, or no chart for a specific instrument). [stem] = a real stem audio file.',
+    'SONG FILES (current show) — full inventory of every file, by song and section.',
+    'A section marked *** MISSING *** has no document at all; use this to spot gaps',
+    '(e.g. a song with no slide, or no chart for an instrument). [stem] = a real stem',
+    'audio file. (Library songs not in this show: see OTHER SONGS above for a summary.)',
     ...(fileDetailLines.length ? fileDetailLines : ['(no songs)']),
     '',
     'UPCOMING REHEARSALS (reference by R-number):',
@@ -649,11 +648,14 @@ async function anthropicRaw(key, body) {
 // reply plus the board `ops` (for the caller to persist) and the tool names used.
 // Used by both managerChat (interactive) and the managerTasks scheduler (autonomous).
 async function runManagerLoop({ bandId, board, show, ctx, apiMsgs, email, key }) {
-  const sys = MANAGER_SYSTEM + '\n\n' + ctx.context;
+  // The system prompt (band context) + the tools are large and identical across
+  // every step of the loop. Marking the system block cacheable caches the whole
+  // tools+system prefix, so steps 2..6 of a turn reuse it at ~10% input cost.
+  const sysBlocks = [{ type: 'text', text: MANAGER_SYSTEM + '\n\n' + ctx.context, cache_control: { type: 'ephemeral' } }];
   const work = JSON.parse(JSON.stringify(board));   // in-loop tool effects land here
   const ops = []; const actions = []; let reply = '';
   for (let step = 0; step < 6; step++) {
-    const data = await anthropicRaw(key, { model: MODEL, max_tokens: 2000, system: sys, messages: apiMsgs, tools: MANAGER_TOOLS });
+    const data = await anthropicRaw(key, { model: MODEL, max_tokens: 2000, system: sysBlocks, messages: apiMsgs, tools: MANAGER_TOOLS });
     if (data.stop_reason === 'refusal') { reply = 'Sorry — I can\'t help with that one.'; break; }
     apiMsgs.push({ role: 'assistant', content: data.content });
     const toolUses = (data.content || []).filter(b => b.type === 'tool_use');
