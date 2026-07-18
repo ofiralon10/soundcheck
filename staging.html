@@ -453,7 +453,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.312';
+const VERSION='0.313';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -1628,13 +1628,20 @@ function App(){
     let unsub=null, cancelled=false;
     (async()=>{
       try{
-        if(!firebase.messaging || (firebase.messaging.isSupported && firebase.messaging.isSupported()===false)) return;
-        // Register + activate OUR worker, then associate it with the messaging
-        // instance via getToken. Without this, firebase.messaging()/onMessage
-        // registers a root-scope default worker (which 404s on /soundcheck/).
-        let reg=await navigator.serviceWorker.register('firebase-messaging-sw.js');
-        if(!reg.active){ await new Promise(res=>{ const iv=setInterval(()=>{ if(reg.active){ clearInterval(iv); clearTimeout(to); res(); } },150); const to=setTimeout(()=>{ clearInterval(iv); res(); },12000); }); }
-        try{ const rdy=await navigator.serviceWorker.ready; if(rdy&&rdy.active&&((rdy.active.scriptURL||'').indexOf('firebase-messaging-sw')!==-1)) reg=rdy; }catch(_){}
+        const ua=navigator.userAgent||'';
+        // In-app browsers (Telegram/WhatsApp/etc.) can't register SWs; calling
+        // getToken there makes FCM fall back to the root default worker (404).
+        if(/(FBAN|FBAV|Instagram|Line\/|Telegram|WhatsApp|Snapchat|; wv\))/i.test(ua)) return;
+        let sup=firebase.messaging&&firebase.messaging.isSupported&&firebase.messaging.isSupported();
+        if(sup&&typeof sup.then==='function') sup=await sup;
+        if(!firebase.messaging || sup===false) return;
+        // Register OUR worker and wait until it's ACTIVE. Only call getToken with an
+        // active registration — otherwise FCM registers a root-scope default worker
+        // (which 404s on /soundcheck/), the "unable to register default SW" error.
+        let reg=null;
+        try{ reg=await navigator.serviceWorker.register('firebase-messaging-sw.js'); }catch(_){ return; }
+        try{ const rdy=await Promise.race([navigator.serviceWorker.ready,new Promise(r=>setTimeout(()=>r(null),12000))]); if(rdy&&rdy.active) reg=rdy; }catch(_){}
+        if(!reg||!reg.active) return;   // never call getToken without an active reg
         if(cancelled) return;
         const m=firebase.messaging();
         try{ await m.getToken({vapidKey:VAPID_KEY,serviceWorkerRegistration:reg}); }catch(_){}
