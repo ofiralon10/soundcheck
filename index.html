@@ -451,7 +451,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.306';
+const VERSION='0.307';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -491,6 +491,9 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
+  '0.307':[
+    'Stage → Next rehearsal now shows each player’s attendance status (✓ / ? / ✕) at a glance, plus the location beside the time.',
+  ],
   '0.305':[
     'New Help walkthrough: record & share your part — record over the backing, save it, then share the mix.',
   ],
@@ -1869,6 +1872,27 @@ function AttendanceAnswer({r,update}){
     </React.Fragment>}
   </span>;
 }
+// Read-only per-player attendance display (used on the Stage next-rehearsal card):
+// each instrument chip with a corner badge — green ✓ can attend, amber ? maybe,
+// red ✕ can't, nothing = not answered yet. Uses attState/attGlyph/attLabel.
+function AttStatusRow({state,r}){
+  const a=(r&&r.attendance)||{};
+  return (
+    <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginTop:11}}>
+      <span style={{fontSize:11,color:'var(--muted)',fontFamily:'var(--mono)',flexShrink:0}}>Attendance</span>
+      <div className="att" style={{marginTop:0}}>
+        {INSTR.map(i=>{ const stt=attState(a[i.id]); const nm=(state.members&&state.members[i.id]&&state.members[i.id].name)||i.label;
+          return (
+            <span key={i.id} className="att-slot">
+              <span className={'a'+(stt==='yes'?' in':'')+(stt==='no'?' out':'')+(stt==='maybe'?' maybe':'')} title={nm+' — '+attLabel(stt)} style={stt==='yes'?{background:i.color,borderColor:i.color}:null}><InstrIcon id={i.id} size={16}/></span>
+              {stt!=='none' && <span className={'att-badge '+stt}>{attGlyph(stt)}</span>}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 function RehearsalProposal({r,update,extra}){
   const [proposing,setProposing]=useState(false);
   const init=r.date?r.date.slice(0,16):'';
@@ -2124,6 +2148,7 @@ function Stage({state,go,update,goSong,showId,pickShow}){
           <div className="reh-date">{fmtDate(next.date)}{!next.done && <ApprovalBadge r={next}/>}</div>
           <div className="reh-time">{fmtTimeRange(next.date,next.duration)}{next.location?' · '+next.location:''}</div>
           {isRehLive(next) && <div className="reh-live-dot"><i></i>Rehearsal in progress</div>}
+          {!next.done && <AttStatusRow state={state} r={next}/>}
           {plannedCount>0
             ? <FocusTags songs={state.songs} learn={next.focusLearn} practice={next.focusPractice} onGoSong={goSong}/>
             : <div style={{color:'var(--muted)',fontSize:12.5,marginTop:10}}>No songs planned yet — set the focus in Rehearsals.</div>}
