@@ -457,7 +457,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.314';
+const VERSION='0.315';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -839,6 +839,15 @@ async function disableManagerNotifications(){
     for(const r of regs){ const u=(r.active&&r.active.scriptURL)||(r.waiting&&r.waiting.scriptURL)||(r.installing&&r.installing.scriptURL)||''; if(u.indexOf('firebase-messaging-sw')!==-1) await r.unregister(); }
   }catch(_){}
   try{ localStorage.removeItem('sc_push_token'); }catch(_){}
+}
+// One-time cleanup on load: remove any service worker registered OUTSIDE this app's
+// path (e.g. a stale root-scope FCM worker left by an old version), which can throw
+// ghost "unable to register the default service worker" 404s.
+if(typeof navigator!=='undefined' && navigator.serviceWorker && navigator.serviceWorker.getRegistrations){
+  try{
+    const base=location.pathname.replace(/[^/]*$/,'');
+    navigator.serviceWorker.getRegistrations().then(regs=>{ regs.forEach(r=>{ try{ if(new URL(r.scope).pathname.indexOf(base)!==0) r.unregister(); }catch(_){} }); }).catch(()=>{});
+  }catch(_){}
 }
 // Talk to the always-on manager (server-side; shared key). message='' loads history.
 function managerChatCall(showId,message,clear){
