@@ -52,16 +52,17 @@
   .actwho{font-family:var(--display);font-weight:700;font-size:13px;color:var(--text);white-space:nowrap}
   .acttext{font-size:13px;color:var(--muted);min-width:0;line-height:1.35}
   .actwhen{font-family:var(--mono);font-size:10px;color:var(--muted-2);white-space:nowrap}
-  .prop{margin-top:13px;border-top:1px solid var(--line);padding-top:13px}
-  .prop-h{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--warn);margin-bottom:7px}
-  .prop-new{font-family:var(--display);font-weight:700;font-size:14.5px;color:var(--text)}
-  .prop-by{font-size:11.5px;color:var(--muted);margin-top:2px}
-  .prop-votes{display:flex;align-items:center;gap:9px;margin-top:11px;flex-wrap:wrap}
-  .vbtn{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:12px;font-weight:700;border-radius:9px;padding:8px 12px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--muted)}
-  .vbtn.up.on{color:var(--ok);border-color:rgba(61,214,140,.5);background:rgba(61,214,140,.08)}
-  .vbtn.down.on{color:var(--drums);border-color:rgba(242,84,91,.5);background:rgba(242,84,91,.08)}
-  .prop-act{display:flex;gap:8px;margin-top:11px}
-  .prop-act .btn{flex:1;padding:9px 12px;font-size:13px}
+  /* proposal block is intentionally compact (~80% of normal) */
+  .prop{margin-top:10px;border-top:1px solid var(--line);padding-top:9px}
+  .prop-h{font-family:var(--mono);font-size:8px;letter-spacing:.12em;text-transform:uppercase;color:var(--warn);margin-bottom:4px}
+  .prop-new{font-family:var(--display);font-weight:700;font-size:11.5px;color:var(--text)}
+  .prop-by{font-size:9.5px;color:var(--muted);margin-top:1px}
+  .prop .att{gap:4px;margin-top:5px}
+  .prop .att .a{width:26px;height:26px}
+  .prop .att .a svg{width:13px;height:13px}
+  .prop .att-badge{width:12px;height:12px;font-size:7px;border-width:1px}
+  .prop-act{display:flex;gap:6px;margin-top:8px}
+  .prop-act .btn{flex:1;padding:6px 10px;font-size:11px}
   .propform{margin-top:11px;display:flex;flex-direction:column;gap:9px}
   .propform .row2{display:flex;gap:9px}
   .propform .row2 .inp{flex:1}
@@ -458,7 +459,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.319';
+const VERSION='0.320';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
