@@ -307,6 +307,8 @@
   .stem-btns::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:3px}
   .stem-btns::-webkit-scrollbar-track{background:transparent}
   .stem-btns button{flex:0 0 auto;min-width:64px;height:44px;padding:0 18px;border-radius:10px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--text);font-family:var(--display);font-size:12px;font-weight:700;letter-spacing:.04em;cursor:pointer;white-space:nowrap;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;gap:5px}
+  /* wide screens (tablet/desktop): spread the buttons across the full width, no scroll */
+  @media(min-width:900px){ .stem-btns{overflow:visible;padding-bottom:0} .stem-btns button{flex:1 1 0;min-width:0} }
   .stem-btns button svg{display:block}
   .stem-btns button:disabled{opacity:.5}
   .stem-btns button.sb-stop{background:var(--drums);border-color:var(--drums);color:#fff}
@@ -456,7 +458,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.317';
+const VERSION='0.318';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
