@@ -662,8 +662,12 @@ async function runManagerLoop({ bandId, board, show, ctx, apiMsgs, email, key })
   const ops = []; const actions = []; let reply = '';
   const MAX_STEPS = 12;   // a plan turn can legitimately use many tool calls
   for (let step = 0; step < MAX_STEPS; step++) {
-    const data = await anthropicRaw(key, { model: MODEL, max_tokens: 2000, system: sysBlocks, messages: apiMsgs, tools: MANAGER_TOOLS });
+    // max_tokens must be generous: a show_plan call with several sessions is a lot
+    // of JSON, and truncation returns stop_reason 'max_tokens' with a partial
+    // tool_use we can't run — which surfaced as an empty "(no reply)" turn.
+    const data = await anthropicRaw(key, { model: MODEL, max_tokens: 8000, system: sysBlocks, messages: apiMsgs, tools: MANAGER_TOOLS });
     if (data.stop_reason === 'refusal') { reply = 'Sorry — I can\'t help with that one.'; break; }
+    if (data.stop_reason === 'max_tokens') logger.warn('manager response hit max_tokens — output was truncated');
     apiMsgs.push({ role: 'assistant', content: data.content });
     const toolUses = (data.content || []).filter(b => b.type === 'tool_use');
     if (data.stop_reason === 'tool_use' && toolUses.length) {
@@ -698,6 +702,7 @@ async function runManagerLoop({ bandId, board, show, ctx, apiMsgs, email, key })
       continue;
     }
     reply = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+    if (!reply) logger.warn('manager turn produced no text — stop_reason=' + data.stop_reason + ' blocks=' + (data.content || []).map(b => b.type).join(','));
     break;
   }
   // If the turn used up every step on tool calls we'd otherwise return an empty
