@@ -718,7 +718,10 @@ async function runManagerLoop({ bandId, board, show, ctx, apiMsgs, email, key })
   return { reply, ops, actions };
 }
 
-exports.managerChat = onCall({ secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN] }, async (req) => {
+// timeoutSeconds: a planning turn makes several Sonnet calls with a large context,
+// which comfortably exceeds the 60s default (the request just died => the client
+// showed "manager isn't connected"). memory bumped so JSON work isn't the bottleneck.
+exports.managerChat = onCall({ secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN], timeoutSeconds: 300, memory: '512MiB' }, async (req) => {
   const email = req.auth && req.auth.token && req.auth.token.email;
   if (!email) throw new HttpsError('unauthenticated', 'Please sign in first.');
   const { bandId, showId, message } = req.data || {};
@@ -790,7 +793,9 @@ const SCHED_PREFIX =
 const SCHED_RECUR_NOTE = '\n\n[This is a recurring task; its next run is re-armed automatically. Do NOT call schedule_task for it.]';
 
 exports.managerTasks = onSchedule(
-  { schedule: 'every 5 minutes', timeZone: TZ, secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN] },
+  // Same agent loop as the chat, so it needs the same headroom (default 60s is
+  // not enough when a due task builds a plan or runs several tools).
+  { schedule: 'every 5 minutes', timeZone: TZ, secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN], timeoutSeconds: 540, memory: '512MiB' },
   async () => {
     const key = ANTHROPIC_KEY.value();
     const now = Date.now();
