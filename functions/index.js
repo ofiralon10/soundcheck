@@ -139,9 +139,16 @@ function entryReadiness(e) {
 }
 function pct(x) { return Math.round(x * 100); }
 function titleOf(board, id) { const s = (board.songs || []).find(x => x.id === id); return s ? (s.title || 'Untitled') : null; }
+// The app stores rehearsal/show times as a BARE local wall-clock ('2026-08-16T20:00')
+// with no timezone. Parsing that with `new Date()` on the (UTC) server and then
+// rendering in TZ shifted every time by the offset (+3h) — so the manager quoted
+// wrong times. resolveWhen() interprets a bare stamp as Israel wall-clock.
 function fmtWhen(iso) {
-  try { return new Date(iso).toLocaleString('en-GB', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); }
-  catch (_) { return iso; }
+  try {
+    const ms = resolveWhen(iso);
+    const d = (ms != null) ? new Date(ms) : new Date(iso);
+    return d.toLocaleString('en-GB', { timeZone: TZ, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  } catch (_) { return iso; }
 }
 
 /* ---------- Claude (server-side; key never leaves the function) ---------- */
@@ -407,7 +414,7 @@ exports.weeklyReport = onSchedule(
 const MANAGER_SYSTEM =
   'You are the band\'s manager, in an ongoing chat with a band member. You have the current band data and the owner\'s standing guidelines below. ' +
   'Answer questions and give concrete, motivating advice. When asked to change something — save a guideline, set a player\'s status, set a rehearsal\'s focus, or schedule a rehearsal — use the tools, then confirm in plain language what you did. ' +
-  'CRITICAL RULE — POSTING PLANS: If the member asks for a rehearsal plan, a schedule/order of rehearsals, what to practice, or how to prepare for the show, you MUST call the show_plan tool — do not answer with the plan only as chat text. Call show_plan FIRST (before your text reply), with concrete sessions. Each session = { title (e.g. "Rehearsal 1 — focus"), learn: [song names], practice: [song names], docs: [things to prepare], note }. Build 2–4 sessions from the real data below (readiness, weakest songs, attendance, missing files). If there is no rehearsal date yet, still post it with generic titles like "Session 1". After calling show_plan, your text reply can be a one-line "Posted the plan below." NEVER just describe a plan in prose and stop. You have the full band data below (every song, all files, readiness, attendance, past rehearsals, activity) — use it. ' +
+  'CRITICAL RULE — POSTING PLANS: If the member asks for a rehearsal plan, a schedule/order of rehearsals, what to practice, or how to prepare for the show, you MUST call the show_plan tool — do not answer with the plan only as chat text. Call show_plan FIRST (before your text reply), with concrete sessions. Each session = { title, learn: [song names], practice: [song names], docs: [things to prepare], note }. Cover EVERY upcoming rehearsal listed in UPCOMING REHEARSALS — one session per rehearsal, all the way to the show date. Do not stop at 2–3; if there are 8 rehearsals before the show, produce 8 sessions. Title each session with that rehearsal\'s OWN R-number and its exact date/time as printed in the context, e.g. "R5 — Sun 16 Aug, 20:00" — never renumber them 1,2,3. All times in the context are already Israel time (' + TZ + '); quote them exactly as shown, never shift them. If no rehearsals are scheduled yet, propose dated sessions instead.After calling show_plan, your text reply can be a one-line "Posted the plan below." NEVER just describe a plan in prose and stop. You have the full band data below (every song, all files, readiness, attendance, past rehearsals, activity) — use it. ' +
   'When the member explicitly asks you to notify, alert, ping, remind, or message someone, use send_telegram to DM a linked member (recipient "me" is the owner). Keep it short. Do not message people unprompted. ' +
   'You CAN run things later, on a schedule, even when nobody has the app open — use schedule_task with a future time (see CURRENT TIME in the context) and a clear instruction to your future self; use list_scheduled_tasks / cancel_scheduled_task to manage them. For a repeating task, set schedule_task\'s `repeat` field — it re-arms itself automatically, so never manually re-schedule a recurring task. Never tell anyone you cannot run background or timed tasks — you can, via schedule_task. ' +
   'Reference songs by their #number and rehearsals by their R-number. Always honor the owner guidelines. Be concise and direct — this is a chat, not a report.\n' +
@@ -665,12 +672,12 @@ async function runManagerLoop({ bandId, board, show, ctx, apiMsgs, email, key })
     // max_tokens must be generous: a show_plan call with several sessions is a lot
     // of JSON, and truncation returns stop_reason 'max_tokens' with a partial
     // tool_use we can't run — which surfaced as an empty "(no reply)" turn.
-    const data = await anthropicRaw(key, { model: MODEL, max_tokens: 8000, system: sysBlocks, messages: apiMsgs, tools: MANAGER_TOOLS });
+    const data = await anthropicRaw(key, { model: MODEL, max_tokens: 16000, system: sysBlocks, messages: apiMsgs, tools: MANAGER_TOOLS });
     if (data.stop_reason === 'refusal') { reply = 'Sorry — I can\'t help with that one.'; break; }
     if (data.stop_reason === 'max_tokens') logger.warn('manager response hit max_tokens — output was truncated');
-    apiMsgs.push({ role: 'assistant', content: data.content });
     const toolUses = (data.content || []).filter(b => b.type === 'tool_use');
     if (data.stop_reason === 'tool_use' && toolUses.length) {
+      apiMsgs.push({ role: 'assistant', content: data.content });
       const results = [];
       for (const tu of toolUses) {
         let out; const inp = tu.input || {};
@@ -701,7 +708,12 @@ async function runManagerLoop({ bandId, board, show, ctx, apiMsgs, email, key })
       apiMsgs.push({ role: 'user', content: results });
       continue;
     }
-    reply = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+    // Not a tool turn — or the model was cut off mid-tool-call. Keep ONLY the text
+    // blocks: appending a partial tool_use would leave it without a tool_result and
+    // every later request 400s ("tool_use ids were found without tool_result").
+    const textBlocks = (data.content || []).filter(b => b.type === 'text');
+    if (textBlocks.length) apiMsgs.push({ role: 'assistant', content: textBlocks });
+    reply = textBlocks.map(b => b.text).join('').trim();
     if (!reply) logger.warn('manager turn produced no text — stop_reason=' + data.stop_reason + ' blocks=' + (data.content || []).map(b => b.type).join(','));
     break;
   }
