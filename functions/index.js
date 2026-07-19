@@ -660,7 +660,8 @@ async function runManagerLoop({ bandId, board, show, ctx, apiMsgs, email, key })
   const sysBlocks = [{ type: 'text', text: MANAGER_SYSTEM + '\n\n' + ctx.context, cache_control: { type: 'ephemeral' } }];
   const work = JSON.parse(JSON.stringify(board));   // in-loop tool effects land here
   const ops = []; const actions = []; let reply = '';
-  for (let step = 0; step < 6; step++) {
+  const MAX_STEPS = 12;   // a plan turn can legitimately use many tool calls
+  for (let step = 0; step < MAX_STEPS; step++) {
     const data = await anthropicRaw(key, { model: MODEL, max_tokens: 2000, system: sysBlocks, messages: apiMsgs, tools: MANAGER_TOOLS });
     if (data.stop_reason === 'refusal') { reply = 'Sorry — I can\'t help with that one.'; break; }
     apiMsgs.push({ role: 'assistant', content: data.content });
@@ -698,6 +699,16 @@ async function runManagerLoop({ bandId, board, show, ctx, apiMsgs, email, key })
     }
     reply = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
     break;
+  }
+  // If the turn used up every step on tool calls we'd otherwise return an empty
+  // reply (the "(no reply)" bubble). Ask once more WITHOUT tools so the member
+  // always gets a written answer describing what was just done.
+  if (!reply) {
+    logger.warn('manager loop hit the step cap with no text reply — asking for a summary');
+    try {
+      const data = await anthropicRaw(key, { model: MODEL, max_tokens: 1200, system: sysBlocks, messages: apiMsgs });
+      reply = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+    } catch (e) { logger.error('final summary call failed: ' + e.message); }
   }
   return { reply, ops, actions };
 }
