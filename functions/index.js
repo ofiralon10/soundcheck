@@ -407,7 +407,7 @@ exports.weeklyReport = onSchedule(
 const MANAGER_SYSTEM =
   'You are the band\'s manager, in an ongoing chat with a band member. You have the current band data and the owner\'s standing guidelines below. ' +
   'Answer questions and give concrete, motivating advice. When asked to change something — save a guideline, set a player\'s status, set a rehearsal\'s focus, or schedule a rehearsal — use the tools, then confirm in plain language what you did. ' +
-  'IMPORTANT — plans: whenever you devise OR revise a rehearsal plan, immediately call show_plan to post it to the app (the "Rehearsal plan" panel), in the SAME turn, before you finish. Do not just describe a plan in the chat and wait to be asked — always post it with show_plan so the band can see it. You have the full band data below (every song, all files, readiness, attendance, past rehearsals, activity) — use it. ' +
+  'CRITICAL RULE — POSTING PLANS: If the member asks for a rehearsal plan, a schedule/order of rehearsals, what to practice, or how to prepare for the show, you MUST call the show_plan tool — do not answer with the plan only as chat text. Call show_plan FIRST (before your text reply), with concrete sessions. Each session = { title (e.g. "Rehearsal 1 — focus"), learn: [song names], practice: [song names], docs: [things to prepare], note }. Build 2–4 sessions from the real data below (readiness, weakest songs, attendance, missing files). If there is no rehearsal date yet, still post it with generic titles like "Session 1". After calling show_plan, your text reply can be a one-line "Posted the plan below." NEVER just describe a plan in prose and stop. You have the full band data below (every song, all files, readiness, attendance, past rehearsals, activity) — use it. ' +
   'When the member explicitly asks you to notify, alert, ping, remind, or message someone, use send_telegram to DM a linked member (recipient "me" is the owner). Keep it short. Do not message people unprompted. ' +
   'You CAN run things later, on a schedule, even when nobody has the app open — use schedule_task with a future time (see CURRENT TIME in the context) and a clear instruction to your future self; use list_scheduled_tasks / cancel_scheduled_task to manage them. For a repeating task, set schedule_task\'s `repeat` field — it re-arms itself automatically, so never manually re-schedule a recurring task. Never tell anyone you cannot run background or timed tasks — you can, via schedule_task. ' +
   'Reference songs by their #number and rehearsals by their R-number. Always honor the owner guidelines. Be concise and direct — this is a chat, not a report.\n' +
@@ -741,6 +741,7 @@ exports.managerChat = onCall({ secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN] }, async
     throw new HttpsError('internal', 'The manager could not respond right now.');
   }
 
+  logger.info('managerChat done — actions: [' + actions.join(',') + '] ops: [' + ops.map(o => o.type).join(',') + ']');
   const now = Date.now();
   messages = [...messages, { role: 'user', text: String(message), ts: now }, { role: 'assistant', text: reply || '(no reply)', ts: now }].slice(-40);
   await chatRef.set({ messages }, { merge: true });
