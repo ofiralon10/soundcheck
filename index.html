@@ -460,7 +460,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.321';
+const VERSION='0.322';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -500,6 +500,10 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
+  '0.322':[
+    'Manager: now sees everything the app holds (all songs + files, readiness, attendance, past rehearsals, activity) and posts plans to the panel as soon as it makes them.',
+    'Manager chat: your typed message is kept when you switch tabs and come back, and the box grows to fit long / pasted text.',
+  ],
   '0.321':[
     'Rehearsal attendance: you can now only set your own instrument’s availability — everyone else’s shows read-only. (Guests can be set by anyone.)',
   ],
@@ -4518,13 +4522,20 @@ function RichText({text}){
   })}</React.Fragment>;
 }
 function ChatPanel({show}){
+  const draftKey='sc_chat_draft_'+BOARD;
   const [msgs,setMsgs]=useState([]);
   const [loading,setLoading]=useState(true);
   const [busy,setBusy]=useState(false);
   const [err,setErr]=useState('');
-  const [text,setText]=useState('');
+  // Draft persists across tab switches (component unmounts when you leave Admin).
+  const [text,setText]=useState(()=>{ try{ return localStorage.getItem(draftKey)||''; }catch(_){ return ''; } });
+  useEffect(()=>{ try{ localStorage.setItem(draftKey,text); }catch(_){} },[text]);
   const [copied,setCopied]=useState(null);
   const scRef=useRef(null);
+  const taRef=useRef(null);
+  // Grow the input box to fit its content (e.g. after pasting), up to a cap.
+  const autoGrow=useCallback(()=>{ const el=taRef.current; if(el){ el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,220)+'px'; } },[]);
+  useEffect(()=>{ autoGrow(); },[text,autoGrow]);
   const em=e=>{ const c=(e&&e.code)||''; const m=(e&&e.message)||String(e);
     if(/permission-denied/.test(c)) return "You're not on the manager's allowlist.";
     if(/unauthenticated/.test(c)) return 'Please sign in again to use the manager.';
@@ -4559,10 +4570,10 @@ function ChatPanel({show}){
         {busy && <div className="mbub mgr" style={{opacity:.7}}>…thinking</div>}
       </div>
       {err && <div style={{fontSize:12,color:'var(--drums)',margin:'6px 2px'}}>{err}</div>}
-      <div style={{display:'flex',gap:6,marginTop:8}}>
-        <input className="inp" style={{flex:1}} dir="auto" placeholder="Message the manager…" value={text} disabled={busy||loading}
+      <div style={{display:'flex',gap:6,marginTop:8,alignItems:'flex-end'}}>
+        <textarea ref={taRef} className="inp" rows={1} style={{flex:1,resize:'none',overflowY:'auto',maxHeight:220,lineHeight:1.4,paddingTop:9,paddingBottom:9}} dir="auto" placeholder="Message the manager…" value={text} disabled={busy||loading}
           onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();send();}}}/>
-        <button className="btn sm" disabled={busy||loading||!text.trim()} onClick={send}>Send</button>
+        <button className="btn sm" disabled={busy||loading||!text.trim()} onClick={send} style={{flexShrink:0}}>Send</button>
       </div>
     </div>
   );

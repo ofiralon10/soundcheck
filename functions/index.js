@@ -407,6 +407,7 @@ exports.weeklyReport = onSchedule(
 const MANAGER_SYSTEM =
   'You are the band\'s manager, in an ongoing chat with a band member. You have the current band data and the owner\'s standing guidelines below. ' +
   'Answer questions and give concrete, motivating advice. When asked to change something — save a guideline, set a player\'s status, set a rehearsal\'s focus, or schedule a rehearsal — use the tools, then confirm in plain language what you did. ' +
+  'IMPORTANT — plans: whenever you devise OR revise a rehearsal plan, immediately call show_plan to post it to the app (the "Rehearsal plan" panel), in the SAME turn, before you finish. Do not just describe a plan in the chat and wait to be asked — always post it with show_plan so the band can see it. You have the full band data below (every song, all files, readiness, attendance, past rehearsals, activity) — use it. ' +
   'When the member explicitly asks you to notify, alert, ping, remind, or message someone, use send_telegram to DM a linked member (recipient "me" is the owner). Keep it short. Do not message people unprompted. ' +
   'You CAN run things later, on a schedule, even when nobody has the app open — use schedule_task with a future time (see CURRENT TIME in the context) and a clear instruction to your future self; use list_scheduled_tasks / cancel_scheduled_task to manage them. For a repeating task, set schedule_task\'s `repeat` field — it re-arms itself automatically, so never manually re-schedule a recurring task. Never tell anyone you cannot run background or timed tasks — you can, via schedule_task. ' +
   'Reference songs by their #number and rehearsals by their R-number. Always honor the owner guidelines. Be concise and direct — this is a chat, not a report.\n' +
@@ -488,17 +489,22 @@ function buildManagerContextNode(board, show, opts) {
     idxToSong.push(e.songId);
     const parts = CORE.map(id => LABEL[id] + ':' + ((e.parts || {})[id] || 'todo')).join(', ');
     const kt = [s.songKey, s.tempo ? ('~' + s.tempo + 'bpm') : ''].filter(Boolean).join(' ');
-    songLines.push('#' + idxToSong.length + ' "' + (s.title || 'Untitled') + '"' + (s.artist ? (' — ' + s.artist) : '') + (kt ? (' [' + kt + ']') : '') + ' | overall ' + pct(entryReadiness(e)) + '% | ' + parts + ' | files: ' + songFileSummary(s));
+    const notes = (s.notes || '').trim();
+    const extra = [e.encore ? 'ENCORE' : '', (e.guests || []).length ? (e.guests.length + ' guest(s)') : ''].filter(Boolean).join(', ');
+    songLines.push('#' + idxToSong.length + ' "' + (s.title || 'Untitled') + '"' + (s.artist ? (' — ' + s.artist) : '') + (kt ? (' [' + kt + ']') : '') + (extra ? (' {' + extra + '}') : '') + ' | overall ' + pct(entryReadiness(e)) + '% | ' + parts + ' | files: ' + songFileSummary(s) + (notes ? (' | notes: ' + notes.slice(0, 240)) : ''));
   });
   const inSet = new Set(entries.map(e => e.songId));
-  const otherLines = songsAll.filter(s => !inSet.has(s.id)).map(s => '- "' + (s.title || 'Untitled') + '"' + (s.artist ? (' — ' + s.artist) : '') + ' | files: ' + songFileSummary(s));
-  // Full file inventory per section — only for the CURRENT show's songs (the ones
-  // being prepped) to keep the prompt small. Library songs still appear with their
-  // one-line file summary in OTHER SONGS above.
+  const otherLines = songsAll.filter(s => !inSet.has(s.id)).map(s => '- "' + (s.title || 'Untitled') + '"' + (s.artist ? (' — ' + s.artist) : '') + ([s.songKey, s.tempo ? ('~' + s.tempo + 'bpm') : ''].filter(Boolean).length ? (' [' + [s.songKey, s.tempo ? ('~' + s.tempo + 'bpm') : ''].filter(Boolean).join(' ') + ']') : '') + ' | files: ' + songFileSummary(s) + ((s.notes || '').trim() ? (' | notes: ' + s.notes.trim().slice(0, 200)) : ''));
+  // Full file inventory per section — for EVERY song (setlist + library), so the
+  // manager can see and reason about all documents the app holds.
   const fileDetailLines = [];
   idxToSong.forEach((sid, i) => {
     const s = songsAll.find(x => x.id === sid); if (!s) return;
     fileDetailLines.push('#' + (i + 1) + ' "' + (s.title || 'Untitled') + '"');
+    fileDetailLines.push(songFilesDetail(s));
+  });
+  songsAll.filter(s => !inSet.has(s.id)).forEach(s => {
+    fileDetailLines.push('(library) "' + (s.title || 'Untitled') + '"');
     fileDetailLines.push(songFilesDetail(s));
   });
   const showLines = (board.shows || []).map(sh => {
@@ -522,6 +528,13 @@ function buildManagerContextNode(board, show, opts) {
         + (pend.length ? '; no answer yet: ' + pend.map(id => LABEL[id]).join(',') : ''));
     return 'R' + (i + 1) + ' ' + fmtWhen(r.date) + (r.duration ? (' (' + r.duration + 'h)') : '') + (r.location ? (' @ ' + r.location) : '') + (((r.focusLearn || []).length || (r.focusPractice || []).length) ? ' [focus set]' : '') + ' | attendance: ' + appr;
   });
+  // Past (done) rehearsals for this show + what they covered — practice history.
+  const doneReh = (board.rehearsals || []).filter(r => r.showId === show.id && r.done).sort((a, b) => (b.date || '').localeCompare(a.date || '')).slice(0, 12);
+  const doneLines = doneReh.map(r => '- ' + (r.date ? fmtWhen(r.date) : '(no date)') + (r.location ? (' @ ' + r.location) : '') + ((r.coveredSongs && r.coveredSongs.length) ? (' — covered ' + r.coveredSongs.length + ': ' + r.coveredSongs.map(id => titleOf(board, id)).filter(Boolean).slice(0, 10).join(', ')) : ' — no songs logged'));
+  // Recent activity feed (newest first).
+  const actLines = (board.activity || []).slice(-18).reverse().map(a => '- ' + (a.who || 'someone') + ' ' + (a.text || ''));
+  const inst = instrAverages(show);
+  const readiness = 'READINESS (current show): per-player ' + (inst.length ? inst.map(x => x.label + ' ' + pct(x.avg) + '%').join(', ') : '(n/a)') + '; weakest songs: ' + (weakestSongs(board, show, 4).join(', ') || '(n/a)');
   const g = (board.managerGuidelines || '').trim();
   const lineup = CORE.map(id => LABEL[id] + ' = ' + ((board.members && board.members[id] && board.members[id].name) || '(unnamed)')).join(', ');
   const taskIds = [];
@@ -539,21 +552,27 @@ function buildManagerContextNode(board, show, opts) {
     ...(showLines.length ? showLines : ['(none)']),
     '',
     'CURRENT SHOW: "' + (show.name || 'Untitled') + '"' + (show.date ? (' on ' + fmtWhen(show.date) + ' (' + daysUntil(show.date) + ' days out)') : ' (no date)') + ' — overall ' + pct(showOverall(show)) + '% ready.',
+    readiness,
     'SETLIST (reference songs by #number; readiness scale todo/learning/practicing/ready; "files" shows what documents each song has):',
     ...(songLines.length ? songLines : ['(empty)']),
     ...(otherLines.length ? ['', 'OTHER SONGS in the library (not in this show), with their files:', ...otherLines] : []),
     '',
-    'SONG FILES (current show) — full inventory of every file, by song and section.',
+    'SONG FILES — full inventory of every file (all songs), by song and section.',
     'A section marked *** MISSING *** has no document at all; use this to spot gaps',
-    '(e.g. a song with no slide, or no chart for an instrument). [stem] = a real stem',
-    'audio file. (Library songs not in this show: see OTHER SONGS above for a summary.)',
+    '(e.g. a song with no slide, or no chart for an instrument). [stem] = a real stem audio file.',
     ...(fileDetailLines.length ? fileDetailLines : ['(no songs)']),
     '',
     'UPCOMING REHEARSALS (reference by R-number):',
     ...(rehLines.length ? rehLines : ['(none scheduled)']),
     '',
+    'PAST REHEARSALS (most recent first — what was actually practiced):',
+    ...(doneLines.length ? doneLines : ['(none yet)']),
+    '',
     'SCHEDULED TASKS you have set (reference by T-number; times are ' + TZ + '):',
-    ...(taskLines.length ? taskLines : ['(none)'])
+    ...(taskLines.length ? taskLines : ['(none)']),
+    '',
+    'RECENT ACTIVITY (newest first):',
+    ...(actLines.length ? actLines : ['(none)'])
   ].join('\n');
   return { context, idxToSong, rehIds, taskIds };
 }
