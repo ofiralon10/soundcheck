@@ -34,7 +34,7 @@
 const ADMIN_EMAIL = 'ofiralon10@gmail.com';        // must match ADMIN_EMAIL in the app
 const TZ = 'Asia/Jerusalem';                       // schedule timezone
 const REMINDER_LEAD_HOURS = 24;                    // how far ahead to remind
-const MODEL = 'claude-haiku-4-5';   // cheapest tier; flip to 'claude-sonnet-5' if the manager needs to be sharper
+const MODEL = 'claude-sonnet-5';   // strong at planning/tool use, ~2x cheaper than Opus. (haiku-4-5 was too weak; opus-4-8 = max quality)
 const APP_URL = 'https://ofiralon10.github.io/soundcheck/'; // opened when a push is tapped
 /* -------------------------------------- */
 
