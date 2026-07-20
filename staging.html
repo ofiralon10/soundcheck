@@ -467,7 +467,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.325';
+const VERSION='0.326';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -507,9 +507,9 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
-  '0.325':[
+  '0.326':[
     'AI manager plan now shows each session like a rehearsal — song names with cover art.',
-    'Rehearsals & plan sessions show a "Needed docs" list: a green ✓ or red ✕ per song for its Slide and Stems.',
+    'Rehearsals & plan sessions show a "Missing docs" list — only the Slide/Stems that are still missing per song; it clears once everything is in.',
   ],
   '0.322':[
     'Manager: now sees everything the app holds (all songs + files, readiness, attendance, past rehearsals, activity) and posts plans to the panel as soon as it makes them.',
@@ -4004,26 +4004,27 @@ function FocusTags({songs,learn,practice,onGoSong}){
   if((!learn||!learn.length) && (!practice||!practice.length)) return null;
   return <React.Fragment>{group(practice,'var(--warn)','Practice')}{group(learn,'var(--learn)','Learn')}</React.Fragment>;
 }
-// "Needed docs" for a rehearsal/plan session: for each focus song, whether its
-// slide + full stem set exist. Green ✓ = ready, red ✕ = missing.
+// Missing docs for a rehearsal/plan session: only lists what a focus song is still
+// missing (its slide and/or full stem set). Anything already provided is not shown,
+// and the whole section disappears once nothing is missing.
 function NeededDocs({songs,ids}){
-  const list=[...new Set(ids||[])].map(id=>isOther(id)?null:(songs||[]).find(x=>x.id===id)).filter(Boolean);
-  if(!list.length) return null;
   const catOf=f=>(f.cat==='original'?'other':f.cat||'other');
   const hasSlide=s=>(s.files||[]).some(f=>f.url&&catOf(f)==='slide');
   const stemCount=s=>new Set((s.files||[]).filter(f=>f.stem).map(catOf).filter(c=>['vocals','drums','bass','guitar','keys','other'].includes(c))).size;
+  const rows=[];
+  [...new Set(ids||[])].forEach(id=>{ if(isOther(id))return; const s=(songs||[]).find(x=>x.id===id); if(!s)return;
+    const missing=[]; if(!hasSlide(s)) missing.push('Slide'); if(stemCount(s)<6) missing.push('Stems');
+    if(missing.length) rows.push({s,missing}); });
+  if(!rows.length) return null;
   return (
     <div className="needdocs">
-      <div className="needdocs-h">Needed docs</div>
-      {list.map(s=>{ const slide=hasSlide(s); const stems=stemCount(s);
-        return (
-          <div key={s.id} className="needdocs-row">
-            <span className="needdocs-name" dir="auto">{s.title||'Untitled'}</span>
-            <span className={'dchk '+(slide?'ok':'no')} title={slide?'Slide present':'No slide'}>{slide?'✓':'✕'} Slide</span>
-            <span className={'dchk '+(stems>=6?'ok':'no')} title={stems+'/6 stems'}>{stems>=6?'✓':'✕'} Stems</span>
-          </div>
-        );
-      })}
+      <div className="needdocs-h">Missing docs</div>
+      {rows.map(({s,missing})=>(
+        <div key={s.id} className="needdocs-row">
+          <span className="needdocs-name" dir="auto">{s.title||'Untitled'}</span>
+          {missing.map(m=><span key={m} className="dchk no">✕ {m}</span>)}
+        </div>
+      ))}
     </div>
   );
 }
