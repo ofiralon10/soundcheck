@@ -672,7 +672,11 @@ async function runManagerLoop({ bandId, board, show, ctx, apiMsgs, email, key })
     // max_tokens must be generous: a show_plan call with several sessions is a lot
     // of JSON, and truncation returns stop_reason 'max_tokens' with a partial
     // tool_use we can't run — which surfaced as an empty "(no reply)" turn.
-    const data = await anthropicRaw(key, { model: MODEL, max_tokens: 16000, system: sysBlocks, messages: apiMsgs, tools: MANAGER_TOOLS });
+    // max_tokens is a CEILING (you only pay for what's generated). It must cover
+    // the model's thinking AND a large show_plan call — a full season of rehearsals
+    // is a lot of JSON. At 16k the whole budget went to thinking and the turn came
+    // back as stop_reason=max_tokens with blocks=thinking only (an empty reply).
+    const data = await anthropicRaw(key, { model: MODEL, max_tokens: 32000, system: sysBlocks, messages: apiMsgs, tools: MANAGER_TOOLS });
     if (data.stop_reason === 'refusal') { reply = 'Sorry — I can\'t help with that one.'; break; }
     if (data.stop_reason === 'max_tokens') logger.warn('manager response hit max_tokens — output was truncated');
     const toolUses = (data.content || []).filter(b => b.type === 'tool_use');
@@ -733,7 +737,7 @@ async function runManagerLoop({ bandId, board, show, ctx, apiMsgs, email, key })
 // timeoutSeconds: a planning turn makes several Sonnet calls with a large context,
 // which comfortably exceeds the 60s default (the request just died => the client
 // showed "manager isn't connected"). memory bumped so JSON work isn't the bottleneck.
-exports.managerChat = onCall({ secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN], timeoutSeconds: 300, memory: '512MiB' }, async (req) => {
+exports.managerChat = onCall({ secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN], timeoutSeconds: 540, memory: '512MiB' }, async (req) => {
   const email = req.auth && req.auth.token && req.auth.token.email;
   if (!email) throw new HttpsError('unauthenticated', 'Please sign in first.');
   const { bandId, showId, message } = req.data || {};

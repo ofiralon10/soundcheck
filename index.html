@@ -460,7 +460,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.323';
+const VERSION='0.324';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -814,7 +814,7 @@ if(typeof navigator!=='undefined' && navigator.serviceWorker && navigator.servic
 function managerChatCall(showId,message,clear){
   // The SDK's default callable deadline is ~70s; a planning turn can take longer,
   // so allow up to 5 minutes (matches the function's timeoutSeconds).
-  const fn=firebase.functions().httpsCallable('managerChat',{timeout:300000});
+  const fn=firebase.functions().httpsCallable('managerChat',{timeout:540000});
   return fn({bandId:BOARD,showId,message:message||'',clear:!!clear}).then(r=>r.data);
 }
 async function queryMyBands(email){
