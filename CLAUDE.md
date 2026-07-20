@@ -39,7 +39,7 @@ You cannot run Firebase locally. To check a change before handing it off:
 - **Versioning.** There's a `const VERSION='x.yyy'` near the top of the script, rendered next
   to the SOUNDCHECK wordmark. **Every change bumps the right-hand number by 1** (0.103 → 0.104).
   Never change the left-hand number unless explicitly told. The owner uses the on-screen version
-  to confirm a deploy landed. Current version: **0.298**.
+  to confirm a deploy landed. Current version: **0.328**.
   **This session ports to BOTH staging.html and index.html by default** (owner's standing
   request); still apply the two index.html fixes below on every port.
 - **Edit staging.html first.** Don't touch `index.html` until the owner asks to port a tested change.
@@ -81,10 +81,12 @@ You cannot run Firebase locally. To check a change before handing it off:
 - **Changelog**: update the `CHANGELOG` object with entries for each version that ships to production.
   The "What's New" modal shows on first load when version changes.
 
-## Tabs & components (staging.html, v0.298)
+## Tabs & components (staging.html, v0.328)
 
-**Tab bar order**: Stage · Setlist · Rehearsals · **Admin** · Shows · Gallery · Setup · Help.
-On phones only the first 4 show inline; the rest fold into a "More" (…) sheet.
+**Tab bar order**: Stage · Setlist · Rehearsals · **Admin** · Shows · Gallery · Setup · **Help**.
+On phones only the first 4 show inline; the rest fold into a "More" (…) sheet (`TabBar`,
+overflow via `useWide(760)`). The **Admin tab** (see "AI Manager" section) is gated to the
+manager-chat allowlist; **Help** (see below) is public.
 The **Admin tab** (see "AI Manager" section below) is gated to the manager-chat
 allowlist (owner + `managerChatAllow` emails); everyone else does not see it.
 
@@ -125,7 +127,11 @@ allowlist (owner + `managerChatAllow` emails); everyone else does not see it.
 - **Encore marking** with `★ Enc` pill.
 - **Practice button**: per-song play icon colored by stem availability (red=none, yellow=partial,
   green=all 6 core stems). Opens the stem player.
-- **Record button**: mic icon on song row, shows confirm/cancel dialog before starting recording.
+- **Band recording** (whole-band mic, `recState`/`recTime`) moved OFF the song row INTO the practice
+  transport (v0.314): a white **REC** button right of Stop. Tap → same confirm dialog; on start the
+  dialog closes, the button shows the running time, the doc stays fully usable; tap again → stop →
+  save/discard. The full-screen `.rec-overlay` only shows when recording started outside practice
+  (`recState && !stemOpen`).
 - Guests: up to `MAX_GUESTS` per song with name and status.
 
 ### File management (Files modal)
@@ -191,11 +197,12 @@ allowlist (owner + `managerChatAllow` emails); everyone else does not see it.
   (icon + Mute/Solo/Custom on one row).
 - **Metronome**: detected from filename (metronome/click/tick), muted by default, not counted toward
   stem availability. Greyed out when no file loaded.
-- **Transport bar** (`.stem-btns`, all buttons same size; SVG/icon-based, v0.253/0.260):
-  ▶/⏸ play-pause toggle (white SVG), ■ **Stop** (red, resets to 0), **Files** toggle (cyan, file
-  icon — see below), **⛶ positions** (purple, shows `N/M`), **⚙ CONFIG** (yellow; opens the opaque
-  channel panel with a Reset-channels button), **🎙 Rec** (shows white dot + your instrument icons).
-  On phones (`@media max-width:640px`) buttons are content-sized and centered.
+- **Transport bar** (`.stem-btns`, SVG/icon buttons): ▶/⏸ play-pause, ■ **Stop**, white **REC**
+  (band recording), **Files** toggle, **⛶ positions**, **✎ draw**, **⚙ CONFIG**, **🎙 sb-rec**
+  (stem recording — distinct from band REC). **v0.317/0.318**: single **horizontally-scrollable**
+  row (`flex-wrap:nowrap; overflow-x:auto`) with wider buttons; on wide screens (≥900px) buttons
+  `flex:1` to fill the bar (no scroll). The zoom **Set/Clear/Cancel** popover (`.zoom-menu`) is
+  rendered at the `.stem-transport` level (above the bar) so overflow scroll doesn't clip it.
 - **Config persistence**: saved per song in `localStorage` `sc_stem_[songId]` (practice) and
   `sc_stemrec_[songId]` (StemRec Player), including the `custom` flag.
 - **Stale closure fix (v0.200)**: `stemApplyMix` reads `stemChansRef` (always-current ref) not the
@@ -349,11 +356,33 @@ allowlist (owner + `managerChatAllow` emails); everyone else does not see it.
 - Focus songs: Practice/Learn split with `FocusPicker` and `FocusTags`. `FocusTags` renders the
   shared rich view (one song per line, cover art + name; each group boxed in its color) used on
   both Stage and Rehearsals (v0.295).
-- **Attendance** per instrument + guests, four-state (v0.298): tap a player chip → `AttPop` picker
-  (✓ can attend / ? maybe / ✕ can't / — clear). Chip shows a corner badge (green ✓ / amber ? /
-  red ✕). Helpers: `attState(v)` normalizes `'yes'|'no'|'maybe'|'none'` (legacy `true`→yes),
-  `attLabel`, `attGlyph`, `rehAllApproved`, `rehAnyDeclined`. Same `ApprovalBadge` as Stage.
-- `RehearsalProposal` for time-change proposals with voting.
+- **Attendance** per instrument + guests, four-state: tap a player chip → `AttPop` picker
+  (✓ can attend / ? maybe / ✕ can't / — clear). Chip shows a corner badge. Helpers: `attState(v)`
+  normalizes `'yes'|'no'|'maybe'|'none'` (legacy `true`→yes), `attLabel`, `attGlyph`,
+  `rehAllApproved`, `rehAnyDeclined`. Shared `AttendanceChips` component (used by RehCard + the
+  time-proposal). **You can only edit your OWN instrument(s)** (`MY_INSTRS`); others are read-only
+  (`.ro`); guests editable by anyone (v0.321).
+- `RehearsalProposal` (time-change) uses the same four-state attendance chips (not thumbs-vote):
+  proposed date/time + per-player availability + **Apply as new time** (moves the rehearsal, carries
+  the approvals over) + **Delete** (v0.319). Takes a `state` prop.
+- **Edit rehearsal**: while editing, the card header shows **Save/Cancel** instead of Edit/Mark done.
+- **NeededDocs** section (rehearsal cards + plan sessions): lists only what each focus song is
+  **missing** (red ✕ Slide / Stems); a song with everything, and the whole section when nothing is
+  missing, are hidden. Deterministic (reads the song's files), independent of the manager's text.
+
+### Help tab + guided tours (v0.301+)
+- **"Show me how to…" walkthroughs.** `HELP_TOURS` lists cards; each starts a tour built by
+  `buildTour(id, opts, state)` (opts.songId chosen via a picker). Tours: `practice` (full player),
+  `record` (band-over-backing record + share), `instrfile` (add an instrument image, zoom positions,
+  switch files, draw).
+- **`Coach` overlay** (portaled to `document.body` so it escapes the tablet-frame CSS transform):
+  each step has `{tab, sel, text, event?, needEnabled?, info?}`. It navigates to `tab`, finds the
+  live element by `sel` (many carry a `data-coach` attr), dims everything with 4 blocker panels
+  leaving ONLY the target exposed, arrows at it, and advances when the target fires its real event
+  (`click`, or `change` for the slider). **`info:true`** steps are non-blocking floating "Next ▸"
+  cards for gesture actions (pinch-zoom, draw) — with a "–" that collapses to a "Show guide" pill.
+- Tagged controls carry `data-coach` (e.g. `practice-<id>`, `files-<id>`, `addfile-<cat>`,
+  `zoom-set`, `draw-save`, `draw-clear`, `rec-start/go/stop/save`, `stem-close`, `chmute-<id>` etc.).
 
 ### Gallery tab (formerly "Album")
 - Band photo gallery with thumbnail grid, sorted newest-first.
@@ -372,7 +401,9 @@ allowlist (owner + `managerChatAllow` emails); everyone else does not see it.
   so the manager can DM them and run polls. Deliberately here, NOT in the allowlist-gated Admin tab,
   so linking never requires chat access. Only shows when the band has a bot username set (owner sets
   it in Admin). Connect → opens `t.me/<bot>?start=<code>`, member taps START, then Refresh.
-- **AI manager notifications** (owner-only): enable/disable FCM push per device (`sc_push_token`).
+- (FCM push notifications were **fully removed** in v0.316 — the manager reaches people via
+  Telegram now. No "AI manager notifications" section anymore; the app unregisters any leftover
+  service worker on load.)
 - **Delete band**: owners can delete non-main bands with confirmation.
 - Reset everything: clears all songs/rehearsals/concert data.
 - Testing & staging: clone live board to staging.
@@ -431,8 +462,8 @@ Currently logged events:
   `sc_name`, `sc_board`, `sc_seen_activity`, `sc_instr` (comma-separated multi-instrument),
   `sc_seen_ver`, `sc_stem_[songId]`, `sc_stemrec_[songId]`, `sc_show`, `sc_rec_hp` (headphones
   toggle), `sc_sync_out` (remembered Ta output-delay calibration, ms), `sc_ai_key` (owner's
-  Anthropic key for the in-app planner only — server chat uses a secret), `sc_push_token`
-  (FCM notifications-enabled flag for this device).
+  Anthropic key for the in-app planner only — server chat uses a secret), `sc_chat_draft_[board]`
+  (persisted manager-chat input, survives tab switches). (`sc_push_token` removed with FCM.)
 - Adding a new persisted field: update `defaultState()` AND `migrate()`.
 - **scrollIntoView with sticky header**: `scrollIntoView({block:'start'})` positions the element at
   the very top of the viewport, hidden behind the sticky `.topbar`. Use manual `window.scrollTo()`
@@ -458,6 +489,10 @@ Currently logged events:
   `migrate()` differently at runtime. Use IIFE pattern instead of bare `{ const x = ... }` blocks.
 - **Stem deduplication**: `migrate()` deduplicates stem files per category (keeps first, removes
   extras). `uploadStemFile` replaces existing stem for same category on re-upload.
+- **Never delete stems when replacing a category's docs.** Any per-category file replace (the SFU
+  import at v0.328, `uploadStemFile`) MUST exclude `f.stem` from what it deletes — otherwise importing
+  an instrument's chart wipes that instrument's stem audio (list + storage). Per-section "+ Add"
+  (`onUpload`) and drag-drop (`onDropFiles`) only PUSH — they never delete and allow multiple docs.
 - **Metronome migration**: `migrate()` moves files with metronome/click/tick in name from
   `cat:'other'` to `cat:'metronome'`.
 - **Mobile autoplay policy**: `Audio.play()` is blocked after async operations (like
@@ -544,7 +579,9 @@ The band has a conversational **AI manager**. Two Anthropic surfaces:
 - **In-app planner** (browser-side): the "Plan Rehearsals" flow uses the owner's own Anthropic key
   from `localStorage` `sc_ai_key` (`anthropic-dangerous-direct-browser-access`). Structured output.
 - **Manager chat + all autonomous actions** (server-side, `functions/index.js`): uses the
-  `ANTHROPIC_KEY` **secret** — never in any browser. Model `claude-opus-4-8`, manual agentic loop.
+  `ANTHROPIC_KEY` **secret** — never in any browser. Model **`claude-sonnet-5`** (`const MODEL`;
+  was Opus, briefly Haiku which was too weak — flip to `claude-opus-4-8` if reasoning is lacking).
+  Manual agentic loop with prompt caching on the tools+system prefix.
 
 ### Admin tab (app)
 - Home for the manager: chat (`ChatPanel` — rich text via `{color:...}`/**bold**, copy per message,
@@ -555,23 +592,48 @@ The band has a conversational **AI manager**. Two Anthropic surfaces:
   Per-band banner image `admin-banner-<bandName>.jpg` (falls back to `-Default.jpg` then generic).
 
 ### Cloud Functions (`functions/index.js`) — 2nd gen, us-central1, Node 24
-- `managerChat` (onCall) — the interactive chat. Enforces the allowlist. Builds context via
-  `buildManagerContextNode(board, show, {nowMs, tasks})` and runs `runManagerLoop(...)` (the shared
-  agent loop, also used by the scheduler). Persists chat + applies board `ops` in a transaction.
-- `rehearsalReminders` (onSchedule hourly) — ~24h pre-rehearsal push to the owner, once each.
-- `weeklyReport` (onSchedule, Mon 09:00) — weekly readiness push.
-- `managerTasks` (onSchedule, **every 5 minutes**) — runs due **scheduled tasks** (see below).
+- `managerChat` (onCall, **timeoutSeconds:540, memory:512MiB**) — the interactive chat. Enforces the
+  allowlist. Builds context via `buildManagerContextNode(board, show, {nowMs, tasks})` and runs
+  `runManagerLoop(...)`. Persists chat + applies board `ops` in a transaction. Logs `actions/ops`.
+  **Client callable timeout raised to 540000ms** in the app (`httpsCallable('managerChat',{timeout})`)
+  — a plan turn can take 30–120s.
+- `rehearsalReminders` (onSchedule hourly) — ~24h pre-rehearsal note, DM'd to the owner on Telegram.
+- `weeklyReport` (onSchedule, Mon 09:00) — weekly readiness → Telegram to owner.
+- `managerTasks` (onSchedule, **every 5 min**, 540s/512MiB) — runs due **scheduled tasks** (below).
 - `telegramWebhook` (onRequest) — Telegram updates: `/start <code>` linking + poll `callback_query`.
-- Secrets: `ANTHROPIC_KEY`, `TELEGRAM_BOT_TOKEN` (`defineSecret`). TZ `Asia/Jerusalem`.
+- Secrets: `ANTHROPIC_KEY`, `TELEGRAM_BOT_TOKEN`. TZ `Asia/Jerusalem`. **FCM push is gone** —
+  `pushToOwner(bandId, title, body)` now DMs the owner on Telegram (`sendTelegramToMember 'me'`).
+
+### `runManagerLoop` — agent loop (hard-won gotchas)
+- `max_tokens: 32000` — it's a CEILING (pay for what's generated). A full plan (`show_plan` with many
+  sessions) is big JSON; low ceilings truncated it → `stop_reason:'max_tokens'` with only a partial
+  tool_use / a `thinking` block → empty "(no reply)". **Do not lower it.**
+- **Never append a partial tool_use to the conversation.** On a non-tool (or truncated) turn, append
+  ONLY the text blocks — a dangling `tool_use` with no matching `tool_result` makes every later
+  request 400 (`tool_use ids ... without tool_result`). Step cap `MAX_STEPS=12`.
+- `fmtWhen(iso)` runs bare wall-clock stamps (`2026-08-16T20:00`) through `resolveWhen` — parsing as
+  UTC then rendering in TZ shifted every time by +3h.
 
 ### Manager tools (`MANAGER_TOOLS`, run inside `runManagerLoop`)
 Board-mutating (collected as `ops`, applied via `applyOpToBoard`): `save_guideline`,
 `set_song_status`, `apply_focus`, `create_rehearsal`, `show_plan`, `set_approval`
-(status `yes/no/maybe/clear`). Side-effecting (executed immediately): `send_notification` (FCM push
-to owner), `send_telegram` (DM a linked member), `ask_members`/`get_poll_results` (Telegram polls),
-`schedule_task`/`list_scheduled_tasks`/`cancel_scheduled_task`. The context includes CURRENT TIME,
-a full per-song **file inventory** (`songFilesDetail`, flags `*** MISSING ***` sections so the
-manager can spot gaps), rehearsals with tri/quad-state attendance, and T-numbered scheduled tasks.
+(status `yes/no/maybe/clear`). Side-effecting: `send_telegram` (DM a linked member; "me"=owner),
+`ask_members`/`get_poll_results` (Telegram polls), `schedule_task`/`list`/`cancel`. (`send_notification`
+was **removed** with FCM.) Context includes OWNER GUIDELINES, CURRENT TIME, all shows, the setlist
+with per-player status + notes, the **full per-song file inventory** (`songFilesDetail`, flags
+`*** MISSING ***`), READINESS (per-player + weakest), UPCOMING + PAST rehearsals, RECENT ACTIVITY,
+and T-numbered scheduled tasks.
+
+### Rehearsal plan (`managerPlan` = `{summary, risk, sessions[], updatedAt}`)
+- **`show_plan`** posts a plan to the Admin "Rehearsal plan" panel. System prompt REQUIRES calling
+  `show_plan` (not chat-only prose) for any plan/schedule/what-to-practice/how-to-prepare request.
+- A plan is an **ORDERED, UNDATED list** — sessions titled `"Rehearsal 1".."N"`, no dates. The
+  manager sizes N from the guidelines (per-week cadence × weeks-to-show − cancellation rate + near-show
+  ramp). Each session names SPECIFIC song titles. **`risk`** = `none|low|medium|high` from spare
+  capacity. NEVER lump ranges/"ongoing weekly".
+- App panel: risk badge + **Apply all** (fills existing upcoming rehearsals in order, then creates the
+  rest at a default weekly day/time/place copied from the latest rehearsal) + per-session apply/create
+  (default schedule, no datetime picker). Sessions render via `FocusTags` (art+names) + `NeededDocs`.
 
 ### Scheduled manager tasks (v: this session)
 - The manager can **run timed actions even with the app closed**. `schedule_task` stores a doc in
@@ -591,16 +653,17 @@ manager can spot gaps), rehearsals with tri/quad-state attendance, and T-numbere
 
 ### Firestore collections (function-written; client rules restrict/deny — see `firestore.rules`)
 `managerChat/{bandId}` (deny client), `managerState/{bandId}` (admin), `managerTasks/{id}` (deny
-client), `notifyTokens/{token}` (admin — FCM device tokens), `telegramLinks/{code}` (member-create
+client), `notifyTokens/{token}` (admin — now UNUSED, was FCM), `telegramLinks/{code}` (member-create
 own),  `telegramChats/{bandId}` (member-read), `telegramPolls/{id}` (deny client). Firestore rules
 are project-wide (staging + prod at once).
 
-### FCM push
-Service worker `firebase-messaging-sw.js` at repo root (served `/soundcheck/...`). VAPID key +
-`sc_push_token` flag in the app; token stored in `notifyTokens/{token}`. Foreground pushes show an
-in-app `.push-toast` banner (web push doesn't auto-display when focused). Enable/disable per device
-in Setup. Registration waits for the SW to reach 'activated' before `getToken` (else FCM falls back
-to a root-scope default SW → 404 on the `/soundcheck/` subpath).
+### FCM push — REMOVED (v0.316)
+Web push was nothing but trouble on mobile (FCM kept falling back to a root-scope default SW that
+404s on the `/soundcheck/` subpath; iOS Safari can't push outside an installed PWA; in-app browsers
+can't register SWs). It was **fully removed** in favour of Telegram: deleted `firebase-messaging-sw.js`,
+the messaging SDK script, VAPID key, enable/disable flow, push-toast, and the Setup section. The app
+now **unregisters any leftover service worker on load**, and functions no longer import `getMessaging`
+or use `notifyTokens`. If reviving notifications, use Telegram, not FCM.
 
 ## Cloud Functions deploy gotchas
 
