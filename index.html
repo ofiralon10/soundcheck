@@ -467,7 +467,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.327';
+const VERSION='0.328';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -507,6 +507,9 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
+  '0.328':[
+    'Fixed: importing an instrument doc via Setlist Files no longer deletes that instrument’s stem audio — stems are always kept.',
+  ],
   '0.327':[
     'AI manager plan is now an ordered, date-free list of rehearsals (sized from your guidelines) with an overall Risk level (None/Low/Medium/High).',
     'Apply each planned rehearsal to an existing one or create it with a default day/time — or "Apply all" at once.',
@@ -2285,7 +2288,9 @@ function Setlist({state,update,goSongId,clearGoSong,showId,pickShow}){
           const conv=await sfuFileToBlob(f);
           if(!conv){ skipped++; push({t:'skipfile',song:song.title,file:f.name,m:/\.pptx?$/i.test(f.name)?'PowerPoint — convert to PDF first (tools/pptx2pdf.py)':'unsupported file type'}); continue; }
           const so=state.songs.find(x=>x.id===song.id);
-          const inCat=(so.files||[]).filter(x=>(x.cat==='original'?'other':x.cat||'other')===cat);
+          // NEVER include stems here — replacing a category's doc must not touch the
+          // instrument's stem audio (they share the cat but are separate files).
+          const inCat=(so.files||[]).filter(x=>!x.stem&&(x.cat==='original'?'other':x.cat||'other')===cat);
           if(inCat.some(x=>x.size===conv.blob.size)){ skipped++; push({t:'same',song:song.title,file:f.name,cat,m:catLabel(cat)+' unchanged (same size) — kept'}); continue; }
           // version: same source filename replacing -> bump; different name -> restart at 0
           const prev=inCat[0];
@@ -2298,9 +2303,10 @@ function Setlist({state,update,goSongId,clearGoSong,showId,pickShow}){
           const url=await ref.getDownloadURL();
           const wasThere=inCat.length>0;
           update(st=>{ const s2=st.songs.find(x=>x.id===song.id); if(!s2)return st;
-            const old=(s2.files||[]).filter(x=>(x.cat==='original'?'other':x.cat||'other')===cat);
+            // Replace only the non-stem doc(s) in this category; keep stems intact.
+            const old=(s2.files||[]).filter(x=>!x.stem&&(x.cat==='original'?'other':x.cat||'other')===cat);
             old.forEach(x=>{ if(x.kind==='upload'&&x.path) deleteStoragePath(x.path); });
-            s2.files=(s2.files||[]).filter(x=>(x.cat==='original'?'other':x.cat||'other')!==cat);
+            s2.files=(s2.files||[]).filter(x=>x.stem||(x.cat==='original'?'other':x.cat||'other')!==cat);
             s2.files.push({id:fid,name:nm,kind:'upload',url,path,size:conv.blob.size,type:conv.type,cat,ver,srcName:f.name});
             return st; });
           changed++;
