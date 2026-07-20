@@ -467,7 +467,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.326';
+const VERSION='0.327';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -507,6 +507,10 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
+  '0.327':[
+    'AI manager plan is now an ordered, date-free list of rehearsals (sized from your guidelines) with an overall Risk level (None/Low/Medium/High).',
+    'Apply each planned rehearsal to an existing one or create it with a default day/time — or "Apply all" at once.',
+  ],
   '0.326':[
     'AI manager plan now shows each session like a rehearsal — song names with cover art.',
     'Rehearsals & plan sessions show a "Missing docs" list — only the Slide/Stems that are still missing per song; it clears once everything is in.',
@@ -4766,7 +4770,6 @@ function Admin({state,update,user,showId,pickShow}){
   const wide=useWide();
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [applyPlan,setApplyPlan]=useState(null);
-  const [newRehDate,setNewRehDate]=useState('');
   const [gl,setGl]=useState(state.managerGuidelines||'');
   const [glMsg,setGlMsg]=useState('');
   const saveGl=()=>{ update(s=>{s.managerGuidelines=gl;return s;}); setGlMsg('Saved.'); };
@@ -4777,8 +4780,25 @@ function Admin({state,update,user,showId,pickShow}){
   const [tgBotMsg,setTgBotMsg]=useState('');
   const saveTgBot=()=>{ update(s=>{ s.telegramBot=(tgBot||'').trim().replace(/^@/,''); return s; }); setTgBotMsg('Saved.'); };
   const upcomingRehs=(state.rehearsals||[]).filter(r=>r.showId===showId&&!r.done&&r.date).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-  const applyPlanToReh=(sess,rehId)=>{ update(s=>{ const r=(s.rehearsals||[]).find(x=>x.id===rehId); if(r){ r.focusLearn=mapPlanSongsToFocus(sess.learn,s.songs); r.focusPractice=mapPlanSongsToFocus(sess.practice,s.songs); const docs=(sess.docs||[]).join('; '); if(docs) r.notes=(r.notes?r.notes+'\n':'')+'Prep — '+docs; logAct(s,'applied a plan session to a rehearsal'); } return s; }); setApplyPlan(null); };
-  const createRehFromPlan=(sess)=>{ if(!newRehDate) return; update(s=>{ s.rehearsals=s.rehearsals||[]; const docs=(sess.docs||[]).join('; '); s.rehearsals.push({id:uid(),showId,date:newRehDate,duration:'2',location:'',notes:docs?('Prep — '+docs):'',focusLearn:mapPlanSongsToFocus(sess.learn,s.songs),focusPractice:mapPlanSongsToFocus(sess.practice,s.songs),attendance:{},apprReset:true,proposal:null,done:false}); logAct(s,'scheduled a rehearsal from the plan'); return s; }); setApplyPlan(null); setNewRehDate(''); };
+  const p2=n=>String(n).padStart(2,'0');
+  const fmtLocalDt=d=>d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())+'T'+p2(d.getHours())+':'+p2(d.getMinutes());
+  const nextWeekStr=(dateStr)=>{ const d=new Date(dateStr); d.setDate(d.getDate()+7); return fmtLocalDt(d); };
+  // Default day/time/place for rehearsals created from the plan: copy the latest
+  // scheduled rehearsal for this show (weekly cadence), else next week at 20:00.
+  const rehTemplate=(rehs)=>{ const dated=(rehs||[]).filter(r=>r.date&&r.showId===showId).sort((a,b)=>(a.date||'').localeCompare(b.date||'')); const last=dated[dated.length-1];
+    const start=last?nextWeekStr(last.date):(()=>{ const d=new Date(); d.setDate(d.getDate()+7); d.setHours(20,0,0,0); d.setSeconds(0,0); return fmtLocalDt(d); })();
+    return { dur:last?(last.duration||'2'):'2', loc:last?(last.location||''):'', start }; };
+  const setFocusFromSess=(st,sess,r)=>{ r.focusLearn=mapPlanSongsToFocus(sess.learn,st.songs); r.focusPractice=mapPlanSongsToFocus(sess.practice,st.songs); const docs=(sess.docs||[]).join('; '); if(docs) r.notes=(r.notes?r.notes+'\n':'')+'Prep — '+docs; };
+  const newRehFromSess=(st,sess,date,tmpl)=>{ const docs=(sess.docs||[]).join('; '); return { id:uid(), showId, date, duration:tmpl.dur, location:tmpl.loc, notes:docs?('Prep — '+docs):'', focusLearn:mapPlanSongsToFocus(sess.learn,st.songs), focusPractice:mapPlanSongsToFocus(sess.practice,st.songs), attendance:{}, apprReset:true, proposal:null, done:false }; };
+  const applyPlanToReh=(sess,rehId)=>{ update(s=>{ const r=(s.rehearsals||[]).find(x=>x.id===rehId); if(r){ setFocusFromSess(s,sess,r); logAct(s,'applied a plan session to a rehearsal'); } return s; }); setApplyPlan(null); };
+  const createRehFromPlan=(sess)=>{ update(s=>{ s.rehearsals=s.rehearsals||[]; const tmpl=rehTemplate(s.rehearsals); s.rehearsals.push(newRehFromSess(s,sess,tmpl.start,tmpl)); logAct(s,'created a rehearsal from the plan'); return s; }); setApplyPlan(null); };
+  // Apply every plan session: fill existing upcoming rehearsals in order, create
+  // the rest with the default weekly schedule.
+  const applyAllPlan=()=>{ update(s=>{ const sessions=(s.managerPlan&&s.managerPlan.sessions)||[]; if(!sessions.length) return s;
+      const up=(s.rehearsals||[]).filter(r=>r.showId===showId&&!r.done&&r.date).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+      const tmpl=rehTemplate(s.rehearsals); let runDate=tmpl.start; let applied=0, created=0; s.rehearsals=s.rehearsals||[];
+      sessions.forEach((sess,i)=>{ if(up[i]){ setFocusFromSess(s,sess,up[i]); applied++; } else { s.rehearsals.push(newRehFromSess(s,sess,runDate,tmpl)); runDate=nextWeekStr(runDate); created++; } });
+      logAct(s,'applied the whole plan ('+applied+' updated, '+created+' created)'); return s; }); setApplyPlan(null); };
   // Per-band image by band name, falling back to admin-banner-Default.jpg then the generic.
   const bandName=(state.band||'').trim();
   const bannerCands=[];
@@ -4820,10 +4840,15 @@ function Admin({state,update,user,showId,pickShow}){
           </div>
           <ChatPanel show={show}/>
           {state.managerPlan&&Array.isArray(state.managerPlan.sessions)&&state.managerPlan.sessions.length>0 && <React.Fragment>
-            <div className="section-h" style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div className="section-h" style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:8,flexWrap:'wrap'}}>
               <span>Rehearsal plan</span>
-              {admin && <button className="btn ghost sm" onClick={()=>update(s=>{s.managerPlan=null;return s;})}>Clear</button>}
+              <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                {admin && <button className="btn ghost sm" onClick={applyAllPlan}>Apply all</button>}
+                {admin && <button className="btn ghost sm" onClick={()=>update(s=>{s.managerPlan=null;return s;})}>Clear</button>}
+              </div>
             </div>
+            {(()=>{ const rk=(state.managerPlan.risk||'none'); const meta={none:{l:'None',c:'var(--ok)'},low:{l:'Low',c:'var(--ok)'},medium:{l:'Medium',c:'var(--warn)'},high:{l:'High',c:'var(--drums)'}}[rk]||{l:rk,c:'var(--muted)'};
+              return <div style={{display:'inline-flex',alignItems:'center',gap:6,marginBottom:10,fontSize:12,fontFamily:'var(--mono)',color:meta.c,border:'1px solid '+meta.c,borderRadius:20,padding:'3px 11px'}}>Risk: <b>{meta.l}</b></div>; })()}
             {state.managerPlan.summary && <div style={{fontSize:13,color:'var(--muted)',lineHeight:1.5,marginBottom:10}} dir="auto">{state.managerPlan.summary}</div>}
             <div className={wide?'plan-grid':''}>
               {state.managerPlan.sessions.map((s,i)=>(
@@ -4839,14 +4864,12 @@ function Admin({state,update,user,showId,pickShow}){
                   {admin && (applyPlan===i
                     ? <div style={{marginTop:10}}>
                         <div style={{fontSize:11,color:'var(--muted)',marginBottom:4}}>Apply this session to:</div>
+                        {upcomingRehs.length===0 && <div style={{fontSize:11,color:'var(--muted)',marginBottom:4}}>No upcoming rehearsals — create one below.</div>}
                         {upcomingRehs.map(r=>(
-                          <button key={r.id} className="btn ghost sm" style={{display:'block',width:'100%',textAlign:'left',marginBottom:4}} onClick={()=>applyPlanToReh(s,r.id)}>{r.date?fmtDate(r.date)+' · '+fmtTime(r.date):'Undated rehearsal'}{r.location?' · '+r.location:''}</button>
+                          <button key={r.id} className="btn ghost sm" style={{display:'block',width:'100%',textAlign:'left',marginBottom:4}} onClick={()=>applyPlanToReh(s,r.id)}>Apply to {r.date?fmtDate(r.date)+' · '+fmtTime(r.date):'undated rehearsal'}{r.location?' · '+r.location:''}</button>
                         ))}
-                        <div style={{display:'flex',gap:6,marginTop:4,alignItems:'center',flexWrap:'wrap'}}>
-                          <input className="inp" type="datetime-local" style={{flex:1,minWidth:150}} value={newRehDate} onChange={e=>setNewRehDate(e.target.value)}/>
-                          <button className="btn sm" disabled={!newRehDate} onClick={()=>createRehFromPlan(s)}>Create new</button>
-                        </div>
-                        <button className="btn ghost sm" style={{marginTop:6}} onClick={()=>{setApplyPlan(null);setNewRehDate('');}}>Cancel</button>
+                        <button className="btn sm" style={{width:'100%',marginTop:2}} onClick={()=>createRehFromPlan(s)}>+ Create new rehearsal (default day/time)</button>
+                        <button className="btn ghost sm" style={{marginTop:6}} onClick={()=>setApplyPlan(null)}>Cancel</button>
                       </div>
                     : <button className="btn ghost sm" style={{marginTop:10}} onClick={()=>{setApplyPlan(i);setNewRehDate('');}}>Apply to a rehearsal</button>)}
                 </div>
