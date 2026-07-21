@@ -467,7 +467,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.328';
+const VERSION='0.329';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -507,6 +507,9 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
+  '0.329':[
+    'Deleting a rehearsal now asks for confirmation first — and a done rehearsal needs a second confirmation before it’s removed.',
+  ],
   '0.328':[
     'Fixed: importing an instrument doc via Setlist Files no longer deletes that instrument’s stem audio — stems are always kept.',
   ],
@@ -4155,6 +4158,7 @@ function RehCard({r,state,patch,del,update,goSong}){
   const [markingDone,setMarkingDone]=useState(false);
   const [covered,setCovered]=useState([]);
   const [editing,setEditing]=useState(false);
+  const [confirmDel,setConfirmDel]=useState(null);
   const [editDate,setEditDate]=useState('');
   const [editDur,setEditDur]=useState('');
   const [editLoc,setEditLoc]=useState('');
@@ -4166,6 +4170,7 @@ function RehCard({r,state,patch,del,update,goSong}){
   const startMarkDone=()=>{ const focus=[...(r.focusPractice||[]),...(r.focusLearn||[])].filter(x=>!isOther(x)); setCovered([...focus]); setMarkingDone(true); };
   const confirmDone=()=>{ update(s=>{const x=s.rehearsals.find(v=>v.id===r.id);x.done=true;x.coveredSongs=[...covered];logAct(s,'marked the '+(r.date?fmtDate(r.date)+' ':'')+'rehearsal done'+(covered.length?' ('+covered.length+' songs covered)':''));return s;}); setMarkingDone(false); };
   const live=isRehLive(r);
+  useBackHandler(!!confirmDel,()=>setConfirmDel(null));
   return (
     <div className={'reh'+(r.done?' done':'')+(live?' live':'')}>
       <div className="reh-top">
@@ -4234,7 +4239,32 @@ function RehCard({r,state,patch,del,update,goSong}){
         onSet={(key,v)=>patch(r.id,x=>{ x.attendance=x.attendance||{}; if(v) x.attendance[key]=v; else delete x.attendance[key]; })}/>
       {r.notes && <div className="reh-loc" style={{marginTop:10}} dir="auto">{r.notes}</div>}
       {!r.done && <RehearsalProposal r={r} update={update} state={state}/>}
-      <div className="btnrow"><button className="btn danger sm" onClick={()=>del(r.id)}>Delete</button></div>
+      <div className="btnrow"><button className="btn danger sm" onClick={()=>setConfirmDel('first')}>Delete</button></div>
+      {confirmDel && <div className="done-modal" onClick={e=>{if(e.target===e.currentTarget) setConfirmDel(null);}}>
+        <div className="done-panel">
+          {confirmDel==='first'
+            ? <React.Fragment>
+                <div className="modaltitle">Delete this rehearsal?</div>
+                <div className="sm" style={{color:'var(--muted)',marginBottom:12}}>
+                  {(r.date?fmtDate(r.date):'This rehearsal')+(r.location?' · '+r.location:'')} will be removed. This can't be undone.
+                </div>
+                <div className="btnrow">
+                  <button className="btn ghost" onClick={()=>setConfirmDel(null)}>Cancel</button>
+                  <button className="btn danger" onClick={()=>{ if(r.done){ setConfirmDel('second'); } else { del(r.id); setConfirmDel(null); } }}>Delete</button>
+                </div>
+              </React.Fragment>
+            : <React.Fragment>
+                <div className="modaltitle">⚠️ This rehearsal is marked done</div>
+                <div className="sm" style={{color:'var(--muted)',marginBottom:12}}>
+                  Deleting it also removes its record of {(r.coveredSongs&&r.coveredSongs.length)||0} covered {((r.coveredSongs&&r.coveredSongs.length)===1)?'song':'songs'} from song rehearsal counts. Are you sure?
+                </div>
+                <div className="btnrow">
+                  <button className="btn ghost" onClick={()=>setConfirmDel(null)}>Cancel</button>
+                  <button className="btn danger" onClick={()=>{ del(r.id); setConfirmDel(null); }}>Yes, delete permanently</button>
+                </div>
+              </React.Fragment>}
+        </div>
+      </div>}
     </div>
   );
 }
