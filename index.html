@@ -467,7 +467,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.329';
+const VERSION='0.330';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -507,6 +507,9 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
+  '0.330':[
+    'Manager chat: a prompt you already sent no longer re-appears in the box when you switch tabs and come back to Admin.',
+  ],
   '0.329':[
     'Deleting a rehearsal now asks for confirmation first — and a done rehearsal needs a second confirmation before it’s removed.',
   ],
@@ -4621,10 +4624,14 @@ function ChatPanel({show}){
     return m; };
   useEffect(()=>{ let alive=true; setLoading(true); setErr(''); managerChatCall(show.id,'').then(d=>{ if(alive){ setMsgs((d&&d.messages)||[]); setLoading(false); } }).catch(e=>{ if(alive){ setErr(em(e)); setLoading(false); } }); return ()=>{alive=false;}; },[show.id]);
   useEffect(()=>{ const el=scRef.current; if(!el) return; const f=()=>{ el.scrollTop=el.scrollHeight; }; f(); const r=requestAnimationFrame(f); const t=setTimeout(f,80); return ()=>{ cancelAnimationFrame(r); clearTimeout(t); }; },[msgs,busy,loading]);
-  const send=async()=>{ const t=text.trim(); if(!t||busy) return; setErr(''); setText(''); setBusy(true);
+  const send=async()=>{ const t=text.trim(); if(!t||busy) return; setErr(''); setText('');
+    // Clear the persisted draft synchronously — a sent prompt must never re-paste when
+    // returning to Admin, even if the component unmounts mid-request (before the [text] effect runs).
+    try{ localStorage.removeItem(draftKey); }catch(_){}
+    setBusy(true);
     const base=msgs; setMsgs([...base,{role:'user',text:t,ts:Date.now()}]);
     try{ const d=await managerChatCall(show.id,t); setMsgs((d&&d.messages)||base); }
-    catch(e){ setErr(em(e)); setMsgs(base); setText(t); }
+    catch(e){ setErr(em(e)); }   // keep the sent message in the transcript; do NOT re-paste it into the input
     setBusy(false);
   };
   const copyMsg=(i,txt)=>{ try{ navigator.clipboard.writeText(txt); setCopied(i); setTimeout(()=>setCopied(c=>c===i?null:c),1200); }catch(_){} };
