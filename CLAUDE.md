@@ -39,7 +39,7 @@ You cannot run Firebase locally. To check a change before handing it off:
 - **Versioning.** There's a `const VERSION='x.yyy'` near the top of the script, rendered next
   to the SOUNDCHECK wordmark. **Every change bumps the right-hand number by 1** (0.103 → 0.104).
   Never change the left-hand number unless explicitly told. The owner uses the on-screen version
-  to confirm a deploy landed. Current version: **0.328**.
+  to confirm a deploy landed. Current version: **0.330**.
   **This session ports to BOTH staging.html and index.html by default** (owner's standing
   request); still apply the two index.html fixes below on every port.
 - **Edit staging.html first.** Don't touch `index.html` until the owner asks to port a tested change.
@@ -351,6 +351,10 @@ allowlist (owner + `managerChatAllow` emails); everyone else does not see it.
   pulsing dot and "Rehearsal in progress" text. Card gets `.live` class.
 - **Mark done flow**: opens modal listing all non-excluded songs as checkboxes to mark which were
   actually covered. Stores `coveredSongs[]` array on the rehearsal.
+- **Delete flow (v0.329)**: the Delete button opens a confirmation dialog (`confirmDel` state in
+  `RehCard`, `done-modal`/`done-panel` styling, back-button aware). A **done** rehearsal requires a
+  **second** confirmation ("⚠️ marked done", warns it also drops its covered-song record) before it's
+  removed; an upcoming one deletes after the single confirm.
 - **Song rehearsal count**: `songRehCount(songId, rehearsals)` counts how many done rehearsals covered
   that song. Shown as `N×` badge on song rows.
 - Focus songs: Practice/Learn split with `FocusPicker` and `FocusTags`. `FocusTags` renders the
@@ -588,6 +592,10 @@ The band has a conversational **AI manager**. Two Anthropic surfaces:
   clear history), collapsible **Manager settings** (owner-only: guidelines, chat allowlist,
   Telegram bot username, per-band banner note), and the **Rehearsal plan** panel (`managerPlan`,
   with owner-only Clear + apply-to/create-rehearsal).
+- **Chat draft** persists across tab switches via `localStorage` `sc_chat_draft_[board]`, BUT a
+  **sent** prompt is cleared **synchronously** (`removeItem`) on send — not just via `setText('')` —
+  so it can't re-paste if the component unmounts during the 30–120s call (v0.330). On a send
+  **error** the message stays in the transcript and is **not** restored into the input box.
 - **Gated**: only the owner (`ADMIN_EMAIL`) + emails in `managerChatAllow` see the tab and can chat.
   Per-band banner image `admin-banner-<bandName>.jpg` (falls back to `-Default.jpg` then generic).
 
