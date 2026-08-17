@@ -467,7 +467,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.332';
+const VERSION='0.333';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -507,6 +507,9 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
+  '0.333':[
+    'AI manager can now run on auto-pilot: turn it on in Admin → Manager settings and it reviews the band twice a day on its own — flagging missing docs before rehearsals, chasing unanswered attendance, warning if readiness slips, and setting focus on unplanned rehearsals.',
+  ],
   '0.332':[
     'Manager chat now shows the real reason it can’t connect (not deployed vs. crashing vs. unreachable) with the underlying error code, so a backend problem is diagnosable from your phone.',
   ],
@@ -939,7 +942,7 @@ async function deleteBandDoc(){ if(boardRef) await boardRef.delete(); }
 /* ---------- state helpers ---------- */
 function defaultState(){
   const members={}; INSTR.forEach(i=>members[i.id]={name:i.label});
-  return {band:'', bandArt:'', shows:[], members, songs:[], rehearsals:[], activity:[], access:{}, memberEmails:[], album:[], managerGuidelines:'', managerChatAllow:[], telegramBot:'', managerPlan:null, _rev:0, _updatedAt:null};
+  return {band:'', bandArt:'', shows:[], members, songs:[], rehearsals:[], activity:[], access:{}, memberEmails:[], album:[], managerGuidelines:'', managerChatAllow:[], telegramBot:'', managerPlan:null, managerAutoPilot:false, _rev:0, _updatedAt:null};
 }
 function freshParts(){ const p={}; INSTR.forEach(i=>p[i.id]='todo'); return p; }
 function deriveFromStatus(st){ return st==='ready'?'ready' : (st==='practicing')?'practicing' : (st==='rehearsing'||st==='learning')?'learning' : 'todo'; }
@@ -951,6 +954,7 @@ function migrate(s){
   if(!Array.isArray(s.managerChatAllow)) s.managerChatAllow=[];
   if(typeof s.telegramBot!=='string') s.telegramBot='';
   if(s.managerPlan===undefined) s.managerPlan=null;
+  if(typeof s.managerAutoPilot!=='boolean') s.managerAutoPilot=false;
   if(!s.members){ s.members={}; INSTR.forEach(i=>s.members[i.id]={name:i.label}); }
   if(!Array.isArray(s.songs)) s.songs=[];
   s.songs.forEach(song=>{
@@ -4895,6 +4899,12 @@ function Admin({state,update,user,showId,pickShow}){
               <label className="fl" style={{marginTop:14}}>Telegram bot (this band)</label>
               <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5,marginBottom:6}}>Bot username from @BotFather, without the @. Each member links their own Telegram from <b style={{color:'var(--text)'}}>Setup → Your Telegram</b> (no Admin access needed) so the manager can message them and run polls.</div>
               <div style={{display:'flex',gap:6}}><input className="inp" style={{flex:1}} value={tgBot} onChange={e=>{setTgBot(e.target.value);setTgBotMsg('');}} placeholder="my_band_bot"/><button className="btn ghost sm" onClick={saveTgBot}>Save</button>{tgBotMsg && <span style={{fontSize:12,color:'var(--ok)',alignSelf:'center'}}>{tgBotMsg}</span>}</div>
+              <label className="fl" style={{marginTop:14}}>Auto-pilot — proactive checks</label>
+              <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5,marginBottom:6}}>When on, the manager wakes on its own <b style={{color:'var(--text)'}}>twice a day</b> to review the band and act — flag missing docs before rehearsals, chase unanswered attendance, warn if readiness is slipping, and set focus on unplanned rehearsals. Uses a cheaper model to keep cost low, and only messages when there's something worth saying. Requires the <b style={{color:'var(--text)'}}>managerSweep</b> Cloud Function deployed.</div>
+              <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer',fontSize:13,color:'var(--text)'}}>
+                <input type="checkbox" checked={!!state.managerAutoPilot} onChange={e=>{const v=e.target.checked; update(s=>{s.managerAutoPilot=v;return s;});}}/>
+                <span>{state.managerAutoPilot?'On — checking twice a day':'Off'}</span>
+              </label>
               <label className="fl" style={{marginTop:14}}>Manager banner image (this band)</label>
               <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5}}>Add a file named <b style={{color:'var(--text)',userSelect:'all'}} dir="auto">admin-banner-{bandName||'Default'}.jpg</b> to give this band its own manager image. Without one, <b style={{color:'var(--text)'}}>admin-banner-Default.jpg</b> is shown.</div>
               </React.Fragment>}

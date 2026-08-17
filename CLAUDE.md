@@ -55,7 +55,8 @@ You cannot run Firebase locally. To check a change before handing it off:
   AI-manager fields: `managerGuidelines` (owner's standing guidelines string),
   `managerChatAllow` (emails allowed to chat + see the Admin tab), `telegramBot`
   (this band's bot username), `managerPlan` (`{summary, sessions[], updatedAt}` shown
-  in the Admin plan panel).
+  in the Admin plan panel), `managerAutoPilot` (owner toggle: when true the twice-daily
+  `managerSweep` function proactively reviews this band and acts).
   Each show: `{id, name, date, venue, setlist[], readinessHistory[]}`.
   Each setlist entry: `{songId, parts:{}, guests:[], encore, excluded}`.
   Each rehearsal: `{id, showId, date, duration, location, notes, focusLearn[], focusPractice[],
@@ -608,6 +609,12 @@ The band has a conversational **AI manager**. Two Anthropic surfaces:
 - `rehearsalReminders` (onSchedule hourly) — ~24h pre-rehearsal note, DM'd to the owner on Telegram.
 - `weeklyReport` (onSchedule, Mon 09:00) — weekly readiness → Telegram to owner.
 - `managerTasks` (onSchedule, **every 5 min**, 540s/512MiB) — runs due **scheduled tasks** (below).
+- `managerSweep` (onSchedule, **twice daily** `0 8,20 * * *`, 540s/512MiB) — proactive auto-pilot.
+  Opt-in per band (`board.managerAutoPilot`). Runs `runManagerLoop` with a proactive
+  review prompt on the **cheap** `MODEL_SWEEP` (`claude-haiku-4-5`; chat stays on `MODEL`):
+  flags missing docs, chases unanswered attendance/polls, warns on slipping readiness,
+  sets focus on unplanned rehearsals. Anti-nag via `managerState.sweepLast.summary` fed
+  back in each run; only leaves a chat note when it actually did/flagged something.
 - `telegramWebhook` (onRequest) — Telegram updates: `/start <code>` linking + poll `callback_query`.
 - Secrets: `ANTHROPIC_KEY`, `TELEGRAM_BOT_TOKEN`. TZ `Asia/Jerusalem`. **FCM push is gone** —
   `pushToOwner(bandId, title, body)` now DMs the owner on Telegram (`sendTelegramToMember 'me'`).

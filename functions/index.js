@@ -35,6 +35,10 @@ const ADMIN_EMAIL = 'ofiralon10@gmail.com';        // must match ADMIN_EMAIL in 
 const TZ = 'Asia/Jerusalem';                       // schedule timezone
 const REMINDER_LEAD_HOURS = 24;                    // how far ahead to remind
 const MODEL = 'claude-sonnet-5';   // strong at planning/tool use, ~2x cheaper than Opus. (haiku-4-5 was too weak; opus-4-8 = max quality)
+// Cheaper model for the AUTONOMOUS proactive sweeps (managerSweep). Runs twice a
+// day on every band with auto-pilot on, so it must be cheap — Haiku's checks/nudges
+// are good enough here, while interactive chat + planning stay on the smart MODEL.
+const MODEL_SWEEP = 'claude-haiku-4-5';
 const APP_URL = 'https://ofiralon10.github.io/soundcheck/'; // opened when a push is tapped
 /* -------------------------------------- */
 
@@ -665,7 +669,8 @@ async function anthropicRaw(key, body) {
 // The shared manager agent loop. Runs the tool-use conversation and returns the
 // reply plus the board `ops` (for the caller to persist) and the tool names used.
 // Used by both managerChat (interactive) and the managerTasks scheduler (autonomous).
-async function runManagerLoop({ bandId, board, show, ctx, apiMsgs, email, key }) {
+async function runManagerLoop({ bandId, board, show, ctx, apiMsgs, email, key, model }) {
+  const useModel = model || MODEL;   // interactive chat uses MODEL; the sweep passes MODEL_SWEEP
   // The system prompt (band context) + the tools are large and identical across
   // every step of the loop. Marking the system block cacheable caches the whole
   // tools+system prefix, so steps 2..6 of a turn reuse it at ~10% input cost.
@@ -681,7 +686,7 @@ async function runManagerLoop({ bandId, board, show, ctx, apiMsgs, email, key })
     // the model's thinking AND a large show_plan call — a full season of rehearsals
     // is a lot of JSON. At 16k the whole budget went to thinking and the turn came
     // back as stop_reason=max_tokens with blocks=thinking only (an empty reply).
-    const data = await anthropicRaw(key, { model: MODEL, max_tokens: 32000, system: sysBlocks, messages: apiMsgs, tools: MANAGER_TOOLS });
+    const data = await anthropicRaw(key, { model: useModel, max_tokens: 32000, system: sysBlocks, messages: apiMsgs, tools: MANAGER_TOOLS });
     if (data.stop_reason === 'refusal') { reply = 'Sorry — I can\'t help with that one.'; break; }
     if (data.stop_reason === 'max_tokens') logger.warn('manager response hit max_tokens — output was truncated');
     const toolUses = (data.content || []).filter(b => b.type === 'tool_use');
@@ -732,7 +737,7 @@ async function runManagerLoop({ bandId, board, show, ctx, apiMsgs, email, key })
   if (!reply) {
     logger.warn('manager loop hit the step cap with no text reply — asking for a summary');
     try {
-      const data = await anthropicRaw(key, { model: MODEL, max_tokens: 1200, system: sysBlocks, messages: apiMsgs });
+      const data = await anthropicRaw(key, { model: useModel, max_tokens: 1200, system: sysBlocks, messages: apiMsgs });
       reply = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
     } catch (e) { logger.error('final summary call failed: ' + e.message); }
   }
@@ -887,6 +892,80 @@ exports.managerTasks = onSchedule(
           if (nextMs != null) await taskRef.set({ status: 'pending', runAtMs: nextMs, startedAt: null, lastError: (e.message || '').slice(0, 300), lastErrorAt: Date.now() }, { merge: true });
           else await taskRef.set({ status: 'error', ranAt: Date.now(), error: (e.message || '').slice(0, 300) }, { merge: true });
         }
+      }
+    }
+  }
+);
+
+/* ==================== PROACTIVE MANAGER SWEEP ====================
+   Runs twice a day (08:00 & 20:00 TZ). For each band with auto-pilot ON, the
+   manager wakes on its own, reviews the current data, and ACTS where something
+   is genuinely actionable and new since its last check — flag missing docs,
+   chase unanswered attendance/polls, warn when readiness is slipping vs the
+   show date, and set focus on unplanned rehearsals. Uses the cheap MODEL_SWEEP
+   (twice-daily × every band = keep it cheap); interactive chat stays on MODEL.
+   Opt-in per band via board.managerAutoPilot so it never surprises-spends. The
+   previous run's one-line summary is fed back in as memory so it doesn't nag. */
+const SWEEP_PREFIX =
+  '[AUTONOMOUS PROACTIVE CHECK — this is an automatic twice-daily review; nobody is watching the chat. ' +
+  'Review the band data below and ACT using your tools where something is genuinely actionable AND new since your last check (shown below). ' +
+  'Be judicious: if nothing needs doing, do nothing and simply reply "All quiet — nothing to act on." Do NOT repeat a nudge you already made last time unless it is still unaddressed. Prefer messaging the owner (send_telegram recipient "me") over pinging the whole band; at most a couple of messages per run.]\n\n' +
+  'What to check, in priority order:\n' +
+  '1. MISSING DOCS — for each rehearsal in the next ~7 days, if a focus song is missing its slide or stems, DM the owner a short, specific heads-up (which song, what is missing, which player should prepare it if clear).\n' +
+  '2. UNANSWERED ATTENDANCE / POLLS — for the next upcoming rehearsal, if players have not answered attendance, gently re-ping just those players over Telegram. If a poll is open, use get_poll_results first and only nudge the non-responders.\n' +
+  '3. READINESS vs SHOW DATE — if overall readiness is flat/declining with the show approaching (behind schedule), warn the owner; if it is materially behind, post an updated plan with show_plan.\n' +
+  '4. REHEARSAL FOCUS — for the next upcoming rehearsal(s) that have NO focus set, set a sensible learn/practice focus with apply_focus, chosen from the weakest songs.\n\n' +
+  'Honor the owner guidelines. End with ONE short line summarizing what you did (or "All quiet") — this line is saved as your memory for next time.';
+
+exports.managerSweep = onSchedule(
+  // Twice daily; same headroom as the chat loop (it may run several tools).
+  { schedule: '0 8,20 * * *', timeZone: TZ, secrets: [ANTHROPIC_KEY, TELEGRAM_TOKEN], timeoutSeconds: 540, memory: '512MiB' },
+  async () => {
+    const key = ANTHROPIC_KEY.value();
+    const boards = await ownerBoards();
+    for (const board of boards) {
+      if (board.managerAutoPilot !== true) continue;   // opt-in per band
+      // Soonest show that still has songs; skip bands whose only show is well past.
+      const shows = (board.shows || []).filter(s => (s.setlist || []).some(e => !e.excluded));
+      if (!shows.length) continue;
+      shows.sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
+      const show = shows[0];
+      if (show.date && daysUntil(show.date) < -1) continue;   // show is over
+      const boardRef = db.collection('boards').doc(board.id);
+      try {
+        const st = await loadState(board.id);
+        const memory = (st.sweepLast && st.sweepLast.summary) ? st.sweepLast.summary : '(no previous check)';
+        const ctx = buildManagerContextNode(board, show, { nowMs: Date.now(), tasks: await loadPendingTasks(board.id) });
+        const apiMsgs = [{ role: 'user', content: SWEEP_PREFIX + '\n\nYour last check said: ' + memory }];
+        const { reply, ops, actions } = await runManagerLoop({ bandId: board.id, board, show, ctx, apiMsgs, email: ADMIN_EMAIL, key, model: MODEL_SWEEP });
+        if (ops.length) {
+          await db.runTransaction(async (tx) => {
+            const snap = await tx.get(boardRef);
+            if (!snap.exists) return;
+            const b = snap.data();
+            ops.forEach(op => applyOpToBoard(op, b));
+            b._updatedAt = new Date().toISOString();
+            tx.set(boardRef, b);
+          });
+        }
+        const summary = (reply || '').trim();
+        const quiet = /^all quiet/i.test(summary) && !ops.length && !actions.length;
+        // Remember this run so the next one doesn't repeat the same nudge.
+        await saveState(board.id, { sweepLast: { at: new Date().toISOString(), summary: summary.slice(0, 500) } });
+        // Only leave a chat note when the sweep actually did or flagged something —
+        // a note every 12h saying "all quiet" would just be noise.
+        if (!quiet && summary) {
+          try {
+            const chatRef = db.collection('managerChat').doc(board.id);
+            const cs = await chatRef.get();
+            const msgs = (cs.exists && Array.isArray(cs.data().messages)) ? cs.data().messages : [];
+            msgs.push({ role: 'assistant', text: '🕒 *Auto-check* — ' + summary, ts: Date.now() });
+            await chatRef.set({ messages: msgs.slice(-40) }, { merge: true });
+          } catch (e) { logger.error('sweep chat note failed: ' + e.message); }
+        }
+        logger.info('managerSweep ' + board.id + ' — actions: [' + actions.join(',') + '] ops: [' + ops.map(o => o.type).join(',') + ']');
+      } catch (e) {
+        logger.error('managerSweep failed for ' + board.id + ': ' + e.message);
       }
     }
   }
