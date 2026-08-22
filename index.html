@@ -467,7 +467,7 @@
 
 <script type="text/babel">
 const {useState,useEffect,useRef,useCallback} = React;
-const VERSION='0.333';
+const VERSION='0.334';
 
 /* Tablet framing: on a desktop (mouse + wide screen) the app AUTOMATICALLY
    renders inside a 4:3 landscape tablet frame (1440x1080) so PC testing
@@ -507,6 +507,10 @@ function scScrollToEl(el,offPx){
   rt.scrollTo({top:y,behavior:'smooth'});
 }
 const CHANGELOG={
+  '0.334':[
+    'Rehearsals: a "Cancel" button next to "Mark done" removes an upcoming rehearsal that isn’t happening (nothing was covered, so nothing is lost).',
+    'Propose new time now supports several options at once — everyone marks availability per option (with a "N can make it" tally); accept one to move the rehearsal, or remove options.',
+  ],
   '0.333':[
     'AI manager can now run on auto-pilot: turn it on in Admin → Manager settings and it reviews the band twice a day on its own — flagging missing docs before rehearsals, chasing unanswered attendance, warning if readiness slips, and setting focus on unplanned rehearsals.',
   ],
@@ -1020,8 +1024,18 @@ function migrate(s){
     if(!Array.isArray(r.focusLearn)) r.focusLearn=[];
     if(!Array.isArray(r.focusPractice)) r.focusPractice = Array.isArray(r.focus)? r.focus.slice() : [];
     delete r.focus;
+    // Proposal shape (v0.334): a proposal holds MULTIPLE time OPTIONS, each with its
+    // own per-player attendance. Old single-time proposals ({date,attendance}) migrate
+    // to one option. (IIFE + var — block-scoped const behaves oddly in migrate under Babel.)
     if(r.proposal!==undefined && r.proposal!==null && typeof r.proposal==='object'){
-      if(!r.proposal.votes || typeof r.proposal.votes!=='object') r.proposal.votes={};
+      (function(){ var p=r.proposal;
+        if(!Array.isArray(p.options)){
+          p.options = p.date ? [{ id:uid(), date:p.date, attendance:(p.attendance&&typeof p.attendance==='object')?p.attendance:{} }] : [];
+        }
+        p.options.forEach(function(o){ if(!o.id) o.id=uid(); if(!o.attendance||typeof o.attendance!=='object') o.attendance={}; });
+        delete p.date; delete p.attendance; delete p.votes;
+        if(!p.options.length) r.proposal=null;
+      })();
     } else { r.proposal=null; }
     if(!Array.isArray(r.coveredSongs)) r.coveredSongs=[];
     if(r.duration===undefined) r.duration='';
@@ -1905,68 +1919,84 @@ function AttendanceChips({state,attendance,guestList,onSet}){
     </div>
   );
 }
+// A rehearsal time-change proposal can hold SEVERAL candidate times (options).
+// Everyone marks their availability per option (four-state chips); anyone can then
+// Accept one (it becomes the rehearsal's new time, carrying that option's answers)
+// or Remove options. Old single-time proposals are migrated to one option.
 function RehearsalProposal({r,update,extra,state}){
   const [proposing,setProposing]=useState(false);
   const init=r.date?r.date.slice(0,16):'';
   const [day,setDay]=useState(init?init.slice(0,10):'');
   const [time,setTime]=useState(init?init.slice(11,16):'');
   const p=r.proposal;
+  const options=(p&&Array.isArray(p.options))?p.options:[];
   const guestList=state?allShowGuests(state.shows):[];
+  // How many core players have said yes to an option — helps pick the best time.
+  const yesCount=(o)=>INSTR.filter(i=>attState(((o&&o.attendance)||{})[i.id])==='yes').length;
 
-  const submit=()=>{
+  // Add a candidate time (creates the proposal if this is the first option).
+  const addOption=()=>{
     if(!day||!time) return;
     const newDate=day+'T'+time;
     update(s=>{ const rr=s.rehearsals.find(x=>x.id===r.id); if(!rr) return s;
-      rr.proposal={ id:uid(), by:actorName(), date:newDate, attendance:{}, ts:new Date().toISOString() };
-      logAct(s,'proposed moving the '+(r.date?fmtDate(r.date)+' ':'')+'rehearsal to '+fmtDate(newDate)+' '+fmtTime(newDate));
+      if(!rr.proposal||typeof rr.proposal!=='object'||!Array.isArray(rr.proposal.options)){
+        rr.proposal={ id:uid(), by:actorName(), ts:new Date().toISOString(), options:[] };
+      }
+      rr.proposal.options.push({ id:uid(), date:newDate, attendance:{} });
+      logAct(s,'proposed a new time for the '+(rr.date?fmtDate(rr.date)+' ':'')+'rehearsal ('+fmtDate(newDate)+' '+fmtTime(newDate)+')');
       return s; });
     setProposing(false);
   };
-  // Members mark their availability for the proposed time (same as the main card).
-  const setProposalAtt=(key,v)=>update(s=>{ const rr=s.rehearsals.find(x=>x.id===r.id); if(!rr||!rr.proposal) return s;
-    rr.proposal.attendance=rr.proposal.attendance||{}; if(v) rr.proposal.attendance[key]=v; else delete rr.proposal.attendance[key]; return s; });
-  // Apply: move the rehearsal to the proposed time, carry the proposal's approvals
-  // over as the rehearsal's approvals, and clear the proposal.
-  const apply=()=>update(s=>{ const rr=s.rehearsals.find(x=>x.id===r.id); if(!rr||!rr.proposal) return s;
-    const nd=rr.proposal.date; rr.date=nd; rr.attendance=Object.assign({},rr.proposal.attendance||{}); rr.proposal=null;
-    logAct(s,'moved the rehearsal to '+fmtDate(nd)+' '+fmtTime(nd)); return s; });
-  const dismiss=()=>update(s=>{ const rr=s.rehearsals.find(x=>x.id===r.id); if(rr) rr.proposal=null; return s; });
+  // Members mark their availability for one option (same four-state chips as the card).
+  const setOptAtt=(optId,key,v)=>update(s=>{ const rr=s.rehearsals.find(x=>x.id===r.id); if(!rr||!rr.proposal) return s;
+    const o=(rr.proposal.options||[]).find(x=>x.id===optId); if(!o) return s;
+    o.attendance=o.attendance||{}; if(v) o.attendance[key]=v; else delete o.attendance[key]; return s; });
+  // Accept one option: move the rehearsal to it, carry that option's answers over, clear the proposal.
+  const accept=(optId)=>update(s=>{ const rr=s.rehearsals.find(x=>x.id===r.id); if(!rr||!rr.proposal) return s;
+    const o=(rr.proposal.options||[]).find(x=>x.id===optId); if(!o) return s;
+    rr.date=o.date; rr.attendance=Object.assign({},o.attendance||{}); rr.proposal=null;
+    logAct(s,'moved the rehearsal to '+fmtDate(o.date)+' '+fmtTime(o.date)); return s; });
+  // Remove one option; clearing the last one removes the whole proposal.
+  const removeOpt=(optId)=>update(s=>{ const rr=s.rehearsals.find(x=>x.id===r.id); if(!rr||!rr.proposal) return s;
+    rr.proposal.options=(rr.proposal.options||[]).filter(x=>x.id!==optId);
+    if(!rr.proposal.options.length) rr.proposal=null; return s; });
+  const dismissAll=()=>update(s=>{ const rr=s.rehearsals.find(x=>x.id===r.id); if(rr) rr.proposal=null; return s; });
 
-  if(p){
-    return (
-      <div className="prop">
-        <div className="prop-h">Proposed new time</div>
-        <div className="prop-new">{fmtDate(p.date)} · {fmtTime(p.date)}</div>
-        <div className="prop-by">by {p.by} · was {fmtDate(r.date)} {fmtTime(r.date)}</div>
-        {state && <React.Fragment>
-          <div style={{fontSize:11,color:'var(--muted)',marginTop:9,marginBottom:1}}>Can you make the new time? (tap your player)</div>
-          <AttendanceChips state={state} attendance={p.attendance} guestList={guestList} onSet={setProposalAtt}/>
-        </React.Fragment>}
-        <div className="prop-act">
-          <button className="btn" onClick={apply}>Apply as new time</button>
-          <button className="btn ghost" onClick={dismiss}>Delete</button>
-        </div>
-        {extra && <div style={{marginTop:10}}>{extra}</div>}
-      </div>
-    );
-  }
   return (
     <div className="prop">
-      {!proposing
-        ? <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
-            <button className="btn ghost" style={{width:'auto'}} onClick={()=>setProposing(true)}>Propose new time</button>
-            {extra}
+      {options.length>0 && <React.Fragment>
+        <div className="prop-h">Proposed new time{options.length>1?'s':''}</div>
+        <div className="prop-by">by {p.by} · currently {fmtDate(r.date)} {fmtTime(r.date)}</div>
+        {options.map(o=>(
+          <div key={o.id} style={{border:'1px solid var(--line)',borderRadius:10,padding:'8px 10px',marginTop:8}}>
+            <div className="prop-new">{fmtDate(o.date)} · {fmtTime(o.date)}</div>
+            {state && <React.Fragment>
+              <div style={{fontSize:11,color:'var(--muted)',marginTop:6,marginBottom:1}}>Can you make this? (tap your player) · {yesCount(o)}/{INSTR.length} can</div>
+              <AttendanceChips state={state} attendance={o.attendance} guestList={guestList} onSet={(key,v)=>setOptAtt(o.id,key,v)}/>
+            </React.Fragment>}
+            <div className="prop-act">
+              <button className="btn" onClick={()=>accept(o.id)}>Accept this time</button>
+              <button className="btn ghost" onClick={()=>removeOpt(o.id)}>Remove</button>
+            </div>
           </div>
-        : <div className="propform">
-            <div className="prop-h">New day & time</div>
+        ))}
+      </React.Fragment>}
+      {proposing
+        ? <div className="propform" style={{marginTop:options.length?10:0}}>
+            <div className="prop-h">{options.length?'Add another time':'New day & time'}</div>
             <div className="row2">
               <input className="inp" type="date" value={day} onChange={e=>setDay(e.target.value)}/>
               <input className="inp" type="time" value={time} onChange={e=>setTime(e.target.value)}/>
             </div>
             <div className="prop-act">
-              <button className="btn" disabled={!day||!time} onClick={submit}>Propose</button>
+              <button className="btn" disabled={!day||!time} onClick={addOption}>{options.length?'Add option':'Propose'}</button>
               <button className="btn ghost" onClick={()=>setProposing(false)}>Cancel</button>
             </div>
+          </div>
+        : <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginTop:options.length?10:0}}>
+            <button className="btn ghost" style={{width:'auto'}} onClick={()=>setProposing(true)}>{options.length?'+ Add another time':'Propose new time'}</button>
+            {options.length>0 && <button className="btn ghost" style={{width:'auto'}} onClick={dismissAll}>Delete all</button>}
+            {extra}
           </div>}
     </div>
   );
@@ -4182,6 +4212,9 @@ function RehCard({r,state,patch,del,update,goSong}){
   const onSetOther=(group,text)=>patch(r.id,x=>{ const key=group==='practice'?'focusPractice':'focusLearn'; x[key]=setOtherInArr(x[key]||[],text); });
   const startMarkDone=()=>{ const focus=[...(r.focusPractice||[]),...(r.focusLearn||[])].filter(x=>!isOther(x)); setCovered([...focus]); setMarkingDone(true); };
   const confirmDone=()=>{ update(s=>{const x=s.rehearsals.find(v=>v.id===r.id);x.done=true;x.coveredSongs=[...covered];logAct(s,'marked the '+(r.date?fmtDate(r.date)+' ':'')+'rehearsal done'+(covered.length?' ('+covered.length+' songs covered)':''));return s;}); setMarkingDone(false); };
+  // Cancel = the rehearsal won't happen, so it's removed. Only offered on upcoming
+  // (not-done) rehearsals, where nothing was covered — so nothing is lost.
+  const doCancel=()=>{ update(s=>{ const x=s.rehearsals.find(v=>v.id===r.id); logAct(s,'cancelled the '+((x&&x.date)?fmtDate(x.date)+' ':'')+'rehearsal'); s.rehearsals=s.rehearsals.filter(v=>v.id!==r.id); return s; }); setConfirmDel(null); };
   const live=isRehLive(r);
   useBackHandler(!!confirmDel,()=>setConfirmDel(null));
   return (
@@ -4202,6 +4235,7 @@ function RehCard({r,state,patch,del,update,goSong}){
               </React.Fragment>
             : <React.Fragment>
                 {!r.done && <button className="btn sm ghost" onClick={openEdit}>Edit</button>}
+                {!r.done && <button className="btn sm ghost" style={{color:'var(--drums)'}} onClick={()=>setConfirmDel('cancel')}>Cancel</button>}
                 {r.done
                   ? <button className="btn sm ghost" onClick={()=>patch(r.id,x=>{x.done=false;})}>Reopen</button>
                   : <button className="btn sm ghost" onClick={startMarkDone}>Mark done</button>}
@@ -4252,10 +4286,21 @@ function RehCard({r,state,patch,del,update,goSong}){
         onSet={(key,v)=>patch(r.id,x=>{ x.attendance=x.attendance||{}; if(v) x.attendance[key]=v; else delete x.attendance[key]; })}/>
       {r.notes && <div className="reh-loc" style={{marginTop:10}} dir="auto">{r.notes}</div>}
       {!r.done && <RehearsalProposal r={r} update={update} state={state}/>}
-      <div className="btnrow"><button className="btn danger sm" onClick={()=>setConfirmDel('first')}>Delete</button></div>
+      {r.done && <div className="btnrow"><button className="btn danger sm" onClick={()=>setConfirmDel('first')}>Delete</button></div>}
       {confirmDel && <div className="done-modal" onClick={e=>{if(e.target===e.currentTarget) setConfirmDel(null);}}>
         <div className="done-panel">
-          {confirmDel==='first'
+          {confirmDel==='cancel'
+            ? <React.Fragment>
+                <div className="modaltitle">Cancel this rehearsal?</div>
+                <div className="sm" style={{color:'var(--muted)',marginBottom:12}}>
+                  {(r.date?fmtDate(r.date):'This rehearsal')+(r.location?' · '+r.location:'')} will be removed. No songs were covered, so nothing is lost.
+                </div>
+                <div className="btnrow">
+                  <button className="btn ghost" onClick={()=>setConfirmDel(null)}>Keep it</button>
+                  <button className="btn danger" onClick={doCancel}>Cancel rehearsal</button>
+                </div>
+              </React.Fragment>
+          : confirmDel==='first'
             ? <React.Fragment>
                 <div className="modaltitle">Delete this rehearsal?</div>
                 <div className="sm" style={{color:'var(--muted)',marginBottom:12}}>

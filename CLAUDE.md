@@ -63,6 +63,9 @@ You cannot run Firebase locally. To check a change before handing it off:
   attendance:{}, apprReset, coveredSongs[], proposal, done}`. `attendance` is per-participant
   (`instrumentId` or `g:GuestName` → `'yes'|'no'|'maybe'`; legacy `true` = yes, absent = unanswered).
   `apprReset` marks that migrate() cleared old approvals once.
+  `proposal` (time-change) = `{id, by, ts, options:[{id, date, attendance:{}}]}` — MULTIPLE candidate
+  times, each with its own per-player attendance (v0.334). migrate() converts old single-time
+  proposals (`{date, attendance}`) to one option; an empty options list ⇒ `proposal=null`.
   Each song: `{id, title, artist, cover, files[], notes, duration, songKey, tempo, zoomPlans}`.
   Each file: `{id, name, kind:'upload'|'link', url, path, size, type, cat, stem?, by?, ver?,
   srcName?, sync?, ann?}`. `stem:true` marks true stem files (from Get Stems); `ver`/`srcName` track
@@ -352,10 +355,12 @@ allowlist (owner + `managerChatAllow` emails); everyone else does not see it.
   pulsing dot and "Rehearsal in progress" text. Card gets `.live` class.
 - **Mark done flow**: opens modal listing all non-excluded songs as checkboxes to mark which were
   actually covered. Stores `coveredSongs[]` array on the rehearsal.
-- **Delete flow (v0.329)**: the Delete button opens a confirmation dialog (`confirmDel` state in
-  `RehCard`, `done-modal`/`done-panel` styling, back-button aware). A **done** rehearsal requires a
-  **second** confirmation ("⚠️ marked done", warns it also drops its covered-song record) before it's
-  removed; an upcoming one deletes after the single confirm.
+- **Cancel vs Delete (v0.334)**: an **upcoming** rehearsal shows a **Cancel** button beside Mark done
+  (top row) — "it won't happen", removes it after a single confirm (`confirmDel==='cancel'` → `doCancel`;
+  nothing was covered so nothing is lost). The bottom **Delete** button now shows only on **done**
+  rehearsals, keeping the v0.329 two-step confirm ("⚠️ marked done", warns it drops the covered-song
+  record). All three dialogs share the `confirmDel` state (`'cancel'|'first'|'second'`), `done-modal`/
+  `done-panel` styling, back-button aware.
 - **Song rehearsal count**: `songRehCount(songId, rehearsals)` counts how many done rehearsals covered
   that song. Shown as `N×` badge on song rows.
 - Focus songs: Practice/Learn split with `FocusPicker` and `FocusTags`. `FocusTags` renders the
@@ -367,9 +372,12 @@ allowlist (owner + `managerChatAllow` emails); everyone else does not see it.
   `rehAllApproved`, `rehAnyDeclined`. Shared `AttendanceChips` component (used by RehCard + the
   time-proposal). **You can only edit your OWN instrument(s)** (`MY_INSTRS`); others are read-only
   (`.ro`); guests editable by anyone (v0.321).
-- `RehearsalProposal` (time-change) uses the same four-state attendance chips (not thumbs-vote):
-  proposed date/time + per-player availability + **Apply as new time** (moves the rehearsal, carries
-  the approvals over) + **Delete** (v0.319). Takes a `state` prop.
+- `RehearsalProposal` (time-change) supports **multiple candidate times** (v0.334). Each option shows
+  its date/time, the four-state attendance chips (per option, with a "N/5 can" tally), **Accept this
+  time** (moves the rehearsal to that option, carries its answers over, clears the proposal) and
+  **Remove** (drops that option; the last one removed clears the proposal). **+ Add another time**
+  appends an option; **Delete all** clears the whole proposal. `r.proposal.options[]` is the model;
+  migrate() upgrades old single-time proposals. Takes a `state` prop; used on Rehearsals + Stage.
 - **Edit rehearsal**: while editing, the card header shows **Save/Cancel** instead of Edit/Mark done.
 - **NeededDocs** section (rehearsal cards + plan sessions): lists only what each focus song is
   **missing** (red ✕ Slide / Stems); a song with everything, and the whole section when nothing is
